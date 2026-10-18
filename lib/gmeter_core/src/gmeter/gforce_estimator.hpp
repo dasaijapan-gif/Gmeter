@@ -39,6 +39,8 @@ class GForceEstimator {
   const Vec3& nominalForward() const { return nominalForward_; }
 
   // Step 1: average samples while the car is parked on level-ish ground.
+  // Succeeds even when the forward hint is vertical (then forwardTrusted() is
+  // false and a braking capture is required).
   void beginRestCalibration();
   void feedRestSample(const Vec3& rawSensorG);
   int restSampleCount() const { return restCount_; }
@@ -51,9 +53,15 @@ class GForceEstimator {
   // horizontal part of (brake - rest) points backward.
   bool calibrateForwardFromBraking(const Vec3& meanRawDuringBrake);
 
-  // Construct directly from known vectors in the sensor frame.
+  // Construct directly from known vectors in the sensor frame. Invalid when
+  // the forward hint is within 30 degrees of vertical.
   static Calibration makeCalibration(const Vec3& upSensor, const Vec3& forwardHintSensor);
-  void setCalibration(const Calibration& c) { cal_ = c; }
+  // Up from the rest vector, forward a placeholder (most horizontal sensor axis).
+  static Calibration makeUpOnlyCalibration(const Vec3& upSensor);
+  // False after a rest calibration whose forward hint was (nearly) vertical:
+  // lateral/longitudinal are then arbitrary until calibrateForwardFromBraking.
+  bool forwardTrusted() const { return forwardTrusted_; }
+  void setCalibration(const Calibration& c) { cal_ = c; forwardTrusted_ = c.valid; }
   const Calibration& calibration() const { return cal_; }
 
   // ---- auto re-zero ------------------------------------------------------------------
@@ -70,7 +78,7 @@ class GForceEstimator {
   Vec3 nominalForward_{1.0f, 0.0f, 0.0f};
   Vec3 restAccum_;
   int restCount_ = 0;
-  Vec3 restMean_;
+  bool forwardTrusted_ = true;
 
   float cutoffHz_ = 4.0f, sampleHz_ = 200.0f;
   LowPassBiquad lpX_, lpY_, lpZ_;

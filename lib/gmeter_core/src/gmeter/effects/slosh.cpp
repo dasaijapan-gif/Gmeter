@@ -18,7 +18,7 @@ SloshEffect::SloshEffect() {
   params_.add("style", &style_, 0.0f, 2.0f, "0 surface, 1 surface+body, 2 solid");
   params_.add("body_i", &bodyIntensity_, 0.0f, 1.0f, "body dither density");
   params_.add("surface_px", &surfacePx_, 1.0f, 4.0f, "surface thickness px");
-  params_.add("substeps", &maxSubsteps_, 1.0f, 16.0f, "max physics substeps per frame");
+  params_.add("substeps", &maxSubsteps_, 2.0f, 32.0f, "max substeps per frame (cost cap; slow motion if exceeded)");
   reset();
 }
 
@@ -171,16 +171,27 @@ void SloshEffect::update(const EffectContext& ctx) {
   gvFiltered_ = lerpf(gvFiltered_, clampf(-gEff.y, 0.2f, 3.0f), ctx.dt / (ctx.dt + 0.16f));
   const float gv = gvFiltered_ * gravityPx();
 
-  // CFL from the current state: c = sqrt(gv * hmax), Courant target 0.7.
-  float hmax = 0.0f;
+  // A runtime change of `fill` eases the volume toward the new target.
+  const float want = fillFraction_ * static_cast<float>(kH) * NX * NZ;
+  targetVolume_ += (want - targetVolume_) * std::min(1.0f, ctx.dt * 3.0f);
+
+  // CFL from the current state: signal speed |u| + sqrt(gv * h) over both
+  // axes, Courant target 0.7. The substep count is capped for cost; when the
+  // cap binds the frame runs in slow motion instead of going unstable.
+  float hmax = 0.0f, umax = 0.0f;
   for (int z = 0; z < NZ; ++z)
     for (int x = 0; x < NX; ++x) hmax = std::max(hmax, h_[z][x]);
-  const float c = std::sqrt(gv * std::max(hmax, 1.0f));
-  const float dtMax = 0.7f * DX / std::max(c, 1e-3f);
+  for (int z = 0; z < NZ; ++z)
+    for (int x = 0; x <= NX; ++x) umax = std::max(umax, std::fabs(u_[z][x]));
+  for (int z = 0; z <= NZ; ++z)
+    for (int x = 0; x < NX; ++x) umax = std::max(umax, std::fabs(w_[z][x]));
+  const float c = umax + std::sqrt(gv * std::max(hmax, 1.0f));
+  const float invSpacing = std::sqrt(1.0f / (DX * DX) + 1.0f / (DZ * DZ));
+  const float dtMax = 0.7f / (std::max(c, 1e-3f) * invSpacing);
   int n = static_cast<int>(std::ceil(ctx.dt / dtMax));
   n = clampi(n, 1, static_cast<int>(maxSubsteps_));
   lastSubsteps_ = n;
-  const float dt = ctx.dt / static_cast<float>(n);
+  const float dt = std::min(ctx.dt / static_cast<float>(n), dtMax);
   for (int i = 0; i < n; ++i) {
     substep(dt, gv, gEff);
     smooth(viscosity_ * dt / (DX * DX));

@@ -3,6 +3,7 @@
 class TwoWire {
  public:
   bool begin(int = -1, int = -1, uint32_t = 0) { return true; }
+  bool end() { return true; }
   void setClock(uint32_t) {}
   void setTimeOut(uint16_t) {}
   void beginTransmission(uint8_t) {}

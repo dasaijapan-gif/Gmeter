@@ -11,7 +11,12 @@ constexpr float kPi = 3.14159265358979f;
 constexpr float kTwoPi = 6.28318530717959f;
 constexpr float kStandardGravity = 9.80665f;  // m/s^2 per g
 
-inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+// NaN-safe: a NaN input returns lo, so bad input can never poison state.
+inline float clampf(float v, float lo, float hi) {
+  if (!(v >= lo)) return lo;
+  if (!(v <= hi)) return hi;
+  return v;
+}
 inline int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 inline float lerpf(float a, float b, float t) { return a + (b - a) * t; }
 inline float smoothstepf(float e0, float e1, float x) {

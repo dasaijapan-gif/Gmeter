@@ -98,7 +98,9 @@ Vec3 ParticleEffect::pressureAccel(const Vec3& world) const {
   // Grid y points down (screen rows); world y points up. a = -k * grad(p).
   // (Dividing by the local density, as SPH does, over-amplifies the force at
   // the sparse top of the pile and turns it into a fountain.)
-  return Vec3{-dx, dy, -dz} * pressure_;
+  // pressure_ is the stiffness for a 1 m tank; it scales with gravity so the
+  // pile keeps its shape when tank_m changes.
+  return Vec3{-dx, dy, -dz} * (pressure_ / tankWidthM_);
 }
 
 void ParticleEffect::substep(float dt, const Vec3& gEff) {

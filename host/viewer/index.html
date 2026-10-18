@@ -20,6 +20,12 @@
   --lon: #8fd9ff;
   --vert: #c49cff;
   --focus: #ffd166;
+  /* Colours for drawings on the always-dark glass canvases (same in both themes). */
+  --glass-line: #2c3d4d;
+  --glass-muted: #8797a9;
+  --glass-accent: #8fd9ff;
+  --glass-accent-dim: #2f6b8c;
+  --glass-vert: #c49cff;
   --font-display: "Chakra Petch", "Trebuchet MS", "Segoe UI", sans-serif;
   --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
   --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
@@ -119,12 +125,12 @@ footer code { font-family: var(--font-mono); font-size: 11px; background: var(--
       <div class="card">
         <h2>Top view</h2>
         <canvas id="top" width="256" height="128"></canvas>
-        <div class="caption"><span>driver side</span><span>windshield side</span></div>
+        <div class="caption"><span>top row: L0 (driver) &middot; bottom row: <span id="topLast">L7</span> (windshield)</span><span>&larr; left &middot; right &rarr;</span></div>
       </div>
       <div class="card">
         <h2>Side view</h2>
         <canvas id="side" width="256" height="112"></canvas>
-        <div class="caption"><span>layer 0 (driver)</span><span>layer 7</span></div>
+        <div class="caption"><span>layer 0 (driver)</span><span id="sideLast">layer 7</span></div>
       </div>
     </aside>
   </main>
@@ -198,15 +204,19 @@ footer code { font-family: var(--font-mono); font-size: 11px; background: var(--
     meta.layerBytes = meta.w * meta.pages;
     meta.frameBytes = meta.layerBytes * meta.d;
     const clips = [];
+    if (!meta.w || !meta.h || meta.h % 8 || !meta.d || !meta.fps) throw new Error('bad header (size ' + meta.w + 'x' + meta.h + 'x' + meta.d + ', ' + meta.fps + ' fps)');
+    const need = (n, what) => { if (!(o + n <= buf.byteLength)) throw new Error('recording truncated (' + what + ' at byte ' + o + ' of ' + buf.byteLength + ')'); };
     const td = new TextDecoder();
     for (let c = 0; c < clipCount; c++) {
-      const n1 = buf[o++]; const effect = td.decode(buf.subarray(o, o + n1)); o += n1;
-      const n2 = buf[o++]; const scenario = td.decode(buf.subarray(o, o + n2)); o += n2;
-      const frames = dv.getUint32(o, true); o += 4;
+      need(1, 'clip ' + c + ' name'); const n1 = buf[o++]; need(n1, 'clip ' + c + ' name'); const effect = td.decode(buf.subarray(o, o + n1)); o += n1;
+      need(1, 'clip ' + c + ' scenario'); const n2 = buf[o++]; need(n2, 'clip ' + c + ' scenario'); const scenario = td.decode(buf.subarray(o, o + n2)); o += n2;
+      need(4, 'clip ' + c + ' length'); const frames = dv.getUint32(o, true); o += 4;
       const rec = 12 + meta.frameBytes;
-      clips.push({ effect, scenario, frames, offset: o, rec, buf, dv });
+      need(frames * rec, 'clip ' + c + ' frames');
+      if (frames > 0) clips.push({ effect, scenario, frames, offset: o, rec, buf, dv });
       o += frames * rec;
     }
+    if (!clips.length) throw new Error('the recording has no frames');
     return { meta, clips };
   }
   function clipG(clip, i) {
@@ -352,29 +362,30 @@ footer code { font-family: var(--font-mono); font-size: 11px; background: var(--
     const cx = W * 0.42, cy = H / 2, R = H * 0.40;
     gctx.font = '10px ' + col('--font-mono');
     gctx.textAlign = 'center'; gctx.textBaseline = 'middle';
-    gctx.strokeStyle = col('--line'); gctx.fillStyle = col('--muted'); gctx.lineWidth = 1;
+    gctx.strokeStyle = col('--glass-line'); gctx.fillStyle = col('--glass-muted'); gctx.lineWidth = 1;
     for (const r of [0.5, 1.0]) { gctx.beginPath(); gctx.arc(cx, cy, R * r, 0, Math.PI * 2); gctx.stroke(); }
     gctx.beginPath(); gctx.moveTo(cx - R, cy); gctx.lineTo(cx + R, cy); gctx.moveTo(cx, cy - R); gctx.lineTo(cx, cy + R); gctx.stroke();
     gctx.fillText('ACCEL', cx, cy - R - 9); gctx.fillText('BRAKE', cx, cy + R + 9);
     gctx.textAlign = 'right'; gctx.fillText('L', cx - R - 4, cy); gctx.textAlign = 'left'; gctx.fillText('R', cx + R + 4, cy);
     gctx.textAlign = 'center'; gctx.fillText('1g', cx + R * 0.72, cy - R * 0.72);
     // Felt-force dot: where a loose object on the dash would go.
-    const dx = -g.lat * R, dy = g.lon * R;
+    // Classic g-g dial: accelerating up, braking down, a right turn to the right.
+    const dx = g.lat * R, dy = -g.lon * R;
     const len = Math.hypot(dx, dy), lim = R * 1.08;
     const k = len > lim ? lim / len : 1;
-    gctx.strokeStyle = col('--accent-dim'); gctx.lineWidth = 2;
+    gctx.strokeStyle = col('--glass-accent-dim'); gctx.lineWidth = 2;
     gctx.beginPath(); gctx.moveTo(cx, cy); gctx.lineTo(cx + dx * k, cy + dy * k); gctx.stroke();
-    gctx.fillStyle = col('--accent');
+    gctx.fillStyle = col('--glass-accent');
     gctx.beginPath(); gctx.arc(cx + dx * k, cy + dy * k, 6, 0, Math.PI * 2); gctx.fill();
     // Vertical bar on the right: +1 g up.
     const bx = W * 0.88, by0 = cy - R, bh = 2 * R;
-    gctx.strokeStyle = col('--line'); gctx.lineWidth = 1;
+    gctx.strokeStyle = col('--glass-line'); gctx.lineWidth = 1;
     gctx.strokeRect(bx - 7 + 0.5, by0 + 0.5, 14, bh);
     gctx.beginPath(); gctx.moveTo(bx - 10, cy + 0.5); gctx.lineTo(bx + 10, cy + 0.5); gctx.stroke();
     const v = Math.max(-1, Math.min(1, g.vert));
-    gctx.fillStyle = col('--vert');
+    gctx.fillStyle = col('--glass-vert');
     if (v >= 0) gctx.fillRect(bx - 6, cy - v * R, 12, v * R); else gctx.fillRect(bx - 6, cy, 12, -v * R);
-    gctx.fillStyle = col('--muted'); gctx.fillText('UP', bx, by0 - 9); gctx.fillText('DN', bx, by0 + bh + 9);
+    gctx.fillStyle = col('--glass-muted'); gctx.fillText('UP', bx, by0 - 9); gctx.fillText('DN', bx, by0 + bh + 9);
   }
 
   function fmt(v) { return (v >= 0 ? '+' : '') + v.toFixed(2); }
@@ -477,6 +488,7 @@ footer code { font-family: var(--font-mono); font-size: 11px; background: var(--
     });
     ro.observe(stage.parentElement);
     if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+    new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   }
 
   async function boot() {
@@ -506,6 +518,7 @@ footer code { font-family: var(--font-mono); font-size: 11px; background: var(--
   function load(bytes) {
     const parsed = parse(bytes);
     state.meta = parsed.meta; state.clips = parsed.clips;
+    $('topLast').textContent = 'L' + (state.meta.d - 1); $('sideLast').textContent = 'layer ' + (state.meta.d - 1);
     prepareLayers();
     populateSelects();
     setClip($('effect').value, $('scenario').value);

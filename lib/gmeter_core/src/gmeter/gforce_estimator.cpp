@@ -20,20 +20,30 @@ void GForceEstimator::reset() {
 Calibration GForceEstimator::makeCalibration(const Vec3& upSensor, const Vec3& forwardHintSensor) {
   Calibration c;
   const Vec3 up = upSensor.normalized();
-  if (up.length2() < 0.5f) return c;
-  // Gram-Schmidt: remove the gravity component from the forward hint.
-  Vec3 fwd = forwardHintSensor - up * forwardHintSensor.dot(up);
-  if (fwd.length2() < 1e-6f) {
-    // Hint is (anti)parallel to gravity: pick any perpendicular axis.
-    const Vec3 helper = std::fabs(up.x) < 0.9f ? Vec3{1, 0, 0} : Vec3{0, 1, 0};
-    fwd = helper - up * helper.dot(up);
-  }
+  const Vec3 hint = forwardHintSensor.normalized();
+  if (up.length2() < 0.5f || hint.length2() < 0.5f) return c;
+  // Gram-Schmidt: remove the gravity component from the forward hint. A hint
+  // within 30 degrees of vertical carries too little horizontal direction to
+  // trust (its remainder is set by mounting tilt), so reject it.
+  Vec3 fwd = hint - up * hint.dot(up);
+  if (fwd.length2() < 0.25f) return c;
   fwd = fwd.normalized();
-  // Right-handed car frame: right = up x forward  (y cross z = x).
-  const Vec3 right = up.cross(fwd).normalized();
+  // The car frame (x right, y up, z forward) is left-handed: right = forward x up.
+  const Vec3 right = fwd.cross(up).normalized();
   c.sensorToCar = Mat3::fromRows(right, up, fwd);
   c.valid = true;
   return c;
+}
+
+Calibration GForceEstimator::makeUpOnlyCalibration(const Vec3& upSensor) {
+  // Forward unknown: use whichever sensor axis is most horizontal as a
+  // placeholder until a braking capture supplies the real direction.
+  const Vec3 up = upSensor.normalized();
+  const Vec3 axes[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+  int best = 0;
+  for (int i = 1; i < 3; ++i)
+    if (std::fabs(axes[i].dot(up)) < std::fabs(axes[best].dot(up))) best = i;
+  return makeCalibration(upSensor, axes[best]);
 }
 
 void GForceEstimator::beginRestCalibration() {
@@ -48,11 +58,14 @@ void GForceEstimator::feedRestSample(const Vec3& raw) {
 
 bool GForceEstimator::finishRestCalibration() {
   if (restCount_ < 8) return false;
-  restMean_ = restAccum_ / static_cast<float>(restCount_);
-  // Sanity: magnitude should be roughly 1 g.
-  const float mag = restMean_.length();
+  // Validate before committing anything, so a rejected capture leaves the
+  // previous calibration untouched.
+  const Vec3 mean = restAccum_ / static_cast<float>(restCount_);
+  const float mag = mean.length();
   if (mag < 0.7f || mag > 1.3f) return false;
-  Calibration c = makeCalibration(restMean_, nominalForward_);
+  Calibration c = makeCalibration(mean, nominalForward_);
+  forwardTrusted_ = c.valid;
+  if (!c.valid) c = makeUpOnlyCalibration(mean);  // up is known; forward needs `cal brake`
   if (!c.valid) return false;
   cal_ = c;
   reset();
@@ -62,14 +75,18 @@ bool GForceEstimator::finishRestCalibration() {
 bool GForceEstimator::calibrateForwardFromBraking(const Vec3& meanRawDuringBrake) {
   if (!cal_.valid) return false;
   const Vec3 up = cal_.sensorToCar.row(1);
-  Vec3 delta = meanRawDuringBrake - restMean_;
-  delta -= up * delta.dot(up);  // horizontal part
+  // The rest vector lies along `up`, so the horizontal part of the raw braking
+  // sample is the braking acceleration itself (no stored rest mean needed,
+  // which keeps this valid after a reboot).
+  Vec3 delta = meanRawDuringBrake;
+  delta -= up * delta.dot(up);
   if (delta.length() < 0.05f) return false;  // needs at least 0.05 g of braking
   // During braking the proper acceleration points backward, so forward is -delta.
   const Vec3 fwd = -delta;
   Calibration c = makeCalibration(up, fwd);
   if (!c.valid) return false;
   cal_ = c;
+  forwardTrusted_ = true;
   nominalForward_ = fwd.normalized();
   reset();
   return true;

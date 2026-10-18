@@ -2,10 +2,17 @@
 //
 // Tasks:
 //   imuTask     (core 0, 200 Hz)  reads the accelerometer, runs the estimator,
-//                                 publishes the filtered g-force; handles calibration captures.
+//                                 publishes the filtered g-force; handles calibration
+//                                 captures; retries a lost sensor once a second.
 //   renderTask  (core 1, 60 fps)  steps the active effect and renders a voxel frame.
 //   displayTask (core 0)          streams finished frames to the 8 panels over SPI.
 //   loop()      (core 1, idle)    serial CLI, mode button, periodic housekeeping.
+//
+// Concurrency: the g vector, source and frame-buffer indices are shared under
+// the gMux spinlock. The Engine (and its effects) is guarded by engineMtx:
+// renderTask holds it while stepping, and the CLI/button hold it while they
+// change modes or parameters. The estimator is guarded by estMtx in the same
+// way between imuTask and the CLI.
 #include <Arduino.h>
 #include <esp_timer.h>
 
@@ -48,14 +55,24 @@ AnimationEffect animEffect(GM_USER_ANIMATION);
 Settings settings;
 Calibration calibration;
 
+SemaphoreHandle_t engineMtx;  // Engine + effects
+SemaphoreHandle_t estMtx;     // GForceEstimator
+
+struct Lock {
+  explicit Lock(SemaphoreHandle_t m) : m_(m) { xSemaphoreTake(m_, portMAX_DELAY); }
+  ~Lock() { xSemaphoreGive(m_); }
+  SemaphoreHandle_t m_;
+};
+
 // ---- shared state (protected by gMux) -----------------------------------------------------------
 portMUX_TYPE gMux = portMUX_INITIALIZER_UNLOCKED;
-GForce imuG;                 // latest filtered g from the IMU
+GForce imuG;                 // latest filtered g from the IMU (rest while the sensor is lost)
 Vec3 imuRaw;                 // latest raw sensor sample (sensor frame)
 float imuTempC = 0.0f;
 Vec3 serialDynamicG;         // injected over serial (lat, vert, lon)
 enum class Source : uint8_t { Imu, Serial, Demo };
 Source source = Source::Demo;
+bool demoBecauseNoImu = false;  // switch to the IMU automatically when it shows up
 const Scenario* demoScenario = &Scenario::preset(Scenario::presetCount() - 1);  // "drive"
 
 enum class CalState : uint8_t { Idle, Rest, Brake, Done, Failed };
@@ -64,33 +81,39 @@ Vec3 calAccum;
 int calCount = 0;
 uint32_t calDeadlineMs = 0;
 const char* calMessage = "";
+volatile bool imuEvent = false;  // imuTask -> loop(): print imuEventText
+const char* imuEventText = "";
 
 // ---- frame hand-off: triple buffer ---------------------------------------------------------------
 VoxelFrame frames[3];
 int frameReady = -1, frameDisplaying = -1;
 SemaphoreHandle_t frameSem;
-volatile bool wantReinit = false;
-volatile int testPanel = -2;  // -2 none, -1 clear test, >= 0 panel index
+volatile bool wantReinit = false;   // hard reset (CLI)
+volatile bool wantRefresh = false;  // soft re-send (periodic)
+volatile int testPanel = -2;        // -2 none, >= 0 panel index
 
 // ---- stats --------------------------------------------------------------------------------------------
 float fpsEma = 0.0f;
 uint32_t stepUs = 0, transferUs = 0, droppedFrames = 0;
-uint32_t bootMs = 0;
+int64_t bootUs = 0;
 
 // ---- helpers -------------------------------------------------------------------------------------------
-GForce currentG(float t) {
+GForce currentG(int64_t usSinceBoot) {
   GForce g;
   portENTER_CRITICAL(&gMux);
   const Source src = source;
   const GForce fromImu = imuG;
   const Vec3 injected = serialDynamicG;
+  const Scenario* sc = demoScenario;
   portEXIT_CRITICAL(&gMux);
   switch (src) {
     case Source::Imu: g = fromImu; break;
     case Source::Serial: g.proper = GForce::kRestProper() + injected; break;
     case Source::Demo: {
-      const float dur = demoScenario->duration();
-      g = demoScenario->at(dur > 0.0f ? fmodf(t, dur + 1.0f) : 0.0f, nullptr);
+      // Wrap in integer microseconds so the demo stays smooth after days of uptime.
+      const float dur = sc->duration();
+      const int64_t period = static_cast<int64_t>((dur + 1.0f) * 1e6f);
+      g = sc->at(static_cast<float>(usSinceBoot % period) * 1e-6f, nullptr);
       break;
     }
   }
@@ -101,52 +124,98 @@ void applySettings() {
   engine.setReadout(settings.readout != 0);
   engine.setAutoCycle(settings.autoCycleS);
   estimator.setFilter(settings.filterHz, static_cast<float>(board::kImuSampleHz));
-  estimator.setNominalForward(storage::forwardAxisVector(settings.forwardAxis));
   estimator.setAutoZero(settings.autoZero != 0);
-  if (calibration.valid) estimator.setCalibration(calibration);
+  if (calibration.valid) {
+    estimator.setCalibration(calibration);
+    // Keep the calibrated forward axis (possibly refined by `cal brake`) as the
+    // hint, so a later `cal rest` does not throw that refinement away.
+    estimator.setNominalForward(calibration.sensorToCar.row(2));
+  } else {
+    estimator.setNominalForward(storage::forwardAxisVector(settings.forwardAxis));
+  }
+}
+
+void publishImu(const GForce& g, const Vec3& raw, float temp) {
+  portENTER_CRITICAL(&gMux);
+  imuG = g;
+  imuRaw = raw;
+  imuTempC = temp;
+  portEXIT_CRITICAL(&gMux);
 }
 
 // ---- tasks ----------------------------------------------------------------------------------------------
 void imuTask(void*) {
   TickType_t last = xTaskGetTickCount();
   const TickType_t period = pdMS_TO_TICKS(1000 / board::kImuSampleHz);
+  TickType_t nextRetry = 0;
+  bool wasPresent = imu.present();
   for (;;) {
     vTaskDelayUntil(&last, period);
-    if (!imu.present()) continue;
-    Vec3 raw;
-    float temp;
-    if (!imu.read(raw, &temp)) {
-      if (imu.consecutiveErrors() >= 10) imu.reinit();
+    if (!imu.present()) {
+      if (wasPresent) {
+        // Lost: show a neutral g instead of freezing on the last value.
+        publishImu(GForce{}, Vec3{}, 0.0f);
+        imuEventText = "imu: lost contact; showing 0 g and retrying every second";
+        imuEvent = true;
+        wasPresent = false;
+      }
+      const TickType_t now = xTaskGetTickCount();
+      if (static_cast<int32_t>(now - nextRetry) >= 0) {
+        nextRetry = now + pdMS_TO_TICKS(1000);
+        if (imu.recover()) {
+          {
+            Lock l(estMtx);
+            estimator.reset();
+          }
+          portENTER_CRITICAL(&gMux);
+          if (demoBecauseNoImu && source == Source::Demo) source = Source::Imu;
+          demoBecauseNoImu = false;
+          portEXIT_CRITICAL(&gMux);
+          imuEventText = "imu: sensor (re)connected";
+          imuEvent = true;
+          wasPresent = true;
+        }
+        last = xTaskGetTickCount();  // the retry took time; do not burst afterwards
+      }
       continue;
     }
-    const GForce g = estimator.update(raw);
-    portENTER_CRITICAL(&gMux);
-    imuG = g;
-    imuRaw = raw;
-    imuTempC = temp;
-    portEXIT_CRITICAL(&gMux);
+    Vec3 raw;
+    float temp;
+    if (!imu.read(raw, &temp)) continue;  // read() marks the sensor lost after repeated failures
 
-    // Calibration captures run here so they see every sample.
-    const CalState cs = calState;
-    if (cs == CalState::Rest || cs == CalState::Brake) {
-      calAccum += raw;
-      ++calCount;
-      if (millis() >= calDeadlineMs) {
-        bool ok = false;
-        if (cs == CalState::Rest) {
-          estimator.beginRestCalibration();
+    GForce g;
+    {
+      Lock l(estMtx);
+      g = estimator.update(raw);
+
+      // Calibration captures run here so they see every sample.
+      const CalState cs = calState;
+      if (cs == CalState::Rest || cs == CalState::Brake) {
+        calAccum += raw;
+        ++calCount;
+        if (millis() >= calDeadlineMs) {
+          bool ok = false;
           const Vec3 mean = calAccum / static_cast<float>(calCount);
-          for (int i = 0; i < 16; ++i) estimator.feedRestSample(mean);
-          ok = estimator.finishRestCalibration();
-          calMessage = ok ? "rest calibration ok (save to keep)" : "rest calibration failed: not ~1 g or degenerate axes";
-        } else {
-          ok = estimator.calibrateForwardFromBraking(calAccum / static_cast<float>(calCount));
-          calMessage = ok ? "forward axis refined from braking (save to keep)" : "braking capture too weak (< 0.05 g) or no rest calibration";
+          if (cs == CalState::Rest) {
+            estimator.beginRestCalibration();
+            for (int i = 0; i < 16; ++i) estimator.feedRestSample(mean);
+            ok = estimator.finishRestCalibration();
+            if (!ok) calMessage = "rest calibration failed: the average was not about 1 g (was the car moving?)";
+            else if (!estimator.forwardTrusted())
+              calMessage = "rest ok, but the forward axis is unknown (the forward hint points up or down). "
+                           "Run cal brake while braking firmly in a straight line, or cal fwd <axis> then cal rest";
+            else calMessage = "rest calibration ok (save to keep; cal brake refines forward)";
+          } else {
+            ok = estimator.calibrateForwardFromBraking(mean);
+            calMessage = ok ? "forward axis set from braking (save to keep)"
+                            : "braking capture too weak (needs more than 0.05 g): brake harder and try again";
+          }
+          if (ok) calibration = estimator.calibration();
+          calState = ok ? CalState::Done : CalState::Failed;
         }
-        if (ok) calibration = estimator.calibration();
-        calState = ok ? CalState::Done : CalState::Failed;
       }
     }
+    publishImu(g, raw, temp);
   }
 }
 
@@ -158,15 +227,18 @@ void renderTask(void*) {
     const float dt = static_cast<float>(now - lastUs) * 1e-6f;
     lastUs = now;
 
-    const GForce g = currentG(static_cast<float>(now - static_cast<int64_t>(bootMs) * 1000) * 1e-6f);
-    engine.step(g, dt);
+    const GForce g = currentG(now - bootUs);
 
     // Pick a buffer that is neither being displayed nor already queued.
     portENTER_CRITICAL(&gMux);
     int target = 0;
     while (target == frameReady || target == frameDisplaying) ++target;
     portEXIT_CRITICAL(&gMux);
-    memcpy(frames[target].data(), engine.frame().data(), VoxelFrame::frameBytes());
+    {
+      Lock l(engineMtx);
+      engine.step(g, dt);
+      memcpy(frames[target].data(), engine.frame().data(), VoxelFrame::frameBytes());
+    }
     portENTER_CRITICAL(&gMux);
     if (frameReady >= 0) ++droppedFrames;  // display did not keep up; newest frame wins
     frameReady = target;
@@ -189,7 +261,8 @@ void renderTask(void*) {
 void displayTask(void*) {
   for (;;) {
     if (xSemaphoreTake(frameSem, pdMS_TO_TICKS(500)) != pdTRUE) continue;
-    if (wantReinit) { display.reinit(); wantReinit = false; }
+    if (wantReinit) { wantReinit = false; display.reinit(); }
+    if (wantRefresh) { wantRefresh = false; display.refresh(); }
     const int tp = testPanel;
     if (tp >= 0) {
       display.testPattern(tp);
@@ -215,6 +288,8 @@ void displayTask(void*) {
 // ---- CLI binding ----------------------------------------------------------------------------------------
 class App : public AppControl {
  public:
+  void lockEngine() override { xSemaphoreTake(engineMtx, portMAX_DELAY); }
+  void unlockEngine() override { xSemaphoreGive(engineMtx); }
   Engine& engine() override { return ::engine; }
 
   void printStatus(Print& out) override {
@@ -223,12 +298,14 @@ class App : public AppControl {
     const Vec3 raw = imuRaw;
     const float temp = imuTempC;
     const Source src = source;
+    const Scenario* sc = demoScenario;
     portEXIT_CRITICAL(&gMux);
-    const GForce shown = currentG(static_cast<float>(millis() - bootMs) * 1e-3f);
-    out.printf("uptime %lu s  mode %s  source %s%s\n", static_cast<unsigned long>((millis() - bootMs) / 1000),
+    const int64_t up = esp_timer_get_time() - bootUs;
+    const GForce shown = currentG(up);
+    out.printf("uptime %lu s  mode %s  source %s%s\n", static_cast<unsigned long>(up / 1000000),
                ::engine.current() ? ::engine.current()->name() : "-",
                src == Source::Imu ? "imu" : (src == Source::Serial ? "serial" : "demo:"),
-               src == Source::Demo ? demoScenario->name() : "");
+               src == Source::Demo ? sc->name() : "");
     out.printf("render %.1f fps  step %lu us  spi %lu us  dropped %lu  heap %lu  smoke %s\n",
                static_cast<double>(fpsEma), static_cast<unsigned long>(stepUs), static_cast<unsigned long>(transferUs),
                static_cast<unsigned long>(droppedFrames), static_cast<unsigned long>(ESP.getFreeHeap()),
@@ -237,17 +314,26 @@ class App : public AppControl {
                static_cast<double>(shown.verticalG()), static_cast<double>(shown.longitudinalG()),
                static_cast<double>(shown.horizontalG()));
     if (imu.present()) {
-      out.printf("imu: who 0x%02X%s  raw (%+.3f %+.3f %+.3f) g  %.1f C  errors %lu\n", imu.whoAmI(),
-                 imu.clone() ? " (clone)" : "", static_cast<double>(raw.x), static_cast<double>(raw.y),
-                 static_cast<double>(raw.z), static_cast<double>(temp), static_cast<unsigned long>(imu.errorCount()));
+      out.printf("imu: ok, who 0x%02X%s  raw (%+.3f %+.3f %+.3f) g, |a| %.3f  %.1f C  errors %lu  reconnects %lu\n",
+                 imu.whoAmI(), imu.clone() ? " (clone)" : "", static_cast<double>(raw.x), static_cast<double>(raw.y),
+                 static_cast<double>(raw.z), static_cast<double>(raw.length()), static_cast<double>(temp),
+                 static_cast<unsigned long>(imu.errorCount()), static_cast<unsigned long>(imu.recoveries()));
       out.printf("imu car frame: lat %+.3f vert %+.3f lon %+.3f  filter %.1f Hz  autozero %s\n",
                  static_cast<double>(g.lateralG()), static_cast<double>(g.verticalG()),
                  static_cast<double>(g.longitudinalG()), static_cast<double>(settings.filterHz),
                  settings.autoZero ? "on" : "off");
+    } else if (imu.detected()) {
+      out.println("imu: LOST (showing 0 g, retrying every second; check wiring and power)");
     } else {
-      out.println("imu: not detected (check wiring / address); running demo source");
+      out.println("imu: not detected (retrying every second; check wiring and address)");
     }
-    out.printf("calibration: %s, forward axis hint %s", calibration.valid ? "valid" : "NONE (run: cal rest)",
+    bool trusted;
+    {
+      Lock l(estMtx);
+      trusted = estimator.forwardTrusted();
+    }
+    out.printf("calibration: %s, forward axis hint %s",
+               calibration.valid ? (trusted ? "valid" : "up only (forward unknown: run cal brake)") : "NONE (cal fwd <axis>, then cal rest)",
                storage::forwardAxisName(settings.forwardAxis));
     if (calState == CalState::Rest || calState == CalState::Brake) out.print("  [capturing]");
     out.println();
@@ -257,7 +343,7 @@ class App : public AppControl {
       out.printf("animation '%s' %ux%u x%u slices, %u frames: state %s, frame %d%s\n", a.name, a.width, a.height, a.depth,
                  a.frames, animStateName(animEffect.state()), animEffect.currentFrame(), animEffect.mirrored() ? " (mirrored)" : "");
     }
-    out.printf("contrast ramp %u..%u  cycle %.0f s  readout %s  panel reinit every %u min\n", settings.contrastFront,
+    out.printf("contrast ramp %u..%u  cycle %.0f s  readout %s  panel refresh every %u min\n", settings.contrastFront,
                settings.contrastBack, static_cast<double>(settings.autoCycleS), settings.readout ? "on" : "off",
                settings.reinitMinutes);
   }
@@ -268,6 +354,7 @@ class App : public AppControl {
       out.printf("  %s (%.0f s)\n", Scenario::preset(i).name(), static_cast<double>(Scenario::preset(i).duration()));
   }
 
+  // (engine) methods: callers hold engineMtx.
   bool setMode(const char* nameOrIndex) override {
     if (!nameOrIndex) return false;
     int idx = ::engine.findEffect(nameOrIndex);
@@ -292,42 +379,57 @@ class App : public AppControl {
     source = s;
     demoScenario = sc;
     serialDynamicG = Vec3{};
+    demoBecauseNoImu = false;  // an explicit choice sticks
     portEXIT_CRITICAL(&gMux);
     return true;
   }
 
   void injectG(float lat, float vert, float lon) override {
+    const Vec3 v{clampf(lat, -8.0f, 8.0f), clampf(vert, -8.0f, 8.0f), clampf(lon, -8.0f, 8.0f)};
     portENTER_CRITICAL(&gMux);
-    serialDynamicG = Vec3{lat, vert, lon};
-    if (source != Source::Serial) source = Source::Serial;
+    serialDynamicG = v;
+    source = Source::Serial;
+    demoBecauseNoImu = false;
     portEXIT_CRITICAL(&gMux);
   }
 
-  bool startCalibration(const char* which) override {
-    if (!imu.present()) return false;
-    if (calState == CalState::Rest || calState == CalState::Brake) return false;
-    calAccum = Vec3{};
-    calCount = 0;
-    if (!strcmp(which, "rest")) { calDeadlineMs = millis() + 2000; calState = CalState::Rest; return true; }
-    if (!strcmp(which, "brake")) {
-      if (!calibration.valid) { calMessage = "run cal rest first"; return false; }
-      calDeadlineMs = millis() + 1500; calState = CalState::Brake; return true;
+  const char* startCalibration(const char* which) override {
+    if (!imu.present()) return "no imu detected";
+    if (calState == CalState::Rest || calState == CalState::Brake) return "a capture is already running";
+    const bool rest = !strcmp(which, "rest");
+    if (!rest && strcmp(which, "brake")) return "unknown capture";
+    if (!rest && !calibration.valid) return "run cal rest first";
+    {
+      Lock l(estMtx);
+      calAccum = Vec3{};
+      calCount = 0;
+      calDeadlineMs = millis() + (rest ? 2000 : 1500);
+      calState = rest ? CalState::Rest : CalState::Brake;
     }
-    return false;
+    return nullptr;
   }
 
   bool setForwardAxis(const char* axis) override {
     const int idx = storage::parseForwardAxis(axis);
     if (idx < 0) return false;
     settings.forwardAxis = static_cast<uint8_t>(idx);
+    Lock l(estMtx);
     estimator.setNominalForward(storage::forwardAxisVector(settings.forwardAxis));
     return true;
   }
 
-  bool saveState() override { return storage::save(settings, calibration); }
+  bool saveState() override {
+    Calibration c;
+    {
+      Lock l(estMtx);  // imuTask writes `calibration` under this lock
+      c = calibration;
+    }
+    return storage::save(settings, c);
+  }
   bool clearState() override { return storage::clear(); }
   void setFilterHz(float hz) override {
     settings.filterHz = clampf(hz, 0.5f, 30.0f);
+    Lock l(estMtx);
     estimator.setFilter(settings.filterHz, static_cast<float>(board::kImuSampleHz));
   }
   void setContrast(int panel, int value) override {
@@ -343,9 +445,14 @@ class App : public AppControl {
   void setAutoCycle(float s) override { settings.autoCycleS = clampf(s, 0.0f, 3600.0f); ::engine.setAutoCycle(settings.autoCycleS); }
   void setReadout(bool on) override { settings.readout = on; ::engine.setReadout(on); }
   void setInvert(bool on) override { settings.invert = on; display.setInverted(on); }
-  void setAutoZero(bool on) override { settings.autoZero = on; estimator.setAutoZero(on); }
-  void testPattern(int panel) override { testPanel = panel < 0 ? -2 : panel; if (panel < 0) wantReinit = false; }
+  void setAutoZero(bool on) override {
+    settings.autoZero = on;
+    Lock l(estMtx);
+    estimator.setAutoZero(on);
+  }
+  void testPattern(int panel) override { testPanel = panel < 0 ? -2 : clampi(panel, 0, PanelStack::kPanels - 1); }
   void reinitPanels() override { wantReinit = true; }
+  void setRefreshMinutes(int minutes) override { settings.reinitMinutes = static_cast<uint8_t>(clampi(minutes, 0, 255)); }
   bool pinAnimState(const char* name) override {
     if (!name || !strcmp(name, "auto")) { animEffect.forceState(-1); return true; }
     for (int i = 0; i < kAnimStateCount; ++i)
@@ -372,11 +479,18 @@ void pollButton() {
   if (down && !wasDown) { downSince = now; longFired = false; }
   if (down && !longFired && now - downSince > 2000) {
     longFired = true;
-    if (app.startCalibration("rest")) Serial.println("button: rest calibration started (hold still 2 s)");
+    const char* why = app.startCalibration("rest");
+    if (why) Serial.printf("button: cannot start rest calibration: %s\n", why);
+    else Serial.println("button: rest calibration started (hold still 2 s)");
   }
   if (!down && wasDown && !longFired && now - downSince > 40) {
-    app.nextMode();
-    Serial.printf("button: mode %s\n", engine.current()->name());
+    const char* name;
+    {
+      Lock l(engineMtx);
+      app.nextMode();
+      name = engine.current()->name();
+    }
+    Serial.printf("button: mode %s\n", name);
   }
   wasDown = down;
 }
@@ -386,13 +500,19 @@ void pollButton() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  bootMs = millis();
+  bootUs = esp_timer_get_time();
   Serial.println();
   Serial.printf("gmeter: %dx%dx%d voxels, panel model %d, spi %d Hz, target %d fps\n", kW, kH, kD, GM_PANEL_MODEL,
                 GM_SPI_HZ, GM_TARGET_FPS);
 
-  const bool restored = storage::load(settings, calibration);
+  engineMtx = xSemaphoreCreateMutex();
+  estMtx = xSemaphoreCreateMutex();
+  frameSem = xSemaphoreCreateBinary();
+
+  bool migrated = false;
+  const bool restored = storage::load(settings, calibration, &migrated);
   Serial.println(restored ? "settings restored from NVS" : "no saved settings; using defaults");
+  if (migrated) Serial.println("calibration from an older firmware had its left/right axis mirrored; corrected (type save to keep)");
 
   pinMode(board::kButton, INPUT_PULLUP);
 
@@ -413,14 +533,16 @@ void setup() {
   if (imu.begin(board::kI2cSda, board::kI2cScl, board::kImuAddress)) {
     Serial.printf("imu: MPU-6050 found (WHO_AM_I 0x%02X%s)\n", imu.whoAmI(), imu.clone() ? ", clone" : "");
     source = Source::Imu;
-    if (!calibration.valid) Serial.println("imu: no calibration yet. Park level, then type: cal rest  (then: save)");
+    if (!calibration.valid)
+      Serial.println("imu: not calibrated. Tell it which sensor axis faces the windshield (cal fwd +y, for example), "
+                     "park level, then: cal rest, then save");
   } else {
-    Serial.printf("imu: not found (WHO_AM_I 0x%02X); showing demo scenario '%s'. Type: help\n", imu.whoAmI(),
-                  demoScenario->name());
+    Serial.printf("imu: not found (WHO_AM_I 0x%02X); showing demo scenario '%s' and retrying. Type: help\n",
+                  imu.whoAmI(), demoScenario->name());
     source = Source::Demo;
+    demoBecauseNoImu = true;
   }
 
-  frameSem = xSemaphoreCreateBinary();
   xTaskCreatePinnedToCore(imuTask, "imu", 4096, nullptr, 3, nullptr, 0);
   xTaskCreatePinnedToCore(displayTask, "display", 4096, nullptr, 2, nullptr, 0);
   xTaskCreatePinnedToCore(renderTask, "render", 8192, nullptr, 2, nullptr, 1);
@@ -431,15 +553,19 @@ void loop() {
   cli.poll(Serial);
   pollButton();
 
-  static uint32_t lastReinitMs = millis();
-  if (settings.reinitMinutes > 0 && millis() - lastReinitMs > settings.reinitMinutes * 60000UL) {
-    lastReinitMs = millis();
-    wantReinit = true;
+  static uint32_t lastRefreshMs = millis();
+  if (settings.reinitMinutes > 0 && millis() - lastRefreshMs > settings.reinitMinutes * 60000UL) {
+    lastRefreshMs = millis();
+    wantRefresh = true;  // soft: re-send registers without blanking the panels
   }
   const CalState cs = calState;
   if (cs == CalState::Done || cs == CalState::Failed) {
-    Serial.println(calMessage);
+    Serial.printf("\r\n%s\r\n> ", calMessage);
     calState = CalState::Idle;
+  }
+  if (imuEvent) {
+    imuEvent = false;
+    Serial.printf("\r\n%s\r\n> ", imuEventText);
   }
   delay(5);
 }

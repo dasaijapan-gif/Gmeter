@@ -1,9 +1,14 @@
 // G-force frame conventions. Everything downstream of the IMU uses this.
 //
-// CAR FRAME (right-handed), units of g:
+// CAR FRAME, units of g:
 //   x  = right   (+)   / left     (-)
 //   y  = up      (+)   / down     (-)
 //   z  = forward (+)   / backward (-)   == deeper into the display stack
+//
+// Note this frame is LEFT-handed (x right, y up, z away from the viewer, as on
+// a screen): right = forward x up, not up x forward. The accelerometer is
+// right-handed, so the sensor-to-car matrix built by GForceEstimator has
+// determinant -1. Vec3::cross is the ordinary right-handed cross product.
 //
 // `proper` is the proper acceleration an accelerometer measures, rotated into
 // the car frame. A car at rest on level ground reads (0, +1, 0): the sensor

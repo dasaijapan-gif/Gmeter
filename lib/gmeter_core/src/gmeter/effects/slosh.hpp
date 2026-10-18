@@ -48,7 +48,7 @@ class SloshEffect : public Effect {
   float style_ = 1.0f;           // 0 surface only, 1 surface + dithered body, 2 solid
   float bodyIntensity_ = 0.12f;  // dither density of the body in style 1
   float surfacePx_ = 1.0f;       // surface line thickness
-  float maxSubsteps_ = 8.0f;
+  float maxSubsteps_ = 12.0f;
 
   float h_[NZ][NX];
   float u_[NZ][NX + 1];

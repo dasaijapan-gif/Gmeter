@@ -60,6 +60,9 @@ Avoid GPIO 6-11 (flash), 34-39 (input only), 12 (MTDI strapping), 1/3 (UART).
 GPIO 5 is a strapping pin but is pulled up at boot, which is fine for an
 active-low CS. On WROVER modules GPIO 16/17 belong to the PSRAM: use 32 and 14.
 ESP32-S3 pins are in `src/board_config.hpp` (SPI2 IO_MUX: SCK 12, MOSI 11).
+On the ESP32-S3-DevKitC-1 the serial CLI is on the connector labelled UART;
+the native USB connector only flashes (add `-DARDUINO_USB_CDC_ON_BOOT=1` to the
+`esp32-s3` build flags to move the CLI to native USB).
 
 Eight loads on SCK/MOSI are about 100 pF. Keep the bus short with ground
 returns, and if wiring exceeds ~10 cm add 22-33 ohm series resistors at the
@@ -78,8 +81,11 @@ core 0 while core 1 renders the next frame. A later upgrade is the ESP-IDF
 CS/DC toggled in the pre/post callbacks), which frees that core time.
 
 The bus is write-only. A panel scrambled by ignition noise cannot report it,
-so the firmware re-sends the window command every frame and the whole init
-sequence every `reinitMinutes` (default 10). `reinit` does it on demand.
+so the firmware re-sends the window command every frame and does a soft
+refresh every `reinitMinutes` (default 10, set with `reinit <minutes>`, 0 = off):
+every register is re-sent without a reset, RAM clear or delay, so nothing
+blinks. Bare `reinit` does a hard reset (RES pulse, init, clear, 100 ms wait),
+which blanks the stack for about 0.12 s.
 
 ## Power
 
@@ -87,16 +93,25 @@ sequence every `reinitMinutes` (default 10). `reinit` does it on demand.
   rated >= 2 A: eight boost converters at full white draw about 1.2-1.6 A.
 - Feed the car's 12 V to a 5 V buck, then 3.3 V. The GY-521 takes 5 V (its own
   LDO and pull-ups then sit at 3.3 V).
-- Sequence: VDD on, reset, init, clear, VCC on, 100 ms, display on. Power off:
-  display off, VCC off, VDD off. Panel VCC must float, not be grounded, when off.
+- Panel VCC (12 V) comes from each breakout's boost converter, which runs
+  whenever 3.3 V is present; the firmware cannot switch it. At boot the
+  firmware pulses reset, initialises and clears each panel, waits 100 ms and
+  turns the display on. It does not follow the SSD1309 datasheet order (VCC on
+  after init; display off, VCC off, then VDD off at power-down), which is how
+  hobby modules are normally run. A custom adapter with a boost enable pin
+  could add that; panel VCC must float, not be grounded, when off.
 
 ## IMU
 
 Default: MPU-6050 on a GY-521 module at I2C address 0x68 (0x69 with AD0 high).
 The part is end-of-life at TDK and modules are often clone dies; the driver
 checks WHO_AM_I (0x68 genuine; 0x98 and 0x72 clones are accepted with a
-warning) and the firmware's `status` shows the raw vector, whose magnitude at
-rest should be 0.95-1.05 g.
+warning). Clone dies are 6500-family parts whose accelerometer low-pass sits
+in ACCEL_CONFIG2, so the driver sets it there too, and uses their own
+temperature formula. `status` shows the raw vector and |a|, which should be
+0.95-1.05 g at rest. A sensor that stops answering, or returns all zeros
+(it reset into sleep), is marked lost after 10 bad samples; the display then
+shows 0 g and the firmware re-initialises the bus and sensor every second.
 
 Configuration used (`src/imu_mpu6050.cpp`): reset, PLL clock from the X gyro,
 all axes on, DLPF 44 Hz, 200 Hz output, +/-4 g (vertical bumps exceed 2 g and
@@ -109,7 +124,11 @@ order is 25 Hz at idle. 4 Hz gives about 56 ms of lag, -16 dB at 10 Hz and
 -33 dB at 25 Hz.
 
 Mount the sensor rigidly (soft mounts resonate), away from the sun, and allow
-a minute of warm-up before `cal rest`. Zero-g drift with temperature is tens of
+a minute of warm-up before `cal rest`. Tell the firmware which sensor axis
+faces the windshield first (`cal fwd`): the default `+z` suits a board standing
+upright; a GY-521 lying flat has +Z up and needs one of `+x -x +y -y`. If the
+hint is within 30 degrees of vertical, `cal rest` sets only "up" and asks for
+`cal brake`, which measures forward from a straight, firm stop. Zero-g drift with temperature is tens of
 mg, which shows as a permanent small lean of the liquid; `zero on` enables a
 slow re-zero of the horizontal axes while the car is provably still.
 

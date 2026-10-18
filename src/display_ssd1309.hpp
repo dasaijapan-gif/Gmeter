@@ -21,9 +21,14 @@ class PanelStack {
 
   // Configures GPIOs, pulses reset, initialises every panel and clears them.
   void begin();
-  // Re-sends the init sequence (write-only bus: a panel scrambled by EMI
-  // cannot report it, so call this periodically or on demand).
+  // Hard reset: pulses RES, re-sends the init sequence, clears GDDRAM and
+  // waits 100 ms before display-on. The panels go dark for about 0.12 s.
   void reinit();
+  // Soft refresh: re-sends every register (contrast, remap, addressing...)
+  // without reset, clear or delay, so nothing visibly blinks. The bus is
+  // write-only, so a panel scrambled by EMI cannot report it; call this
+  // periodically.
+  void refresh();
 
   // Uploads all layers. Blocks for the SPI transfer.
   void writeFrame(const gm::VoxelFrame& frame);
@@ -34,7 +39,8 @@ class PanelStack {
   void setContrastRamp(uint8_t front, uint8_t back);
   void setInverted(bool on);
   void setDisplayOn(bool on);
-  // Lights panel `panel` entirely (all others dark) and shows its index on it.
+  // Draws a double border, the panel index and the layer it maps to on panel
+  // `panel`; all other panels go dark.
   void testPattern(int panel);
 
   uint32_t lastTransferUs() const { return lastTransferUs_; }
@@ -47,6 +53,7 @@ class PanelStack {
   uint32_t lastTransferUs_ = 0;
 
   void initPanel(int panel);
+  size_t buildInit(int panel, uint8_t* out, bool includeDisplayOff) const;
   void command(int panel, const uint8_t* bytes, size_t n);
   void command1(int panel, uint8_t b) { command(panel, &b, 1); }
   void data(int panel, const uint8_t* bytes, size_t n);

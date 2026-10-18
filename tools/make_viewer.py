@@ -16,6 +16,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLACEHOLDER = "__GMV_B64__"
+SKELETON = ('<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n')
+
+
+def standalone(html):
+    """The templates omit the document skeleton (the artifact host adds one);
+    add it for pages opened straight from disk."""
+    return html if html.lstrip().lower().startswith("<!doctype") else SKELETON + html + "\n</html>\n"
 
 
 def main():
@@ -34,7 +42,7 @@ def main():
     template = Path(args.template).read_text(encoding="utf-8")
     if PLACEHOLDER not in template:
         sys.exit(f"template has no {PLACEHOLDER} placeholder")
-    html = template.replace(PLACEHOLDER, b64)
+    html = standalone(template.replace(PLACEHOLDER, b64))
     size_mb = len(html.encode("utf-8")) / 1e6
     if size_mb > args.max_mb:
         sys.exit(f"page would be {size_mb:.1f} MB (> {args.max_mb} MB); record fewer frames or a lower --fps")

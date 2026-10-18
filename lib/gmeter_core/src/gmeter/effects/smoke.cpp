@@ -10,11 +10,11 @@ SmokeEffect::SmokeEffect() {
   params_.add("wind", &wind_, 0.0f, 200.0f, "cells/s^2 per g");
   params_.add("buoyancy", &buoyancy_, 0.0f, 50.0f, "rise per unit density");
   params_.add("emit", &emit_, 0.0f, 200.0f, "emitter density/s");
-  params_.add("emit_r", &emitRadius_, 0.5f, 4.0f, "emitter radius cells");
+  params_.add("emit_r", &emitRadius_, 0.75f, 4.0f, "emitter radius cells");
   params_.add("emit_d", &emitDepth_, 0.5f, 4.0f, "emitter half-depth layers");
   params_.add("dissipate", &dissipation_, 0.0f, 5.0f, "density decay 1/s");
   params_.add("iters", &iters_, 1.0f, 30.0f, "pressure solver iterations");
-  params_.add("rate", &rateHz_, 5.0f, 120.0f, "physics steps per second");
+  params_.add("rate", &rateHz_, 20.0f, 120.0f, "physics steps per second (20 minimum)");
   params_.add("gain", &gain_, 0.1f, 10.0f, "density to brightness");
   params_.add("swirl", &swirl_, 0.0f, 20.0f, "emitter turbulence");
 }
@@ -45,6 +45,7 @@ void SmokeEffect::reset() {
   std::memset(u0_, 0, bytes); std::memset(v0_, 0, bytes); std::memset(w0_, 0, bytes);
   std::memset(d_, 0, bytes); std::memset(d0_, 0, bytes);
   accum_ = 0.0f;
+  sinceStep_ = 0.0f;
 }
 
 float SmokeEffect::totalDensity() const {
@@ -156,13 +157,18 @@ void SmokeEffect::project(float* u, float* v, float* w, float* p, float* div) {
 
 void SmokeEffect::update(const EffectContext& ctx) {
   if (!d_) allocate(), reset();
-  // Run the solver at rateHz_ regardless of the render rate; the dithered
-  // rasterisation hides the lower physics rate.
+  // Run the solver at rateHz_ regardless of the render rate (the dithered
+  // rasterisation hides the lower physics rate). The schedule keeps its
+  // remainder so the step rate is exact; each step advances by the real time
+  // since the previous one, capped at 1/20 s for stability.
   accum_ += ctx.dt;
+  sinceStep_ += ctx.dt;
   const float period = 1.0f / rateHz_;
   if (accum_ < period) return;
-  const float dt = std::min(accum_, 1.0f / 20.0f);
-  accum_ = 0.0f;
+  accum_ -= period;
+  if (accum_ > period) accum_ = 0.0f;  // drop backlog after a stall
+  const float dt = std::min(sinceStep_, 1.0f / 20.0f);
+  sinceStep_ = 0.0f;
   const Vec3 inertial = ctx.g.inertial();
 
   // Forces. A uniform body force on a closed box is a pure pressure gradient

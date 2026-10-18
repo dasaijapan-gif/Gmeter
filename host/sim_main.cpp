@@ -12,6 +12,7 @@
 //             frames x { f32 lat, f32 vert, f32 lon, u8 frame[w*h/8*d] }
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -45,6 +46,7 @@ struct Options {
   float cutoffHz = 4.0f;
   float noiseG = 0.02f;
   bool readout = false;
+  bool brakeCal = true;
   bool allowFade = false;
 };
 
@@ -62,7 +64,19 @@ void usage() {
       "  --mount YAW,TILT       simulated sensor mounting error in degrees (default 15,25)\n"
       "  --noise G              sensor noise amplitude in g (default 0.02)\n"
       "  --cutoff HZ            estimator low-pass cutoff (default 4)\n"
-      "  --readout              overlay the numeric g readout on every effect\n");
+      "  --readout              overlay the numeric g readout on every effect\n"
+      "  --no-brake-cal         skip the simulated braking calibration (shows the mount yaw error)\n");
+}
+
+// Whole-token, finite numbers only; anything else exits with status 2.
+float num(const char* s, const char* what) {
+  char* end = nullptr;
+  const float v = std::strtof(s, &end);
+  if (end == s || *end != '\0' || !std::isfinite(v)) {
+    std::fprintf(stderr, "%s: not a number: '%s'\n", what, s);
+    std::exit(2);
+  }
+  return v;
 }
 
 std::vector<std::string> split(const std::string& s) {
@@ -86,22 +100,25 @@ bool parse(int argc, char** argv, Options& o) {
     };
     if (a == "--effect") o.effects = split(need("--effect"));
     else if (a == "--scenario") o.scenarios = split(need("--scenario"));
-    else if (a == "--fps") o.fps = std::strtof(need("--fps"), nullptr);
-    else if (a == "--seconds") o.seconds = std::strtof(need("--seconds"), nullptr);
+    else if (a == "--fps") o.fps = num(need("--fps"), "--fps");
+    else if (a == "--seconds") o.seconds = num(need("--seconds"), "--seconds");
     else if (a == "--out") o.out = need("--out");
     else if (a == "--ascii") o.ascii = true;
     else if (a == "--bench") o.bench = true;
     else if (a == "--readout") o.readout = true;
-    else if (a == "--noise") o.noiseG = std::strtof(need("--noise"), nullptr);
-    else if (a == "--cutoff") o.cutoffHz = std::strtof(need("--cutoff"), nullptr);
+    else if (a == "--noise") o.noiseG = num(need("--noise"), "--noise");
+    else if (a == "--cutoff") o.cutoffHz = num(need("--cutoff"), "--cutoff");
+    else if (a == "--no-brake-cal") o.brakeCal = false;
     else if (a == "--mount") {
       std::vector<std::string> v = split(need("--mount"));
-      if (v.size() == 2) { o.mountYawDeg = std::strtof(v[0].c_str(), nullptr); o.mountTiltDeg = std::strtof(v[1].c_str(), nullptr); }
+      if (v.size() != 2) { std::fprintf(stderr, "--mount needs YAW,TILT\n"); std::exit(2); }
+      o.mountYawDeg = num(v[0].c_str(), "--mount yaw");
+      o.mountTiltDeg = num(v[1].c_str(), "--mount tilt");
     } else if (a == "--param") {
       std::string kv = need("--param");
       size_t eq = kv.find('=');
       if (eq == std::string::npos) { std::fprintf(stderr, "bad --param %s\n", kv.c_str()); return false; }
-      o.params.emplace_back(kv.substr(0, eq), std::strtof(kv.c_str() + eq + 1, nullptr));
+      o.params.emplace_back(kv.substr(0, eq), num(kv.c_str() + eq + 1, "--param value"));
     } else if (a == "--help" || a == "-h") { usage(); std::exit(0); }
     else { std::fprintf(stderr, "unknown option %s\n", a.c_str()); usage(); return false; }
   }
@@ -175,8 +192,16 @@ int main(int argc, char** argv) {
     if (!s) { std::fprintf(stderr, "unknown scenario %s\n", n.c_str()); return 2; }
     scenarios.push_back(s);
   }
-  for (Effect* e : chosen)
-    for (auto& kv : opt.params) e->params().set(kv.first.c_str(), kv.second);
+  if (!(opt.fps >= 1.0f && opt.fps <= 1000.0f) || opt.fps != std::floor(opt.fps)) {
+    std::fprintf(stderr, "--fps must be a whole number from 1 to 1000\n");
+    return 2;
+  }
+  if (opt.noiseG < 0.0f || opt.cutoffHz <= 0.0f) { std::fprintf(stderr, "--noise must be >= 0 and --cutoff > 0\n"); return 2; }
+  for (auto& kv : opt.params) {
+    bool used = false;
+    for (Effect* e : chosen) used = e->params().set(kv.first.c_str(), kv.second) || used;
+    if (!used) { std::fprintf(stderr, "--param %s: no chosen effect has that parameter\n", kv.first.c_str()); return 2; }
+  }
 
   if (opt.bench) {
     std::printf("effect      us/update  us/render  us/frame (host; ESP32 is roughly 20-40x slower)\n");
@@ -218,12 +243,21 @@ int main(int argc, char** argv) {
     for (const Scenario* sc : scenarios) {
       Rng rng(1234u);
       GForceEstimator est;
-      est.setNominalForward(Vec3{0, 0, 1});  // sensor +Z nominally forward; the yaw error is calibrated away below
+      est.setNominalForward(Vec3{0, 0, 1});  // sensor +Z nominally forward; off by the mount yaw
       est.setFilter(opt.cutoffHz, opt.sensorHz);
+      // The on-car procedure: rest capture, then a straight braking capture
+      // that measures the real forward axis (removing the mount yaw).
       est.beginRestCalibration();
       GForce rest;
       for (int i = 0; i < 200; ++i) est.feedRestSample(simulateRawSensor(rest, mount.sensorToCar, rng, opt.noiseG));
-      if (!est.finishRestCalibration()) { std::fprintf(stderr, "calibration failed\n"); return 1; }
+      if (!est.finishRestCalibration()) { std::fprintf(stderr, "rest calibration failed\n"); return 1; }
+      if (opt.brakeCal) {
+        GForce brake;
+        brake.proper = GForce::kRestProper() + Vec3{0.0f, 0.0f, -0.6f};
+        Vec3 acc;
+        for (int i = 0; i < 300; ++i) acc += simulateRawSensor(brake, mount.sensorToCar, rng, opt.noiseG);
+        if (!est.calibrateForwardFromBraking(acc / 300.0f)) { std::fprintf(stderr, "brake calibration failed\n"); return 1; }
+      }
       // Settle the filter.
       for (int i = 0; i < 400; ++i) est.update(simulateRawSensor(rest, mount.sensorToCar, rng, opt.noiseG));
 
@@ -236,15 +270,16 @@ int main(int argc, char** argv) {
 
       const float duration = opt.seconds > 0.0f ? opt.seconds : sc->duration();
       const int frames = static_cast<int>(duration * opt.fps);
-      const int sensorPerFrame = std::max(1, static_cast<int>(opt.sensorHz / opt.fps));
+      double ts = 0.0;  // sensor clock: a steady sensorHz stream whatever the frame rate
       std::vector<uint8_t> clip;
       putStr(clip, e->name()); putStr(clip, sc->name()); putU32(clip, static_cast<uint32_t>(frames));
       float nextPreview = 0.0f;
       for (int fi = 0; fi < frames; ++fi) {
         const float t = fi / opt.fps;
-        for (int s = 0; s < sensorPerFrame; ++s) {
-          const GForce truth = sc->at(t + s / opt.sensorHz, nullptr);
-          est.update(simulateRawSensor(truth, mount.sensorToCar, rng, opt.noiseG));
+        const double tFrame = fi / static_cast<double>(opt.fps);
+        while (ts <= tFrame + 1e-9) {
+          est.update(simulateRawSensor(sc->at(static_cast<float>(ts), nullptr), mount.sensorToCar, rng, opt.noiseG));
+          ts += 1.0 / opt.sensorHz;
         }
         const GForce g = est.current();
         eng.step(g, 1.0f / opt.fps);
@@ -264,8 +299,11 @@ int main(int argc, char** argv) {
   if (!opt.out.empty()) {
     FILE* fp = std::fopen(opt.out.c_str(), "wb");
     if (!fp) { std::perror("open"); return 1; }
-    std::fwrite(blob.data(), 1, blob.size(), fp);
-    std::fclose(fp);
+    const size_t wrote = std::fwrite(blob.data(), 1, blob.size(), fp);
+    if (std::fclose(fp) != 0 || wrote != blob.size()) {
+      std::fprintf(stderr, "short write to %s (disk full?)\n", opt.out.c_str());
+      return 1;
+    }
     std::fprintf(stderr, "wrote %s (%zu bytes, %u clips)\n", opt.out.c_str(), blob.size(), clipCount);
   }
   return 0;

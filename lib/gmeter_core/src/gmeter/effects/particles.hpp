@@ -29,7 +29,7 @@ class ParticleEffect : public Effect {
   float tankWidthM_ = 1.0f;
   float drag_ = 0.6f;          // 1/s
   float restitution_ = 0.25f;
-  float pressure_ = 12000.0f;  // stiffness: acceleration = -pressure * grad(max(rho - rho0, 0))
+  float pressure_ = 12000.0f;  // stiffness: acceleration = -(pressure / tank_m) * grad(max(rho - rho0, 0))
   float restDensity_ = 0.5f;   // particles per cell below which there is no repulsion
   float jitter_ = 15.0f;       // random px/s^2 to keep the pile alive
   float dotSize_ = 1.0f;

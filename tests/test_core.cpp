@@ -546,6 +546,119 @@ TEST(anim_degenerate_assets) {
   CHECK(f.countLit() == 0);
 }
 
+// ---- review regressions --------------------------------------------------------------------
+TEST(calibration_matches_a_physical_right_handed_sensor) {
+  // A GY-521 lying flat: chip +Z up, chip +Y toward the windshield, so chip +X
+  // (= Y x Z for a right-handed sensor) points to the car's right. These raw
+  // vectors are written from physics, not produced by makeCalibration.
+  GForceEstimator est;
+  est.setNominalForward(Vec3{0, 1, 0});
+  est.setFilter(0.0f, 200.0f);  // pass-through for exact numbers
+  est.beginRestCalibration();
+  for (int i = 0; i < 50; ++i) est.feedRestSample(Vec3{0, 0, 1});
+  CHECK(est.finishRestCalibration());
+  CHECK(est.forwardTrusted());
+  GForce g;
+  for (int i = 0; i < 5; ++i) g = est.update(Vec3{0.5f, 0, 1});   // right turn: pushed toward +X
+  CHECK_NEAR(g.lateralG(), 0.5f, 1e-4f);
+  CHECK_NEAR(g.longitudinalG(), 0.0f, 1e-4f);
+  for (int i = 0; i < 5; ++i) g = est.update(Vec3{0, -0.5f, 1});  // braking: pushed toward -Y
+  CHECK_NEAR(g.longitudinalG(), -0.5f, 1e-4f);
+  CHECK_NEAR(g.lateralG(), 0.0f, 1e-4f);
+  CHECK(g.inertial().z > 0.0f);  // loose objects go toward the windshield
+  // Upright board facing forward (chip +Z forward, +Y up, so +X = Y x Z = left).
+  GForceEstimator up;
+  up.setNominalForward(Vec3{0, 0, 1});
+  up.setFilter(0.0f, 200.0f);
+  up.beginRestCalibration();
+  for (int i = 0; i < 50; ++i) up.feedRestSample(Vec3{0, 1, 0});
+  CHECK(up.finishRestCalibration());
+  for (int i = 0; i < 5; ++i) g = up.update(Vec3{-0.4f, 1, 0});  // right turn: toward the car's right = chip -X
+  CHECK_NEAR(g.lateralG(), 0.4f, 1e-4f);
+}
+
+TEST(calibration_vertical_hint_needs_braking) {
+  GForceEstimator est;
+  est.setNominalForward(Vec3{0, 0, 1});  // default hint, but the board lies flat (+Z up)
+  est.setFilter(0.0f, 200.0f);
+  est.beginRestCalibration();
+  for (int i = 0; i < 50; ++i) est.feedRestSample(Vec3{0.02f, 0.01f, 1.0f});
+  CHECK(est.finishRestCalibration());  // up is known...
+  CHECK(!est.forwardTrusted());        // ...but forward is not
+  CHECK(!GForceEstimator::makeCalibration(Vec3{0, 0, 1}, Vec3{0.3f, 0, 1}).valid);  // 17 deg from vertical
+  // A firm straight brake: chip +Y toward the windshield, so braking pushes -Y.
+  Vec3 brake{0.0f, -0.5f, 1.0f};
+  CHECK(est.calibrateForwardFromBraking(brake));
+  CHECK(est.forwardTrusted());
+  GForce g;
+  for (int i = 0; i < 5; ++i) g = est.update(Vec3{0.5f, 0, 1});
+  CHECK_NEAR(g.lateralG(), 0.5f, 0.03f);
+  // A rejected rest capture keeps the previous calibration.
+  const Mat3 before = est.calibration().sensorToCar;
+  est.beginRestCalibration();
+  for (int i = 0; i < 50; ++i) est.feedRestSample(Vec3{0.5f, 1.3f, 0.2f});
+  CHECK(!est.finishRestCalibration());
+  CHECK_NEAR(est.calibration().sensorToCar.m[2][1], before.m[2][1], 1e-6f);
+}
+
+TEST(params_and_clamp_reject_nan) {
+  CHECK_NEAR(clampf(std::nanf(""), 1.0f, 2.0f), 1.0f, 0.0f);
+  CHECK_NEAR(clampf(5.0f, 1.0f, 2.0f), 2.0f, 0.0f);
+  SmokeEffect smoke;
+  CHECK(!smoke.params().set("iters", std::nanf("")));
+  CHECK(!smoke.params().set("iters", INFINITY));
+  float v = 0;
+  smoke.params().get("iters", v);
+  CHECK(std::isfinite(v));
+}
+
+TEST(slosh_stays_stable_when_substeps_are_capped) {
+  SloshEffect slosh;
+  slosh.params().set("tank_m", 0.1f);      // fast waves
+  slosh.params().set("substeps", 2.0f);    // tight cost cap
+  slosh.params().set("damping", 0.0f);
+  slosh.activate();
+  EffectContext ctx; ctx.dt = 1.0f / 15.0f;
+  const Scenario& drive = *Scenario::find("slalom");
+  float worst = 0.0f;
+  for (float t = 0.0f; t < drive.duration(); t += ctx.dt) {
+    ctx.g = drive.at(t);
+    slosh.update(ctx);
+    for (int z = 0; z < SloshEffect::NZ; ++z)
+      for (int x = 0; x < SloshEffect::NX; ++x) worst = std::max(worst, slosh.height(x, z));
+  }
+  CHECK(std::isfinite(worst));
+  CHECK(worst < kH * 1.6f);
+  // Runtime fill change takes effect.
+  SloshEffect s2;
+  s2.activate();
+  const float v0 = s2.totalVolume();
+  s2.params().set("fill", 0.2f);
+  EffectContext c2; c2.dt = 1.0f / 60.0f;
+  for (int i = 0; i < 180; ++i) s2.update(c2);
+  CHECK(s2.totalVolume() < v0 * 0.6f);
+}
+
+TEST(voxel_clipping_edges) {
+  VoxelFrame f;
+  f.hline(0, 200, 300, 5);
+  f.hline(0, -50, -10, 5);
+  f.fillRect(0, -10, -10, -5, -5);
+  f.fillRect(0, 130, 60, 140, 70);
+  f.vline(0, 5, -1000000, -10);
+  CHECK(f.countLit() == 0);
+  f.line(0, -300, 10, 300, 10);
+  CHECK(f.countLitLayer(0) == kW);
+  f.clear();
+  f.vline(0, 3, -100000, 100000);
+  CHECK(f.countLit() == kH);
+  f.clearBox(0, 0, kW - 1, kH - 1);
+  CHECK(f.countLit() == 0);
+  // A ball centred exactly between two layers is still drawn.
+  f.sphere(Vec3{0, 0, 0}, 5.0f, 0.3f * kLayerPitchPx);
+  CHECK(f.countLit() > 0);
+}
+
 int main() {
   for (const Test& t : tests()) {
     gCurrent = t.name;

@@ -20,7 +20,9 @@ struct Settings {
 
 namespace storage {
 
-bool load(Settings& settings, gm::Calibration& calibration);
+// `migrated` (optional) reports a calibration saved by an older firmware whose
+// left/right axis was mirrored and has been corrected on load.
+bool load(Settings& settings, gm::Calibration& calibration, bool* migrated = nullptr);
 bool save(const Settings& settings, const gm::Calibration& calibration);
 bool clear();
 gm::Vec3 forwardAxisVector(uint8_t index);

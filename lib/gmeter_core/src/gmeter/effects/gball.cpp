@@ -13,7 +13,7 @@ GBallEffect::GBallEffect() {
   params_.add("hz", &naturalHz_, 0.3f, 8.0f, "spring natural frequency");
   params_.add("zeta", &damping_, 0.2f, 2.0f, "spring damping ratio (1 = critical)");
   params_.add("radius", &radius_, 1.0f, 16.0f, "ball radius px");
-  params_.add("depth_r", &depthRadiusLayers_, 0.3f, 4.0f, "ball half-depth in layers");
+  params_.add("depth_r", &depthRadiusLayers_, 0.6f, 4.0f, "ball half-depth in layers");
   params_.add("trail_s", &trailSeconds_, 0.0f, 4.0f, "trail persistence seconds");
   params_.add("trail_i", &trailIntensity_, 0.0f, 1.0f, "trail brightness");
   params_.add("inertia", &followInertia_, 0.0f, 1.0f, "1 = ball is thrown like a loose object");
@@ -50,9 +50,12 @@ void GBallEffect::update(const EffectContext& ctx) {
 
   // Trail bookkeeping: sample at ~40 Hz, age out.
   for (int i = 0; i < trailCount_; ++i) trailAge_[i] += ctx.dt;
+  // Space samples so the ring buffer spans the whole trail length.
   trailTimer_ += ctx.dt;
-  if (trailSeconds_ > 0.0f && trailTimer_ >= 0.025f) {
-    trailTimer_ = 0.0f;
+  const float interval = std::max(0.025f, trailSeconds_ / static_cast<float>(kTrailMax - 1));
+  if (trailSeconds_ > 0.0f && trailTimer_ >= interval) {
+    trailTimer_ -= interval;
+    if (trailTimer_ > interval) trailTimer_ = 0.0f;
     trail_[trailHead_] = spring_.pos();
     trailAge_[trailHead_] = 0.0f;
     trailHead_ = (trailHead_ + 1) % kTrailMax;
@@ -84,17 +87,20 @@ void GBallEffect::render(VoxelFrame& f) {
   f.sphere(pos, radius_, depthRadiusLayers_ * kLayerPitchPx, 1.0f);
 
   if (rings_ > 0.5f) {
-    // Reference ellipses (0.5 g and 1 g lateral/vertical) on the front layer,
-    // dithered dim so they do not compete with the ball.
+    // Reference ellipses at 0.5 g and 1 g on the front layer, using the same
+    // per-axis mapping as the ball (clipped where they leave the panel), drawn
+    // as sparse dashes so they stay dim but legible.
     const Vec3 tr = travel();
     const Vec3 c = VoxelFrame::worldToVoxel(Vec3{});
     for (int ring = 1; ring <= 2; ++ring) {
-      const float gval = 0.5f * ring;
-      const float rx = tr.x * gval, ry = tr.y * gval * (verticalScaleG_ / fullScaleG_) * 0.6f + 1.0f;
-      const int n = 48;
-      for (int i = 0; i < n; ++i) {
+      const float gval = 0.5f * static_cast<float>(ring);
+      const float rx = tr.x * gval, ry = tr.y * gval;
+      const float perimeter = kPi * (3.0f * (rx + ry) - std::sqrt((3.0f * rx + ry) * (rx + 3.0f * ry)));
+      const int n = std::max(24, static_cast<int>(perimeter));
+      const int every = ring == 2 ? 3 : 5;
+      for (int i = 0; i < n; i += every) {
         const float a = kTwoPi * static_cast<float>(i) / static_cast<float>(n);
-        f.plot(iround(c.x + rx * std::cos(a)), iround(c.y + ry * std::sin(a)), 0, ring == 2 ? 0.35f : 0.2f);
+        f.set(iround(c.x + rx * std::cos(a)), iround(c.y + ry * std::sin(a)), 0);
       }
     }
     // Reticle ticks.

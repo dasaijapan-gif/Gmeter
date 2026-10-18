@@ -22,9 +22,12 @@ calibration code are exercised exactly as on the car.
 
 ## Frames and conventions
 
-**Car frame** (right-handed): x right, y up, z forward. Forward is "deeper
-into the stack": layer 0 is the panel nearest the driver, layer 7 nearest the
-windshield.
+**Car frame**: x right, y up, z forward. Forward is "deeper into the stack":
+layer 0 is the panel nearest the driver, layer 7 nearest the windshield. Like
+screen coordinates with depth, this frame is left-handed: right = forward x up
+(up x forward points left). The accelerometer is right-handed, so the
+sensor-to-car matrix has determinant -1; `storage::load` converts calibrations
+saved by firmware that got this wrong.
 
 **Voxel frame**: x = column 0..127 (left to right), y = row 0..H-1 (top to
 bottom, screen convention), z = layer 0..7. `VoxelFrame::worldToVoxel` maps a
@@ -52,9 +55,13 @@ from braking would need a gyro-based attitude estimate.
 **Mounting calibration** (`GForceEstimator`): average the rest vector to get
 "up" in the sensor frame; take a nominal forward axis (sensor +z by default,
 `cal fwd`), remove its component along "up" (Gram-Schmidt), and build the
-rotation with rows right = up x forward, up, forward. A braking capture
-replaces the nominal axis with minus the mean dynamic vector during braking,
-which fixes any yaw error of the mount.
+matrix with rows right = forward x up, up, forward. A hint within 30 degrees
+of vertical is rejected: the rest capture then fixes only "up" and reports
+that forward is unknown. A braking capture replaces the hint with minus the
+horizontal part of the raw braking vector, which fixes any yaw error of the
+mount and works after a reboot (it needs no stored rest vector). After a
+reboot the calibrated forward axis becomes the hint, so a later `cal rest`
+keeps a braking-refined forward.
 
 ## Voxel frame layout
 
@@ -92,12 +99,21 @@ numeric readout on the front layer.
 
 Frames are triple-buffered: the renderer writes to the buffer that is neither
 displaying nor queued; if the display falls behind, the newest frame wins and
-`status` counts the drop. Shared state (g vector, buffer indices) is protected
-by a spinlock; floats are never touched in an ISR.
+`status` counts the drop. The g vector, source and buffer indices are shared
+under a spinlock (`gMux`). The Engine and its effects are guarded by a FreeRTOS
+mutex: `renderTask` holds it while stepping, and the CLI and mode button hold
+it while they change modes or parameters, so a mode switch can never race a
+step (smoke allocates and frees its buffers on activate/deactivate). The
+estimator has its own mutex between `imuTask` and the CLI. Floats are never
+touched in an ISR.
 
-Memory (128x56x8): three engine frames and three transfer buffers at 7 KB
-each, slosh ~10 KB, particles ~17 KB, smoke 58 KB on the heap only while active
-(16x8x8 grid on classic ESP32; 24x12x8 fits an S3).
+Memory (128x56x8): about 96 KB of static RAM. Three engine frames, three
+transfer buffers and two display-driver scratch frames (clear and test
+pattern) at 7 KB each; slosh ~11.5 KB and particles ~23 KB as static objects;
+the other effects ~4 KB together. Smoke needs 57.6 KB of heap only while active
+(16x8x8 grid on classic ESP32). On an S3, 32x8x8 (~109 KB) is the next grid
+that tiles a 128x56 panel; it doubles the solver cost, so measure the step time
+first. At 128x64 the frames are 8 KB each and particles ~25 KB.
 
 ## Timing budget (classic ESP32, estimates)
 
@@ -107,17 +123,24 @@ each, slosh ~10 KB, particles ~17 KB, smoke 58 KB on the heap only while active
 | ball / tunnel / sprite | < 1 ms | |
 | slosh (64x8 cells, 1-4 substeps) | ~1-3 ms | render dominates (dithered body) |
 | particles (300, 2 substeps) | ~1-3 ms | |
-| smoke 16x8x8, 6 iterations | ~6-15 ms per step | stepped at 30 Hz, rendered at 60 |
+| smoke 16x8x8, 6 iterations | ~6-15 ms per step | stepped at `rate` (default 30 Hz, minimum 20), rendered every frame |
 
 Host numbers from `gmeter_sim --bench` are roughly 20-40x faster than the
 ESP32; measure on target with `status` (step and SPI microseconds).
 
 ## Compile-time geometry
 
-`GM_PANEL_W`, `GM_PANEL_H` (multiple of 8), `GM_LAYERS`, `GM_LAYER_PITCH_PX`,
-`GM_SMOKE_NX/NY`, `GM_PANEL_MODEL`, `GM_SPI_HZ`, `GM_TARGET_FPS`,
-`GM_PANEL_FLIP_MASK`, `GM_PANELS_REVERSED`. Set them in `platformio.ini` (or
-`-D` on the host CMake). Tests pass at 128x56 and 128x64.
+| Macro | Constraint | Host CMake |
+| --- | --- | --- |
+| `GM_PANEL_W` | must be 128 in the firmware (the driver addresses columns 0..127) | `-DGM_PANEL_W=` |
+| `GM_PANEL_H` | multiple of 8; 56 for the transparent panels, 64 for generic modules | `-DGM_PANEL_H=` |
+| `GM_LAYERS` | 1..8 in the firmware (one chip-select pin per layer) | `-DGM_LAYERS=` |
+| `GM_LAYER_PITCH_PX` | panel spacing in mm / 0.274 | `-DGM_LAYER_PITCH_PX=` |
+| `GM_SMOKE_NX`, `GM_SMOKE_NY` | NX divides the width, NY the height; default 4x4-px cells, ESP32 builds use 16 x 8 | `-DGM_SMOKE_NX=` / `-DGM_SMOKE_NY=` |
+| `GM_PANEL_MODEL`, `GM_SPI_HZ`, `GM_TARGET_FPS`, `GM_PANEL_FLIP_MASK`, `GM_PANELS_REVERSED` | firmware only | n/a |
+
+Set the firmware values in `platformio.ini`. `board_config.hpp` static-asserts
+the width and layer limits. Tests pass at 128x56 and 128x64.
 
 ## Next steps
 

@@ -2,6 +2,7 @@
 // name from the serial CLI, the host simulator's command line, or a web page.
 #pragma once
 
+#include <cmath>
 #include <cstring>
 
 #include "math.hpp"
@@ -31,7 +32,7 @@ class ParamTable {
   }
   bool set(const char* name, float v) {
     const Param* p = find(name);
-    if (!p) return false;
+    if (!p || !std::isfinite(v)) return false;
     *p->value = clampf(v, p->min, p->max);
     return true;
   }

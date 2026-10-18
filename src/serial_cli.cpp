@@ -1,5 +1,6 @@
 #include "serial_cli.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -20,21 +21,60 @@ bool parseOnOff(const char* s, bool& out) {
   if (!strcmp(s, "off") || !strcmp(s, "0") || !strcmp(s, "false")) { out = false; return true; }
   return false;
 }
+bool parseInt(const char* s, int& out) {
+  if (!s || !*s) return false;
+  char* end = nullptr;
+  const long v = strtol(s, &end, 10);
+  if (*end != '\0' || v < -100000 || v > 100000) return false;
+  out = static_cast<int>(v);
+  return true;
+}
+// Commands that touch the Engine or an Effect run under the engine lock.
+bool needsEngine(const char* cmd) {
+  static const char* kCmds[] = {"list", "mode", "get", "set", "cycle", "readout", "anim"};
+  for (const char* c : kCmds)
+    if (!strcmp(cmd, c)) return true;
+  return false;
+}
 }  // namespace
+
+bool SerialCli::parseFloat(const char* s, float& out) {
+  if (!s || !*s) return false;
+  char* end = nullptr;
+  const float v = strtof(s, &end);
+  if (end == s || *end != '\0' || !std::isfinite(v)) return false;
+  out = v;
+  return true;
+}
 
 void SerialCli::poll(Stream& io) {
   while (io.available() > 0) {
     const int c = io.read();
     if (c < 0) break;
-    if (c == '\r') continue;
-    if (c == '\n') {
+    // CR, LF or CRLF end a line (an LF straight after a CR is swallowed).
+    if (c == '\n' && lastCr_) { lastCr_ = false; continue; }
+    lastCr_ = (c == '\r');
+    if (c == '\r' || c == '\n') {
+      io.print("\r\n");
       buf_[len_] = '\0';
-      if (len_ > 0) execute(buf_, io);
+      if (overflow_) io.println("line too long (max 95 characters); ignored");
+      else if (len_ > 0) execute(buf_, io);
       len_ = 0;
+      overflow_ = false;
       io.print("> ");
       continue;
     }
-    if (len_ + 1 < sizeof(buf_)) buf_[len_++] = static_cast<char>(c);
+    if (c == 0x08 || c == 0x7F) {  // backspace / delete
+      if (len_ > 0) { --len_; io.print("\b \b"); }
+      continue;
+    }
+    if (c < 0x20 || c > 0x7E) continue;  // ignore other control bytes
+    if (len_ + 1 < sizeof(buf_)) {
+      buf_[len_++] = static_cast<char>(c);
+      io.write(static_cast<uint8_t>(c));
+    } else {
+      overflow_ = true;
+    }
   }
 }
 
@@ -44,12 +84,12 @@ void SerialCli::help(Print& out) {
   out.println("  list                   effects and demo scenarios");
   out.println("  mode <name|n|next>     switch effect");
   out.println("  get [param]            show current effect parameters");
-  out.println("  set <param> <value>    tune current effect");
+  out.println("  set <param> <value>    tune current effect (RAM only; not kept by save)");
   out.println("  src imu|serial|demo [scenario]   g-force source");
-  out.println("  g <lat> <vert> <lon>   inject g (src serial), in g");
+  out.println("  g <lat> <vert> <lon>   inject g (src serial), in g, +/-8");
+  out.println("  cal fwd <+x|-x|+y|-y|+z|-z>   sensor axis facing the windshield (set before cal rest)");
   out.println("  cal rest               2 s rest capture (car level, parked)");
-  out.println("  cal brake              1.5 s capture while braking straight");
-  out.println("  cal fwd <+x|-x|+y|-y|+z|-z>   sensor axis facing the car's front");
+  out.println("  cal brake              1.5 s capture while braking firmly in a straight line");
   out.println("  cal clear              forget calibration and settings");
   out.println("  zero on|off            slow re-zero while parked");
   out.println("  filter <hz>            low-pass cutoff (3-5 Hz typical)");
@@ -59,8 +99,8 @@ void SerialCli::help(Print& out) {
   out.println("  invert on|off          inverted pixels");
   out.println("  anim <state|auto>      pin the animation clip: idle accelerate brake left right bump");
   out.println("  test [n]               light panel n with its index (no arg: back to normal)");
-  out.println("  reinit                 re-send panel init");
-  out.println("  save                   persist settings + calibration");
+  out.println("  reinit [minutes]       hard reset the panels now, or set the periodic refresh (0 = off)");
+  out.println("  save                   persist mode, display, filter, axis and calibration");
   out.println("  reboot");
 }
 
@@ -77,6 +117,21 @@ void SerialCli::listParams(Print& out) {
 }
 
 void SerialCli::execute(char* line, Print& out) {
+  // Peek at the command word to decide whether the engine lock is needed.
+  char word[12] = {0};
+  {
+    const char* p = line;
+    while (*p == ' ' || *p == '\t') ++p;
+    size_t n = 0;
+    while (p[n] && p[n] != ' ' && p[n] != '\t' && n + 1 < sizeof(word)) { word[n] = p[n]; ++n; }
+  }
+  const bool lock = needsEngine(word);
+  if (lock) app_.lockEngine();
+  run(line, out);
+  if (lock) app_.unlockEngine();
+}
+
+void SerialCli::run(char* line, Print& out) {
   char* cursor = line;
   const char* cmd = nextToken(cursor);
   if (!cmd) return;
@@ -97,7 +152,7 @@ void SerialCli::execute(char* line, Print& out) {
   if (!strcmp(cmd, "mode")) {
     if (!a1) { out.println("usage: mode <name|n|next>"); return; }
     if (!strcmp(a1, "next")) { app_.nextMode(); }
-    else if (!app_.setMode(a1)) { out.println("unknown effect"); return; }
+    else if (!app_.setMode(a1)) { out.println("unknown effect (list)"); return; }
     out.printf("mode: %s\n", app_.engine().current()->name());
     return;
   }
@@ -105,15 +160,17 @@ void SerialCli::execute(char* line, Print& out) {
     if (!a1) { listParams(out); return; }
     float v;
     if (app_.engine().current() && app_.engine().current()->params().get(a1, v)) out.printf("%s = %.4f\n", a1, static_cast<double>(v));
-    else out.println("unknown parameter");
+    else out.println("unknown parameter (get)");
     return;
   }
   if (!strcmp(cmd, "set")) {
+    float v = 0.0f;
     if (!a1 || !a2) { out.println("usage: set <param> <value>"); return; }
-    if (app_.engine().setParam(a1, strtof(a2, nullptr))) {
-      float v; app_.engine().current()->params().get(a1, v);
+    if (!parseFloat(a2, v)) { out.println("bad number"); return; }
+    if (app_.engine().setParam(a1, v)) {
+      app_.engine().current()->params().get(a1, v);
       out.printf("%s = %.4f\n", a1, static_cast<double>(v));
-    } else out.println("unknown parameter (try: get)");
+    } else out.println("unknown parameter (get)");
     return;
   }
   if (!strcmp(cmd, "src")) {
@@ -121,42 +178,69 @@ void SerialCli::execute(char* line, Print& out) {
     return;
   }
   if (!strcmp(cmd, "g")) {
-    if (!a1 || !a2 || !a3) { out.println("usage: g <lat> <vert> <lon>"); return; }
-    app_.injectG(strtof(a1, nullptr), strtof(a2, nullptr), strtof(a3, nullptr));
+    float lat, vert, lon;
+    if (!parseFloat(a1, lat) || !parseFloat(a2, vert) || !parseFloat(a3, lon)) { out.println("usage: g <lat> <vert> <lon>"); return; }
+    app_.injectG(lat, vert, lon);
     return;
   }
   if (!strcmp(cmd, "cal")) {
-    if (!a1) { out.println("usage: cal rest|brake|fwd <axis>|clear"); return; }
+    if (!a1) { out.println("usage: cal fwd <axis> | rest | brake | clear"); return; }
     if (!strcmp(a1, "rest") || !strcmp(a1, "brake")) {
-      out.println(app_.startCalibration(a1) ? "capturing..." : "cannot start (imu missing or busy)");
+      const char* why = app_.startCalibration(a1);
+      if (why) out.printf("cannot start: %s\n", why);
+      else out.println(!strcmp(a1, "rest") ? "capturing for 2 s, keep still..." : "capturing for 1.5 s, brake firmly now...");
     } else if (!strcmp(a1, "fwd")) {
-      out.println(app_.setForwardAxis(a2) ? "forward axis set; run cal rest" : "usage: cal fwd +x|-x|+y|-y|+z|-z");
+      out.println(app_.setForwardAxis(a2) ? "forward axis set; now run cal rest" : "usage: cal fwd +x|-x|+y|-y|+z|-z");
     } else if (!strcmp(a1, "clear")) {
       out.println(app_.clearState() ? "cleared; reboot to apply defaults" : "clear failed");
-    } else out.println("usage: cal rest|brake|fwd <axis>|clear");
+    } else out.println("usage: cal fwd <axis> | rest | brake | clear");
     return;
   }
   if (!strcmp(cmd, "zero")) { bool on; if (parseOnOff(a1, on)) app_.setAutoZero(on); else out.println("usage: zero on|off"); return; }
-  if (!strcmp(cmd, "filter")) { if (a1) app_.setFilterHz(strtof(a1, nullptr)); else out.println("usage: filter <hz>"); return; }
+  if (!strcmp(cmd, "filter")) {
+    float hz;
+    if (parseFloat(a1, hz)) app_.setFilterHz(hz); else out.println("usage: filter <hz>");
+    return;
+  }
   if (!strcmp(cmd, "contrast")) {
-    if (!a1 || !a2) { out.println("usage: contrast <n|all> <0-255>"); return; }
-    app_.setContrast(!strcmp(a1, "all") ? -1 : atoi(a1), atoi(a2));
+    int v;
+    if (!a1 || !parseInt(a2, v)) { out.println("usage: contrast <n|all> <0-255>"); return; }
+    int panel = -1;
+    if (strcmp(a1, "all") && !parseInt(a1, panel)) { out.println("usage: contrast <n|all> <0-255>"); return; }
+    app_.setContrast(panel, v);
     return;
   }
   if (!strcmp(cmd, "ramp")) {
-    if (!a1 || !a2) { out.println("usage: ramp <front> <back>"); return; }
-    app_.setContrastRamp(atoi(a1), atoi(a2));
+    int f, b;
+    if (!parseInt(a1, f) || !parseInt(a2, b)) { out.println("usage: ramp <front> <back>"); return; }
+    app_.setContrastRamp(f, b);
     return;
   }
-  if (!strcmp(cmd, "cycle")) { if (a1) app_.setAutoCycle(strtof(a1, nullptr)); else out.println("usage: cycle <seconds>"); return; }
+  if (!strcmp(cmd, "cycle")) {
+    float s;
+    if (parseFloat(a1, s)) app_.setAutoCycle(s); else out.println("usage: cycle <seconds>");
+    return;
+  }
   if (!strcmp(cmd, "readout")) { bool on; if (parseOnOff(a1, on)) app_.setReadout(on); else out.println("usage: readout on|off"); return; }
   if (!strcmp(cmd, "invert")) { bool on; if (parseOnOff(a1, on)) app_.setInvert(on); else out.println("usage: invert on|off"); return; }
   if (!strcmp(cmd, "anim")) {
     if (!app_.pinAnimState(a1)) out.println("usage: anim idle|accelerate|brake|left|right|bump|auto");
     return;
   }
-  if (!strcmp(cmd, "test")) { app_.testPattern(a1 ? atoi(a1) : -1); return; }
-  if (!strcmp(cmd, "reinit")) { app_.reinitPanels(); out.println("panels re-initialised"); return; }
+  if (!strcmp(cmd, "test")) {
+    int n = -1;
+    if (a1 && !parseInt(a1, n)) { out.println("usage: test [panel]"); return; }
+    app_.testPattern(n);
+    return;
+  }
+  if (!strcmp(cmd, "reinit")) {
+    if (!a1) { app_.reinitPanels(); out.println("panels reset and re-initialised"); return; }
+    int m;
+    if (!parseInt(a1, m) || m < 0 || m > 255) { out.println("usage: reinit [minutes 0-255]"); return; }
+    app_.setRefreshMinutes(m);
+    out.printf("periodic refresh: %s\n", m ? "on" : "off");
+    return;
+  }
   if (!strcmp(cmd, "save")) { out.println(app_.saveState() ? "saved" : "save failed"); return; }
   if (!strcmp(cmd, "reboot")) { app_.reboot(); return; }
   out.println("unknown command (help)");

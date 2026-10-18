@@ -16,8 +16,8 @@ the car.
   layer      0        1        2        3        4        5        6        7
           +------+ +------+ +------+ +------+ +------+ +------+ +------+ +------+
           |      | |      | |      | |      | |      | |      | |      | |      |
-          |  ::  | |  :.  | | :..  | | ...  | | ...  | | ..   | | .    | |      |   braking: liquid
-          |______| |______| |______| |______| |______| |______| |______| |______|   surges forward
+          |      | |  .   | | ..   | | ...  | | ...  | | :..  | |  :.  | |  ::  |   braking: liquid
+          |______| |______| |______| |______| |______| |______| |______| |______|   surges forward (to windshield)
 ```
 
 ## What is in the repository
@@ -55,19 +55,25 @@ Open `gmeter_studio.html` in a browser. It has three parts:
   with g. **Copy C++ header** produces `src/user_animation.hpp`; rebuild the
   firmware and the `anim` effect plays your artwork on the car.
 
-Every effect in the viewport is the firmware's own C++ code, so tuning done in
-the Studio carries over: the Effect tab prints the matching serial commands.
+Every effect in the viewport is the firmware's own C++ code (built with the
+same 16 x 8 smoke grid as the ESP32), so tuning done in the Studio carries
+over: the Effect tab prints the matching serial commands. The output is a
+standalone page; `--bare` leaves out the document skeleton for hosts that add
+their own.
 
 ## Quick start without hardware
 
 Everything runs on a PC first. The simulator feeds scripted drives through a
-simulated, misaligned, noisy accelerometer, the real calibration and filtering
-code, and the real effects, then records the voxel frames.
+simulated, misaligned, noisy accelerometer, the real calibration (rest plus
+braking capture, as on the car) and filtering code, and the real effects, then
+records the voxel frames. `--no-brake-cal` shows what the mount's yaw error
+does without the braking capture.
 
 ```sh
 cd host && mkdir -p build && cd build
 cmake -G Ninja -DGM_PANEL_H=56 .. && ninja
-./gmeter_tests                                   # 170+ checks on the core
+ninja firmware_hostcheck                         # compile-check src/ against Arduino stubs
+./gmeter_tests                                   # 200+ checks on the core
 ./gmeter_sim --effect slosh --scenario corner --ascii    # terminal preview
 ./gmeter_sim --effect all --scenario drive --out frames.bin
 python3 ../../tools/make_viewer.py frames.bin -o gmeter_viewer.html   # open in a browser
@@ -92,15 +98,32 @@ pio device monitor                 # 115200 baud, type `help`
 
 Environments: `esp32dev` (default), `esp32-s3`, `esp32dev-128x64` (generic
 SSD1309 modules). Pins live in `src/board_config.hpp`; panel geometry and
-model are `-D` flags in `platformio.ini`.
+model are `-D` flags in `platformio.ini`. On the ESP32-S3-DevKitC-1 the serial
+CLI is on the connector labelled UART; the native USB connector only flashes.
 
 First power-up with an IMU connected:
 
-1. Park on level ground, type `cal rest` (holds still for 2 s).
-2. Optional but recommended: drive straight, type `cal brake` and brake
-   firmly for 1.5 s. This measures which way is forward instead of trusting
-   the mounting hint (`cal fwd +z` style).
-3. `save`.
+1. Tell the firmware which sensor axis points at the windshield:
+   `cal fwd <+x|-x|+y|-y|+z|-z>`. The default `+z` only fits a board standing
+   upright with its Z axis forward. A GY-521 lying flat has +Z up, so use the
+   in-plane axis that faces forward (for example `cal fwd +y`).
+2. Park on level ground and type `cal rest` (hold still for 2 s). If the
+   forward hint points up or down, the rest capture still sets "up" but
+   reports that forward is unknown; step 3 then is required.
+3. Recommended: drive straight, type `cal brake` and brake firmly for 1.5 s.
+   This measures forward directly and removes any yaw in the mount. Run it
+   again after any new `cal rest`.
+4. `save`.
+
+`save` stores the mode, contrast ramp, readout, invert, forward axis,
+auto-zero, filter, auto-cycle, panel refresh interval and the calibration.
+`set` changes to effect parameters are RAM-only and revert on reboot; to keep
+tuned values, change the effect's defaults in its source (or export them from
+the Studio's serial commands and apply after boot).
+
+If the IMU drops out (loose connector, brownout), the display relaxes to 0 g
+and the firmware retries every second; `status` shows the state. An IMU that
+appears after boot is picked up automatically.
 
 Without an IMU the firmware boots into a demo drive so the panels can be
 checked on the bench. `tools/serial_gforce.py /dev/ttyUSB0 --scenario slalom`
@@ -108,13 +131,17 @@ pushes synthetic g over USB; `src serial` + `g 0.3 0 -0.5` does it by hand.
 
 Serial commands worth knowing: `mode slosh`, `get`, `set damping 0.3`,
 `contrast all 128`, `ramp 60 255`, `test 3`, `status`, `cycle 20`,
-`anim brake` (pin an animation clip on the bench; `anim auto` releases it).
+`anim brake` (pin an animation clip on the bench; `anim auto` releases it),
+`reinit` (hard-reset the panels) and `reinit 10` (soft refresh every 10 min).
+The CLI echoes what you type, accepts backspace and any line ending.
 The BOOT button steps through effects; holding it two seconds starts a rest
 calibration.
 
 ## Conventions in one paragraph
 
-Car frame: x right, y up, z forward (deeper into the stack). The accelerometer
+Car frame: x right, y up, z forward (deeper into the stack). This frame is
+left-handed, so right = forward x up; the calibration builds it that way from
+the right-handed sensor. The accelerometer
 measures *proper acceleration*: at rest (0, +1, 0) g. Everything simulated
 feels the body force **minus** that vector, so braking throws the liquid, the
 ball and the smoke toward the windshield (higher layer index) and a right turn
@@ -126,8 +153,14 @@ the single source of truth; `docs/ARCHITECTURE.md` has the derivation.
 - Core library: unit-tested on the host at both 128x56 and 128x64 geometry.
   Verified behaviours include volume conservation and the equilibrium tilt of
   the liquid, correct direction of every effect under braking and cornering,
-  calibration recovery from a tilted, yawed sensor mount, and frame byte layout
-  matching the SSD130x page format.
+  calibration against physically specified sensor readings (a flat GY-521
+  with +Y forward must read a right turn as +lateral), recovery from a tilted,
+  yawed mount, and frame byte layout matching the SSD130x page format.
+- Reviewed by an adversarial multi-agent pass; the confirmed findings (among
+  them a mirrored lateral axis in the calibration, a render/CLI race on the
+  engine and an IMU dropout that froze the display) are fixed, with
+  regression tests where they are testable on a PC. A calibration saved by
+  firmware before that fix is corrected automatically on boot.
 - Firmware: compiles against host stubs; the ESP32 toolchain could not be run
   in the environment where this was written, so the first on-target build and
   the panel init sequence still need a real board. Register values, timing

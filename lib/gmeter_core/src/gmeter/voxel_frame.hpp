@@ -78,6 +78,8 @@ class VoxelFrame {
 
   // Tiny 3x5 font for HUD text; returns advance in pixels.
   int text(int z, int x, int y, const char* s);
+  // Clears a box through every layer (e.g. behind HUD text so it stays legible).
+  void clearBox(int x0, int y0, int x1, int y1);
 
   // ---- world <-> voxel mapping ------------------------------------------------
   // World frame = car frame in pixel units, origin at the volume centre:

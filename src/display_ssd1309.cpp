@@ -86,23 +86,56 @@ void PanelStack::reinit() {
   setDisplayOn(true);
 }
 
+// Copies the init table for one panel, patching its contrast, orientation and
+// inversion. Every command's argument bytes are skipped explicitly so a
+// parameter that happens to equal an opcode is never rewritten.
+size_t PanelStack::buildInit(int panel, uint8_t* out, bool includeDisplayOff) const {
+  const bool flipped = (GM_PANEL_FLIP_MASK >> panel) & 1;
+  size_t n = 0;
+  for (size_t i = 0; i < sizeof(kInit); ++i) {
+    const uint8_t op = kInit[i];
+    // Argument counts for the opcodes used in the tables.
+    int args = 0;
+    switch (op) {
+      case 0xFD: case 0xD5: case 0xA8: case 0xD3: case 0x20: case 0xDA: case 0x81: case 0xD9: case 0xDB: case 0x8D: args = 1; break;
+      default: args = 0; break;
+    }
+    if (op == 0xAE && !includeDisplayOff) continue;
+    uint8_t v = op;
+    if (op == 0xA1 || op == 0xA0) v = flipped ? 0xA0 : 0xA1;
+    else if (op == 0xC8 || op == 0xC0) v = flipped ? 0xC0 : 0xC8;
+    else if (op == 0xA6 || op == 0xA7) v = inverted_ ? 0xA7 : 0xA6;
+    out[n++] = v;
+    for (int a = 0; a < args && i + 1 < sizeof(kInit); ++a) {
+      ++i;
+      out[n++] = op == 0x81 ? contrast_[panel] : kInit[i];
+    }
+  }
+  return n;
+}
+
+void PanelStack::refresh() {
+  uint8_t seq[sizeof(kInit) + 1];
+  spi_->beginTransaction(SPISettings(GM_SPI_HZ, MSBFIRST, SPI_MODE0));
+  for (int p = 0; p < kPanels; ++p) {
+    size_t n = buildInit(p, seq, false);
+    seq[n++] = 0xAF;  // display on (in case a glitch turned it off)
+    command(p, seq, n);
+    setWindow(p, static_cast<uint8_t>(kPages - 1));
+  }
+  spi_->endTransaction();
+}
+
 void PanelStack::initPanel(int panel) {
   uint8_t seq[sizeof(kInit)];
-  memcpy(seq, kInit, sizeof(kInit));
-  const bool flipped = (GM_PANEL_FLIP_MASK >> panel) & 1;
-  for (size_t i = 0; i < sizeof(seq); ++i) {
-    if (seq[i] == 0xA1 && (i == 0 || seq[i - 1] != 0x81)) seq[i] = flipped ? 0xA0 : 0xA1;
-    else if (seq[i] == 0xC8) seq[i] = flipped ? 0xC0 : 0xC8;
-    else if (seq[i] == 0x81 && i + 1 < sizeof(seq)) seq[++i] = contrast_[panel];
-  }
-  command(panel, seq, sizeof(seq));
+  const size_t n = buildInit(panel, seq, true);
+  command(panel, seq, n);
   // Clear the whole 64-row GDDRAM, including pages a 56-row panel never shows.
   static uint8_t zeros[128];
   memset(zeros, 0, sizeof(zeros));
   setWindow(panel, 7);
   for (int page = 0; page < 8; ++page) data(panel, zeros, sizeof(zeros));
   setWindow(panel, static_cast<uint8_t>(kPages - 1));
-  if (inverted_) command1(panel, 0xA7);
 }
 
 void PanelStack::setWindow(int panel, uint8_t lastPage) {
@@ -184,7 +217,9 @@ void PanelStack::testPattern(int panel) {
     char label[16];
     snprintf(label, sizeof(label), "PANEL %d", panel);
     f.text(layer, gm::kW / 2 - 14, gm::kH / 2 - 2, label);
-    f.text(layer, 4, 4, GM_PANELS_REVERSED ? "REV" : "L0 FRONT");
+    char where[16];
+    snprintf(where, sizeof(where), "L%d%s", layer, layer == 0 ? " FRONT" : (layer == kPanels - 1 ? " BACK" : ""));
+    f.text(layer, 4, 4, where);
   }
   writeFrame(f);
 }

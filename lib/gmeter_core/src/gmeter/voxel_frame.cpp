@@ -16,6 +16,7 @@ const uint8_t VoxelFrame::kBayer8[8][8] = {
 void VoxelFrame::hline(int z, int x0, int x1, int y) {
   if (static_cast<unsigned>(z) >= static_cast<unsigned>(D) || static_cast<unsigned>(y) >= static_cast<unsigned>(H)) return;
   if (x0 > x1) std::swap(x0, x1);
+  if (x1 < 0 || x0 >= W) return;
   x0 = clampi(x0, 0, W - 1);
   x1 = clampi(x1, 0, W - 1);
   uint8_t* row = bits_[z] + (y >> 3) * W;
@@ -24,16 +25,27 @@ void VoxelFrame::hline(int z, int x0, int x1, int y) {
 }
 
 void VoxelFrame::vline(int z, int x, int y0, int y1) {
+  if (static_cast<unsigned>(z) >= static_cast<unsigned>(D) || static_cast<unsigned>(x) >= static_cast<unsigned>(W)) return;
   if (y0 > y1) std::swap(y0, y1);
-  for (int y = y0; y <= y1; ++y) set(x, y, z);
+  if (y1 < 0 || y0 >= H) return;
+  y0 = clampi(y0, 0, H - 1);
+  y1 = clampi(y1, 0, H - 1);
+  for (int y = y0; y <= y1; ++y) bits_[z][(y >> 3) * W + x] |= static_cast<uint8_t>(1u << (y & 7));
 }
 
 void VoxelFrame::line(int z, int x0, int y0, int x1, int y1) {
-  // Bresenham.
+  // Trivial reject when both ends are beyond the same edge, and keep the
+  // coordinates in a range where Bresenham's arithmetic cannot overflow.
+  if ((x0 < 0 && x1 < 0) || (x0 >= W && x1 >= W) || (y0 < 0 && y1 < 0) || (y0 >= H && y1 >= H)) return;
+  constexpr int kLim = 1 << 14;
+  x0 = clampi(x0, -kLim, kLim); x1 = clampi(x1, -kLim, kLim);
+  y0 = clampi(y0, -kLim, kLim); y1 = clampi(y1, -kLim, kLim);
+  // Bresenham; the loop ends at the far endpoint (guard is a safety net).
   int dx = std::abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
   int dy = -std::abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
   int err = dx + dy;
-  for (int guard = 0; guard < W + H + 2; ++guard) {
+  const int steps = std::max(dx, -dy) + 1;
+  for (int guard = 0; guard <= steps; ++guard) {
     set(x0, y0, z);
     if (x0 == x1 && y0 == y1) break;
     int e2 = 2 * err;
@@ -52,6 +64,7 @@ void VoxelFrame::rect(int z, int x0, int y0, int x1, int y1) {
 void VoxelFrame::fillRect(int z, int x0, int y0, int x1, int y1, float intensity) {
   if (x0 > x1) std::swap(x0, x1);
   if (y0 > y1) std::swap(y0, y1);
+  if (x1 < 0 || x0 >= W || y1 < 0 || y0 >= H) return;
   x0 = clampi(x0, 0, W - 1); x1 = clampi(x1, 0, W - 1);
   y0 = clampi(y0, 0, H - 1); y1 = clampi(y1, 0, H - 1);
   if (intensity >= 1.0f) {
@@ -93,6 +106,8 @@ void VoxelFrame::disc(int z, float cx, float cy, float r, float intensity) {
 
 void VoxelFrame::sphere(const Vec3& worldCenter, float rxy, float rz, float intensity) {
   if (rxy <= 0.0f || rz <= 0.0f) return;
+  // Always reach at least one layer plane, wherever the centre sits between layers.
+  rz = std::max(rz, 0.6f * kLayerPitchPx);
   const Vec3 v = worldToVoxel(worldCenter);
   for (int k = 0; k < D; ++k) {
     const float dz = (layerZ(k) - worldCenter.z) / rz;
@@ -210,6 +225,20 @@ void VoxelFrame::crossfade(const VoxelFrame& a, const VoxelFrame& b, float t) {
       }
     }
   }
+}
+
+void VoxelFrame::clearBox(int x0, int y0, int x1, int y1) {
+  if (x0 > x1) std::swap(x0, x1);
+  if (y0 > y1) std::swap(y0, y1);
+  if (x1 < 0 || x0 >= W || y1 < 0 || y0 >= H) return;
+  x0 = clampi(x0, 0, W - 1); x1 = clampi(x1, 0, W - 1);
+  y0 = clampi(y0, 0, H - 1); y1 = clampi(y1, 0, H - 1);
+  for (int z = 0; z < D; ++z)
+    for (int y = y0; y <= y1; ++y) {
+      const uint8_t mask = static_cast<uint8_t>(~(1u << (y & 7)));
+      uint8_t* row = bits_[z] + (y >> 3) * W;
+      for (int x = x0; x <= x1; ++x) row[x] &= mask;
+    }
 }
 
 int VoxelFrame::countLitLayer(int z) const {

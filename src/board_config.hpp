@@ -31,6 +31,11 @@
 #define GM_PANELS_REVERSED 0
 #endif
 
+#include "gmeter/config.hpp"
+
+static_assert(GM_LAYERS <= 8, "board_config has one chip-select pin per layer for at most 8 layers");
+static_assert(GM_PANEL_W == 128, "the SSD130x driver addresses columns 0..127");
+
 namespace board {
 
 #if defined(GM_BOARD_ESP32_S3)

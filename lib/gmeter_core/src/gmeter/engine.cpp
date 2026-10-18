@@ -75,12 +75,14 @@ void Engine::step(const GForce& g, float dt) {
     char buf[20];
     std::snprintf(buf, sizeof(buf), "%s", cur->name());
     for (char* p = buf; *p; ++p) *p = (*p >= 'a' && *p <= 'z') ? static_cast<char>(*p - 32) : *p;
+    out_.clearBox(0, 0, 1 + 4 * static_cast<int>(std::strlen(buf)), 6);
     out_.text(0, 1, 1, buf);
   }
   if (readout_) {
     char buf[12];
     const float hg = g.horizontalG();
     std::snprintf(buf, sizeof(buf), "%d.%02dG", static_cast<int>(hg), static_cast<int>(hg * 100.0f) % 100);
+    out_.clearBox(0, VoxelFrame::H - 7, 1 + 4 * static_cast<int>(std::strlen(buf)), VoxelFrame::H - 1);
     out_.text(0, 1, VoxelFrame::H - 6, buf);
   }
 }

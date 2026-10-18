@@ -39,11 +39,12 @@ def load_frames(paths, strip_frames):
 def to_bits(im, width, height, threshold, invert, dither):
     if (im.width, im.height) != (width, height):
         im = im.resize((width, height), Image.LANCZOS)
-    # Composite transparent pixels onto black so they come out dark.
+    # Invert first, then composite transparent pixels onto black, so
+    # transparency is always unlit (with or without --invert).
     l, a = im.split()
-    gray = Image.composite(l, Image.new("L", im.size, 0), a)
     if invert:
-        gray = gray.point(lambda v: 255 - v)
+        l = l.point(lambda v: 255 - v)
+    gray = Image.composite(l, Image.new("L", im.size, 0), a)
     if dither:
         bw = gray.convert("1")  # Floyd-Steinberg
     else:
@@ -69,16 +70,20 @@ def main():
     ap.add_argument("--threshold", type=int, default=128)
     ap.add_argument("--invert", action="store_true", help="dark pixels become lit")
     ap.add_argument("--dither", action="store_true", help="Floyd-Steinberg instead of threshold")
+    ap.add_argument("--panel-height", type=int, default=56, help="panel rows (56 transparent, 64 generic)")
     args = ap.parse_args()
 
     frames = load_frames(args.inputs, args.frames)
     if not frames:
         sys.exit("no frames")
     src_w, src_h = frames[0].size
-    width = args.width or src_w
+    if args.height and not args.width:
+        width = max(1, round(src_w * args.height / src_h))
+    else:
+        width = args.width or src_w
     height = args.height or max(1, round(src_h * width / src_w))
-    if width > 128 or height > 64:
-        print(f"warning: {width}x{height} is larger than a panel", file=sys.stderr)
+    if width > 128 or height > args.panel_height:
+        print(f"warning: {width}x{height} is larger than a 128x{args.panel_height} panel", file=sys.stderr)
 
     data = b"".join(to_bits(f, width, height, args.threshold, args.invert, args.dither) for f in frames)
     lines = []

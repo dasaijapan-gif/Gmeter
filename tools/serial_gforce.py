@@ -21,8 +21,8 @@ except ImportError:  # pragma: no cover
     sys.exit("pyserial is required: pip install pyserial")
 
 # Mirrors the presets in lib/gmeter_core/src/gmeter/scenario.cpp (dynamic g:
-# lat, vert, lon). Kept simple here; the firmware's own `demo` command plays
-# the full presets on-device.
+# lat, vert, lon). Kept simple here; the firmware's `src demo <scenario>`
+# command plays the full presets on-device.
 SCENARIOS = {
     "launch": [(0, 0, 0, 0), (0.9, 0, 0, 0.55), (2.5, 0, 0, 0.3), (5, 0, 0, 0)],
     "brake": [(0, 0, 0, 0), (0.9, 0, 0, -0.75), (2.6, 0, 0, -0.8), (3.1, 0, 0, 0), (5, 0, 0, 0)],
@@ -63,14 +63,27 @@ def main():
     ap.add_argument("--loop", action="store_true")
     args = ap.parse_args()
 
-    ser = serial.Serial(args.port, args.baud, timeout=0.05)
-    time.sleep(0.5)
+    # Open without pulsing DTR/RTS so ESP32 dev boards are not reset.
+    ser = serial.Serial()
+    ser.port, ser.baudrate, ser.timeout = args.port, args.baud, 0
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    time.sleep(0.2)
     ser.write(b"src serial\n")
+    echo = {"on": not args.keys}
+
+    def drain():
+        n = ser.in_waiting
+        if n:
+            data = ser.read(n)
+            if echo["on"]:
+                sys.stdout.write(data.decode(errors="replace").replace("> ", ""))
+                sys.stdout.flush()
 
     def send(lat, vert, lon):
         ser.write(f"g {lat:.3f} {vert:.3f} {lon:.3f}\n".encode())
-        while ser.in_waiting:
-            sys.stdout.write(ser.readline().decode(errors="replace"))
+        drain()
 
     dt = 1.0 / args.rate
     try:
@@ -99,6 +112,7 @@ def main():
             curses.wrapper(ui)
         else:
             t0 = time.time()
+            next_t = t0
             keys = SCENARIOS.get(args.scenario or "", None)
             while True:
                 t = time.time() - t0
@@ -112,11 +126,15 @@ def main():
                     v = (args.sine or 0.5) * math.sin(2 * math.pi * t / args.period)
                     lat, vert, lon = {"lat": (v, 0, 0), "vert": (0, v, 0), "lon": (0, 0, v)}[args.axis]
                 send(lat, vert, lon)
-                time.sleep(dt)
+                next_t += dt
+                time.sleep(max(0.0, next_t - time.time()))
     except KeyboardInterrupt:
         pass
     finally:
-        ser.write(b"g 0 0 0\nsrc imu\n")
+        # Back to the demo drive, then to the IMU if the board has one
+        # (`src imu` is refused without a sensor, leaving the demo running).
+        ser.write(b"g 0 0 0\nsrc demo\nsrc imu\n")
+        ser.flush()
         ser.close()
 
 

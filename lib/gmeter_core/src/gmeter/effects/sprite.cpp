@@ -1,5 +1,6 @@
 #include "sprite.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace gm {
@@ -33,8 +34,9 @@ void SpriteEffect::update(const EffectContext& ctx) {
   const Vec3 he = VoxelFrame::halfExtent();
   const float hw = sheet_.width * 0.5f, hh = sheet_.height * 0.5f;
   Vec3 target{drive.x * pxGx_, drive.y * pxGy_, drive.z * pxGz_};
-  target.x = clampf(target.x, -(he.x - hw), he.x - hw);
-  target.y = clampf(target.y, -(he.y - hh), he.y - hh);
+  const float mx = std::max(0.0f, he.x - hw), my = std::max(0.0f, he.y - hh);
+  target.x = clampf(target.x, -mx, mx);
+  target.y = clampf(target.y, -my, my);
   target.z = clampf(target.z, -(he.z - kLayerPitchPx * 0.5f), he.z - kLayerPitchPx * 0.5f);
   pos_.step(target, ctx.dt, hz_);
 

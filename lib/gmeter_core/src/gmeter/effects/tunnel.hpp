@@ -19,7 +19,7 @@ class TunnelEffect : public Effect {
 
  private:
   float scaleG_ = 1.0f;       // g for full bend
-  float rFront_ = 27.0f;
+  float rFront_ = static_cast<float>(kH / 2 - 2);
   float rBack_ = 5.0f;
   float segments_ = 10.0f;    // dashes per ring
   float spin_ = 0.4f;         // rad/s at rest
