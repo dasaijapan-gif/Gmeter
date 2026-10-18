@@ -208,8 +208,10 @@ GM_EXPORT(gm_anim_set_clip) void gm_anim_set_clip(int state, int start, int coun
 // Returns 1 on success. Keeps the current tunables (mapping) so the UI owns them.
 GM_EXPORT(gm_anim_load) int gm_anim_load(int w, int h, int depth, int frames) {
   ensureInit();
-  if (w <= 0 || h <= 0 || depth <= 0 || frames <= 0 || w > kW || h > kH || depth > kD) return 0;
-  const size_t need = static_cast<size_t>((w + 7) / 8) * h * depth * frames;
+  if (w <= 0 || h <= 0 || depth <= 0 || frames <= 0 || frames > 65535 || w > kW || h > kH || depth > kD) return 0;
+  // 64-bit so a huge frame count cannot wrap the 32-bit size_t of wasm32.
+  const uint64_t need = static_cast<uint64_t>((w + 7) / 8) * static_cast<uint64_t>(h) *
+                        static_cast<uint64_t>(depth) * static_cast<uint64_t>(frames);
   if (!gUserBits || need > gUserCap) return 0;
   gUserAsset.name = gUserName;
   gUserAsset.width = static_cast<uint16_t>(w);

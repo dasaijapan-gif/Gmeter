@@ -55,7 +55,6 @@ AnimClip AnimationEffect::resolveClip(int state, bool& mirror) const {
   mirror = false;
   if (state < 0 || state >= kAnimStateCount) state = kAnimIdle;
   const uint16_t frames = asset_.frames;
-  auto usable = [&](const AnimClip& c) { return c.count > 0 && c.start < frames; };
   auto clampClip = [&](AnimClip c) {
     if (c.start + c.count > frames) c.count = static_cast<uint16_t>(frames - c.start);
     if (c.fps <= 0.0f) c.fps = 1.0f;
@@ -77,11 +76,20 @@ AnimClip AnimationEffect::resolveClip(int state, bool& mirror) const {
   return all;
 }
 
+bool AnimationEffect::usable(const AnimClip& c) const { return c.count > 0 && c.start < asset_.frames; }
+
 void AnimationEffect::enter(int state) {
   if (state == state_ && stateTime_ > 0.0f) return;
+  // A state that resolves to the frames already playing (for example accelerate
+  // with no clip of its own, falling back to idle) carries on from the same
+  // frame instead of restarting. The bump clip always starts from its first frame.
+  bool m0 = false, m1 = false;
+  const AnimClip from = resolveClip(state_, m0), to = resolveClip(state, m1);
+  const bool sameFrames = state != kAnimBump && state_ != kAnimBump && from.start == to.start &&
+                          from.count == to.count && from.loop == to.loop && m0 == m1;
   state_ = state;
   stateTime_ = 0.0f;
-  clipTime_ = 0.0f;
+  clipTime_ = sameFrames ? clipTime_ * from.fps / to.fps : 0.0f;  // resolveClip keeps fps > 0
 }
 
 int AnimationEffect::chooseState(const Vec3& dyn) const {
@@ -107,7 +115,13 @@ int AnimationEffect::chooseState(const Vec3& dyn) const {
   // that one is clearly stronger.
   if (active) {
     const float mine = support(state_);
-    if (mine >= 0.6f * m_.enterG && (candidate == state_ || best < mine + 0.1f)) return state_;
+    if (mine >= 0.6f * m_.enterG) {
+      // Hand over only to a state that is clearly stronger and could itself be
+      // entered; otherwise keep the current one (never drop to idle while the
+      // current state is still above its exit level).
+      const bool handOver = candidate != state_ && best >= mine + 0.1f && best >= m_.enterG;
+      return handOver ? candidate : state_;
+    }
   }
   return best >= m_.enterG ? candidate : kAnimIdle;
 }
@@ -127,9 +141,9 @@ void AnimationEffect::update(const EffectContext& ctx) {
   } else if (state_ == kAnimBump) {
     const AnimClip c = resolveClip(kAnimBump, clipMirror);
     const float len = static_cast<float>(c.count) / c.fps;
-    if (clipTime_ >= len) enter(chooseState(dyn));
+    if (!usable(asset_.clips[kAnimBump]) || clipTime_ >= len) enter(chooseState(dyn));
   } else {
-    const bool hasBump = asset_.clips[kAnimBump].count > 0;
+    const bool hasBump = usable(asset_.clips[kAnimBump]);
     if (spike && hasBump) {
       enter(kAnimBump);
     } else if (stateTime_ >= m_.holdS) {
@@ -182,12 +196,12 @@ void AnimationEffect::render(VoxelFrame& f) {
   const int y0 = iround(v.y - asset_.height * 0.5f + 0.5f);
   const int depth = asset_.depth;
   // Slice 0 is the front-most; centre the stack of slices on the position.
-  const int lo = (depth - 1) / 2;
-  const int base = clampi(iround(v.z), lo, kD - 1 - (depth - 1 - lo));
+  // Art with more slices than panels stays centred; out-of-range layers are skipped.
+  const int first = clampi(iround(v.z - (depth - 1) * 0.5f), std::min(0, kD - depth), std::max(0, kD - depth));
   const int echo = depth == 1 ? iround(m_.echo) : 0;
   const int w = asset_.width;
   for (int s = 0; s < depth; ++s) {
-    const int layer = base - lo + s;
+    const int layer = first + s;
     for (int dl = -echo; dl <= echo; ++dl) {
       const int z = layer + dl;
       if (z < 0 || z >= kD) continue;

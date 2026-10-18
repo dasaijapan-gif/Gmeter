@@ -159,8 +159,14 @@ frame ranges:
 
 Hysteresis keeps a state until its support falls below 60 % of `enter_g`, and
 `hold_s` sets the minimum time in a state, so clips do not flicker at the
-threshold. A clip with 0 frames falls back: left and right mirror each other
-(when `mirror` is 1), the rest use idle, and an empty idle plays everything.
+threshold. Another state takes over only when it is at least 0.1 g stronger and
+above `enter_g` itself, so trail braking stays in brake rather than dropping to
+idle. A clip with 0 frames (or one that starts past the last frame) falls back:
+left and right mirror each other (when `mirror` is 1), the rest use idle, and an
+empty idle plays everything. A state that falls back to the clip already
+playing carries on from the same frame. Without a usable bump clip the bump
+state never fires. Slices are centred on the artwork's depth position, so art
+with any slice count reaches both the front and the back panel.
 
 On top of the clip choice the artwork moves like a loose object (spring
 smoothed, clamped inside the volume), playback can speed up with g (`fps_g`),

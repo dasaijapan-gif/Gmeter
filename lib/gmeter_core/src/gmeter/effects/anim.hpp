@@ -122,6 +122,7 @@ class AnimationEffect : public Effect {
   float prevVert_ = 0.0f;
 
   void enter(int state);
+  bool usable(const AnimClip& c) const;
   int chooseState(const Vec3& dyn) const;
 };
 

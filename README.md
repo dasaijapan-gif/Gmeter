@@ -41,10 +41,12 @@ python3 tools/build_studio.py -o gmeter_studio.html
 Open `gmeter_studio.html` in a browser. It has three parts:
 
 - **3D viewport.** The eight DFR0934 panels modelled to datasheet size (41.92 x
-  27.08 mm glass, 0.274 mm pixels, the opaque strip and FPC). Orbit, pan and zoom.
+  27.08 mm glass, 0.274 mm pixels, the opaque strip and FPC). Orbit, pan and zoom
+  with the mouse or touch; with the view focused, Shift+arrows orbit and +/- zoom.
   Panel gap, glass transmittance, glow and daylight are adjustable, so you can
   judge depth and brightness before cutting a spacer.
-- **G-force simulator.** Drive a car with the keyboard or on-screen pedals
+- **G-force simulator.** Drive a car with the keyboard (while the 3D view or the
+  simulator has focus) or on-screen pedals
   (throttle, brake, steering, bumps, tyre grip and road roughness). Play the
   scripted launch/brake/slalom/corner/bump drives, or drag a g-vector by hand.
   Optionally route it through the simulated accelerometer and filter.

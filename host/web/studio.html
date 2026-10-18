@@ -77,10 +77,15 @@ input[type=range] { accent-color: var(--accent); width: 100%; min-width: 0; }
 input[type=checkbox] { accent-color: var(--accent); }
 textarea { width: 100%; min-height: 140px; padding: 8px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.4; resize: vertical; }
 :is(button, select, input, textarea, canvas[tabindex]):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+/* Containers that clip (overflow) would hide an outset ring: draw it inside instead. */
+.stage canvas:focus-visible, .seg button:focus-visible, .tabs button:focus-visible, .frames .thumb:focus-visible, .tablewrap button:focus-visible { outline-offset: -3px; }
+.seg button[aria-pressed="true"]:focus-visible, .tablewrap button.on:focus-visible { outline-color: var(--accent-ink); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .row.tight { gap: 4px; }
 .grow { flex: 1 1 140px; min-width: 0; }
 label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+#simManual label.chk { white-space: normal; }
 .field { display: grid; gap: 3px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); min-width: 0; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
 .seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); background: var(--surface-2); }
@@ -100,8 +105,9 @@ label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px
 .stage .chip { background: rgba(14, 20, 27, 0.82); border-color: #2b3a4a; color: #8a9aac; }
 .stage .chip b { color: #dde6ef; }
 .stage .hint { font-family: var(--font-mono); font-size: 11px; color: #6f8aa0; }
+.stage.day .hint { color: #23313d; }
 @media (max-width: 640px) { .stage { aspect-ratio: 4 / 3; } .stage .ov.bl { display: none; } }
-.stage .fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; color: #8a9aac; }
+.stage .fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; color: #8a9aac; pointer-events: none; }
 .stagebar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 12px; }
 .stagebar .slider { display: grid; grid-template-columns: auto minmax(90px, 160px) 7ch; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
 .stagebar .slider output { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--fg); text-align: right; }
@@ -163,14 +169,16 @@ label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px
 .cliptable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .cliptable th { text-align: left; font-weight: 500; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 4px 6px; }
 .cliptable td { padding: 3px 4px; vertical-align: middle; }
-.cliptable input[type=number] { padding: 3px 5px; font-family: var(--font-mono); font-size: 12px; width: 5.2em; }
+.cliptable input[type=number] { padding: 3px 5px; font-family: var(--font-mono); font-size: 12px; width: 4.8em; }
+.cliptable .pv { display: block; margin-top: 3px; padding: 3px 8px; font-size: 12px; }
 .cliptable .st { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
 .cliptable .st i { width: 9px; height: 9px; border-radius: 50%; }
 .cliptable tr.live td { background: var(--surface-2); }
-.cliptable .fb { font-size: 11px; color: var(--muted); }
+.cliptable .fb { font-size: 11px; color: var(--muted); max-width: 16em; white-space: normal; }
 .tablewrap { overflow-x: auto; }
 .toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 20; }
 footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
+.note.warn { color: var(--st-brake); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 
@@ -180,7 +188,8 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       <h1>Gmeter Studio</h1>
       <p>Eight DFRobot DFR0934 transparent OLEDs, 128&times;56 px each, running the firmware's own rendering core. Draw an animation, tell it how to react, then drive.</p>
     </div>
-    <div class="chips" aria-live="polite">
+    <p class="sr-only" id="srStatus" role="status"></p>
+    <div class="chips">
       <span class="chip">effect <b id="chipEffect">-</b></span>
       <span class="chip" id="chipStateWrap"><i class="dot" id="chipStateDot"></i>state <b id="chipState">-</b></span>
       <span class="chip">lit <b id="chipLit">0</b></span>
@@ -191,7 +200,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     <div class="col">
       <section class="card" aria-label="3D view of the panel stack">
         <div class="stage" id="stage">
-          <canvas id="gl" tabindex="0" aria-label="Orbitable 3D view of the eight-panel stack"></canvas>
+          <canvas id="gl" tabindex="0" aria-label="Orbitable 3D view of the eight-panel stack. Shift plus arrow keys orbit, plus and minus zoom, Home resets the view."></canvas>
           <div class="ov tl">
             <span class="chip">view <b id="chipView">driver</b></span>
             <span class="chip">fps <b id="chipFps">-</b></span>
@@ -202,7 +211,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
             <button type="button" data-view="top">Top</button>
             <button type="button" data-view="side">Side</button>
           </div>
-          <div class="ov bl"><span class="hint">drag to orbit &middot; shift-drag or two fingers to pan &middot; wheel or pinch to zoom</span></div>
+          <div class="ov bl"><span class="hint">drag to orbit &middot; shift-drag or two fingers to pan &middot; wheel or pinch to zoom &middot; focused: shift+arrows, +/&minus;</span></div>
           <div class="fallback" id="glFallback" hidden></div>
         </div>
         <div class="stagebar">
@@ -231,7 +240,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
               <div id="simDrive" style="display:grid;gap:10px">
                 <div class="row" style="justify-content:space-between">
                   <div class="speedo"><b id="speed">0</b> km/h</div>
-                  <div class="note">Keys: <span class="kbd">W</span>/<span class="kbd">&uarr;</span> throttle, <span class="kbd">S</span>/<span class="kbd">&darr;</span> brake, <span class="kbd">A</span><span class="kbd">D</span>/<span class="kbd">&larr;</span><span class="kbd">&rarr;</span> steer, <span class="kbd">Space</span> bump</div>
+                  <div class="note">With the 3D view or this panel focused: <span class="kbd">W</span>/<span class="kbd">&uarr;</span> throttle, <span class="kbd">S</span>/<span class="kbd">&darr;</span> brake, <span class="kbd">A</span><span class="kbd">D</span>/<span class="kbd">&larr;</span><span class="kbd">&rarr;</span> steer, <span class="kbd">Space</span> bump</div>
                 </div>
                 <div class="pedals">
                   <button type="button" class="pedal" id="pedBrake">Brake</button>
@@ -266,8 +275,8 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
               </div>
               <div id="simManual" hidden style="display:grid;gap:10px">
                 <div class="row" style="align-items:flex-start">
-                  <canvas class="pad" id="pad" width="360" height="360" aria-label="Drag to set lateral and longitudinal g"></canvas>
-                  <div style="display:grid;gap:8px;flex:1 1 140px;min-width:0">
+                  <canvas class="pad" id="pad" width="360" height="360" tabindex="0" aria-label="Lateral and longitudinal g pad. Drag, or use the arrow keys to push by 0.05 g; 0 recentres."></canvas>
+                  <div style="display:grid;grid-template-columns:minmax(0,1fr);gap:8px;flex:1 1 140px;min-width:0">
                     <label class="field" for="manVert">Vertical g <input type="range" id="manVert" min="-1" max="1" step="0.01" value="0"></label>
                     <label class="chk"><input type="checkbox" id="manSpring" checked> Return to zero on release</label>
                     <p class="note">Up is accelerating, down is braking, right is a right-hand turn.</p>
@@ -313,7 +322,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
         <div style="display:grid;gap:6px">
           <div class="row" style="justify-content:space-between"><h3>Serial commands</h3><button type="button" id="copyCli">Copy</button></div>
           <textarea id="cliOut" readonly style="min-height:80px" aria-label="Serial commands for the changed settings"></textarea>
-          <p class="note">Paste into the serial monitor (115200 baud) to apply the same settings on the car, then type <code>save</code>.</p>
+          <p class="note">Paste into the serial monitor (115200 baud) to apply the same settings on the car. <code>save</code> keeps the mode and filter; <code>set</code> values last until the next reboot. To make the anim settings permanent, export the header on the Clips &amp; export tab and flash it.</p>
         </div>
       </div>
 
@@ -344,7 +353,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
         <div class="editwrap"><canvas id="edit" aria-label="Pixel editor. Left button draws, right button or Alt erases."></canvas></div>
         <div class="tools">
           <button type="button" id="undo" title="Ctrl+Z">Undo</button>
-          <button type="button" id="redo" title="Ctrl+Y">Redo</button>
+          <button type="button" id="redo" title="Ctrl+Y or Ctrl+Shift+Z">Redo</button>
           <button type="button" id="fClear">Clear</button>
           <button type="button" id="fInvert">Invert</button>
           <button type="button" id="fFlipH">Flip &harr;</button>
@@ -383,10 +392,10 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       </div>
 
       <div class="bd" role="tabpanel" id="pane-clips" aria-labelledby="tab-clips" hidden>
-        <p class="note">Each car state plays a range of frames. A clip with 0 frames borrows: left and right mirror each other, the rest fall back to idle. Bump plays once and hands back.</p>
+        <p class="note">Each car state plays a range of frames. A clip with 0 frames borrows: left and right mirror each other when <code>mirror</code> is on, the rest fall back to idle, and an empty idle plays every frame. Bump plays once and hands back; with no bump clip it never fires.</p>
         <div class="tablewrap">
           <table class="cliptable" id="clipTable">
-            <thead><tr><th>State</th><th>Start</th><th>Frames</th><th>fps</th><th>Loop</th><th></th></tr></thead>
+            <thead><tr><th>State</th><th>Start</th><th>Frames</th><th>fps</th><th>Loop</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -407,7 +416,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
           <button type="button" id="resetDemo">Start from the demo</button>
         </div>
         <textarea id="projectIo" placeholder="Paste a project here, then press Load pasted project." aria-label="Project JSON"></textarea>
-        <p class="note">Your work also saves in this browser automatically.</p>
+        <p class="note" id="saveNote" role="status">Your work also saves in this browser automatically.</p>
       </div>
     </section>
   </div>
@@ -435,6 +444,14 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     catch (e) { if (area) { area.focus(); area.select(); } toast('Press Ctrl+C to copy the selected text'); }
   }
   function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  // Screen-reader status: only meaningful changes (effect, animation state),
+  // never the frame number or lit count, and at most one message a second.
+  let srWanted = '', srLast = '', srTimer = 0;
+  function announce(msg) {
+    srWanted = msg;
+    if (srTimer) return;
+    srTimer = setTimeout(() => { srTimer = 0; if (srWanted !== srLast) { srLast = srWanted; $('srStatus').textContent = srWanted; } }, 1000);
+  }
 
   // ===================================================================================
   // WebAssembly core
@@ -664,7 +681,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     view.presetName = name;
     document.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === name));
     $('chipView').textContent = name === 'three' ? '3/4' : name;
-    if (reduceMotion) { view.theta = p.theta; view.phi = p.phi; view.radius = p.radius; view.anim = null; return; }
+    if (reduceMotion) { view.theta = p.theta; view.phi = p.phi; view.radius = p.radius; view.anim = null; if (view.target) view.target.set(0, -1.5, 0); view.panTo = null; return; }
     view.anim = { from: { theta: view.theta, phi: view.phi, radius: view.radius }, to: p, t: 0 };
     if (view.target) view.panTo = new THREE.Vector3(0, -1.5, 0);
   }
@@ -705,6 +722,24 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     canvas.addEventListener('pointercancel', end);
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.anim = null; view.radius = clamp(view.radius * Math.exp(e.deltaY * 0.0012), 40, 600); markCustomView(); }, { passive: false });
     canvas.addEventListener('dblclick', () => setPreset('driver'));
+    // Keyboard camera: Shift+arrows orbit, +/- or PageUp/PageDown zoom, Home resets.
+    // Plain arrows fall through to the drive keys.
+    canvas.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key, a = 0.08;
+      let used = true;
+      if (k === 'Home') setPreset('driver');
+      else if (k === '+' || k === '=' || k === 'PageUp') view.radius = clamp(view.radius / 1.15, 40, 600);
+      else if (k === '-' || k === '_' || k === 'PageDown') view.radius = clamp(view.radius * 1.15, 40, 600);
+      else if (e.shiftKey && k === 'ArrowLeft') view.theta += a;
+      else if (e.shiftKey && k === 'ArrowRight') view.theta -= a;
+      else if (e.shiftKey && k === 'ArrowUp') view.phi = clamp(view.phi - a, 0.05, Math.PI - 0.05);
+      else if (e.shiftKey && k === 'ArrowDown') view.phi = clamp(view.phi + a, 0.05, Math.PI - 0.05);
+      else used = false;
+      if (!used) return;
+      e.preventDefault(); e.stopPropagation();
+      if (k !== 'Home') { view.anim = null; markCustomView(); }
+    });
     function pan(dx, dy) {
       const s = view.radius * 0.0018;
       const right = new THREE.Vector3(Math.cos(view.theta), 0, -Math.sin(view.theta));
@@ -796,6 +831,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       u.gridOn.value = view.grid ? 1 : 0;
     }
     renderer.setClearColor(view.day ? 0xb7c0c8 : 0x05080c, 1);
+    labels.forEach((l) => { l.material.color.setHex(view.day ? 0x30404c : 0xffffff); });
     gridHelper.material.opacity = view.day ? 0.25 : 0.55;
     renderer.render(scene, camera);
   }
@@ -810,6 +846,13 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     ro.observe($('stage'));
     $('glFallback').style.alignItems = 'end';
     document.querySelectorAll('[data-view]').forEach((b) => { b.disabled = true; });
+    const hint = document.querySelector('.stage .ov.bl'); if (hint) hint.hidden = true;
+    for (const id of ['spacing', 'optGlow', 'optGrid', 'optHw', 'optBoards']) {
+      const el = $(id); el.disabled = true;
+      const lab = el.closest('label'); if (lab) lab.title = 'Only affects the 3D view, which is not available here';
+    }
+    c.setAttribute('aria-label', 'Flat preview of the eight-panel stack');
+    c.removeAttribute('tabindex');
   }
   function upload2D(bits) {
     if (!fb2d) return;
@@ -825,7 +868,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
   }
   function render2DFallback() {
     if (!fb2d) return;
-    const c = $('gl'), g = fb2d.ctx; g.fillStyle = '#05080c'; g.fillRect(0, 0, c.width, c.height);
+    const c = $('gl'), g = fb2d.ctx; g.fillStyle = view.day ? '#b7c0c8' : '#05080c'; g.fillRect(0, 0, c.width, c.height);
     const S = Math.min(c.width / (core.W * 1.4), c.height / (core.H * 2));
     g.imageSmoothingEnabled = false; g.globalCompositeOperation = 'lighter';
     for (let k = core.D - 1; k >= 0; k--) {
@@ -884,7 +927,11 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     sim.out.lat = aLat / G0; sim.out.lon = aLon / G0; sim.out.vert = aVert / G0;
     $('speed').textContent = Math.round(d.v * 3.6);
   }
-  function bump() { sim.drive.spike = 0; sim.drive.spikeG = 0.9; if (sim.mode !== 'drive') sim.manual.bumpT = 0; }
+  function bump() {
+    if (sim.mode === 'drive') { sim.drive.spike = 0; sim.drive.spikeG = 0.9; }
+    else if (sim.mode === 'manual') sim.manual.bumpT = 0;
+    // Scenario mode plays its own scripted bumps.
+  }
 
   function stepScenario(dt) {
     const s = sim.scenario, sc = core.scenarios[s.i];
@@ -934,10 +981,25 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     c.addEventListener('pointermove', (e) => { if (sim.manual.dragging) set(e); });
     const up = () => { sim.manual.dragging = false; };
     c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+    // Keyboard: arrows push 0.05 g per press (held while the key is down, so
+    // 'Return to zero on release' still applies), 0 or Home recentres.
+    const keys = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+    c.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const m = sim.manual, d = keys[e.key];
+      if (d) {
+        m.dragging = true;
+        m.lat = clamp(m.lat + d[0] * 0.05, -1.5, 1.5); m.lon = clamp(m.lon + d[1] * 0.05, -1.5, 1.5);
+      } else if (e.key === '0' || e.key === 'Home') { m.lat = 0; m.lon = 0; }
+      else return;
+      e.preventDefault(); e.stopPropagation(); drawPad();
+    });
+    c.addEventListener('keyup', (e) => { if (keys[e.key]) sim.manual.dragging = false; });
+    c.addEventListener('blur', up);
   }
 
   function drawGG(applied) {
-    const c = $('gg'), g = c.getContext('2d'), W = c.width, H = c.height, cx = W / 2, cy = H / 2, R = W * 0.4;
+    const c = $('gg'), g = c.getContext('2d'), W = c.width, H = c.height, cx = W / 2, cy = H / 2, R = W * 0.36;
     g.clearRect(0, 0, W, H);
     const line = cssVar('--line'), muted = cssVar('--muted'), accent = cssVar('--accent'), fg = cssVar('--fg');
     g.strokeStyle = line; g.lineWidth = 2;
@@ -962,6 +1024,11 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
   }
 
   function setSimMode(mode) {
+    if (mode !== sim.mode) {
+      // Drop a bump that is pending or still playing so it cannot carry over.
+      sim.drive.spike = Math.max(sim.drive.spike, 1); sim.manual.bumpT = undefined;
+      sim.drive.keys.clear(); sim.manual.dragging = false;
+    }
     sim.mode = mode;
     document.querySelectorAll('[data-sim]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sim === mode)));
     $('simDrive').hidden = mode !== 'drive'; $('simScenario').hidden = mode !== 'scenario'; $('simManual').hidden = mode !== 'manual';
@@ -978,6 +1045,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       el.addEventListener('pointerdown', on); el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off); el.addEventListener('lostpointercapture', off);
       el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sim.drive.held.add(key); el.classList.add('held'); } });
       el.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') off(); });
+      el.addEventListener('blur', off);
     };
     hold('pedThrottle', 'throttle'); hold('pedBrake', 'brake');
     $('pedBump').addEventListener('click', bump);
@@ -994,14 +1062,24 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     bindPad();
     const keyMap = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
     const typing = (t) => t && t.closest && t.closest('input, textarea, select, [contenteditable]');
+    // Drive keys belong to the 3D view and the simulator card. With nothing
+    // focused (<body>), they work only if the last click or focus was there,
+    // so arrows and Space still scroll the page everywhere else.
+    const simZone = (t) => !!(t && t.closest && t.closest('#stage, section[aria-label="G-force simulator"]'));
+    let driveArmed = false;
+    document.addEventListener('pointerdown', (e) => { driveArmed = simZone(e.target); }, true);
+    document.addEventListener('focusin', (e) => { if (e.target !== document.body) driveArmed = simZone(e.target); });
     document.addEventListener('keydown', (e) => {
       if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (artKeys(e)) return;
-      if (sim.mode !== 'drive' && keyMap[e.code]) setSimMode('drive');
-      if (sim.mode !== 'drive') { if (e.code === 'Space' && !(e.target && e.target.closest && e.target.closest('button'))) { e.preventDefault(); bump(); } return; }
+      const t = e.target;
+      const onSim = simZone(t) || ((t === document.body || t === document.documentElement || !t) && driveArmed);
+      if (!onSim) return;
       const k = keyMap[e.code];
-      if (k) { e.preventDefault(); sim.drive.keys.add(k); }
-      else if (e.code === 'Space' && !(e.target && e.target.closest && e.target.closest('button'))) { e.preventDefault(); if (!e.repeat) bump(); }
+      if (k) {
+        if (sim.mode !== 'drive') return;   // never switch modes from a key press
+        e.preventDefault(); sim.drive.keys.add(k); return;
+      }
+      if (e.code === 'Space' && sim.mode !== 'scenario' && !(t && t.closest && t.closest('button'))) { e.preventDefault(); if (!e.repeat) bump(); }
     });
     document.addEventListener('keyup', (e) => { const k = keyMap[e.code]; if (k) sim.drive.keys.delete(k); });
     window.addEventListener('blur', () => { sim.drive.keys.clear(); sim.drive.held.clear(); document.querySelectorAll('.pedal.held').forEach((p) => p.classList.remove('held')); });
@@ -1009,6 +1087,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       const on = $('sensorOn').checked, n = parseFloat($('sensorNoise').value), c = parseFloat($('sensorCut').value);
       core.x.gm_set_sensor(on ? 1 : 0, n, c);
       $('sensorOut').textContent = on ? n.toFixed(3) + ' g, ' + c.toFixed(1) + ' Hz' : 'off: effects see the exact g';
+      updateCli();
     };
     ['sensorOn', 'sensorNoise', 'sensorCut'].forEach((id) => $(id).addEventListener('input', sensor));
     sensor();
@@ -1031,17 +1110,21 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     renderEffects(); renderParams(); save();
   }
   function renderEffects() {
-    const box = $('effects'); box.textContent = '';
+    const box = $('effects');
     const cur = core.x.gm_effect_index();
-    core.effects.forEach((name, i) => {
-      const b = document.createElement('button'); b.type = 'button'; b.className = i === cur ? 'on' : '';
-      b.setAttribute('aria-pressed', String(i === cur));
-      const t = document.createElement('b'); t.textContent = name;
-      const d = document.createElement('span'); d.textContent = EFFECT_INFO[name] || '';
-      b.append(t, d);
-      b.addEventListener('click', () => setEffect(i, true));
-      box.appendChild(b);
-    });
+    if (box.children.length !== core.effects.length) {
+      box.textContent = '';
+      core.effects.forEach((name, i) => {
+        const b = document.createElement('button'); b.type = 'button';
+        const t = document.createElement('b'); t.textContent = name;
+        const d = document.createElement('span'); d.textContent = EFFECT_INFO[name] || '';
+        b.append(t, d);
+        b.addEventListener('click', () => setEffect(i, true));
+        box.appendChild(b);
+      });
+    }
+    // Update in place so the button the keyboard user just pressed keeps focus.
+    [...box.children].forEach((b, i) => { b.className = i === cur ? 'on' : ''; b.setAttribute('aria-pressed', String(i === cur)); });
     $('chipEffect').textContent = core.effects[cur];
   }
   function niceStep(p) {
@@ -1084,18 +1167,19 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       container.appendChild(row);
     });
   }
-  function renderParams() {
-    buildParamList($('params'), () => { updateCli(); updateHeader(); save(); });
-    updateCli();
-    buildParamList($('animParams'), () => { updateHeader(); if (currentEffectName() === 'anim') renderParamsMain(); save(); }, core.animIndex);
-  }
-  function renderParamsMain() { buildParamList($('params'), () => { updateCli(); updateHeader(); save(); }); updateCli(); }
+  // With anim active, #params (Effect tab) and #animParams (Clips tab) edit the
+  // same values. Only one tab shows at a time, so selectTab rebuilds the list it
+  // reveals; neither handler rebuilds the list that is being dragged.
+  function renderParams() { renderParamsMain(); renderAnimParams(); }
+  function renderParamsMain() { buildParamList($('params'), () => { updateCli(); updateHeader(); refreshFallbacks(); save(); }); updateCli(); }
+  function renderAnimParams() { buildParamList($('animParams'), () => { updateCli(); updateHeader(); refreshFallbacks(); save(); }, core.animIndex); }
   function updateCli() {
     const name = currentEffectName();
     const lines = ['mode ' + name];
     core.params().forEach((p) => {
       const d = defaults[name] && defaults[name][p.name];
-      if (d !== undefined && Math.abs(p.value - d) > 1e-4) lines.push('set ' + p.name + ' ' + (+p.value.toFixed(4)));
+      // For anim the car's defaults are whatever header was flashed, so send every value.
+      if (d !== undefined && (name === 'anim' || Math.abs(p.value - d) > 1e-4)) lines.push('set ' + p.name + ' ' + (+p.value.toFixed(4)));
     });
     if ($('sensorOn').checked) lines.push('filter ' + parseFloat($('sensorCut').value).toFixed(1));
     $('cliOut').value = lines.join('\n');
@@ -1108,7 +1192,9 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     w: 32, h: 24, d: 3, frames: [], cur: 0, slice: 1, tool: 'pencil',
     clips: [], name: 'my_animation', mapping: null,
     undo: [], redo: [], dirty: true,
+    rev: 0,   // bumped by every change to the artwork or clips (re-import checks it)
   };
+  const MAX_FRAMES = 1000;   // far beyond what fits in ESP32 flash at full size
   const STATE_COLORS = ['--st-idle', '--st-accel', '--st-brake', '--st-left', '--st-right', '--st-bump'];
   const STATE_LABELS = ['Idle', 'Accelerate', 'Brake', 'Corner left', 'Corner right', 'Bump'];
   const px = (f, s, x, y) => f[(s * art.h + y) * art.w + x];
@@ -1128,7 +1214,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     }
     art.clips = core.states.map((_, s) => ({ start: info[4 + s * 4], count: info[5 + s * 4], fps: info[6 + s * 4] / 1000, loop: info[7 + s * 4] }));
     art.cur = 0; art.slice = Math.min(1, d - 1); art.name = 'demo_chevrons'; art.mapping = null;
-    art.undo = []; art.redo = [];
+    art.rev++;
     x.gm_anim_use_demo();
   }
 
@@ -1151,27 +1237,37 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       if (!ptr) { toast('Out of memory for this animation'); return; }
       core.u8().set(bits, ptr);
       art.clips.forEach((c, s) => core.x.gm_anim_set_clip(s, c.start, c.count, c.fps, c.loop ? 1 : 0));
-      core.x.gm_anim_load(art.w, art.h, art.d, art.frames.length);
+      if (!core.x.gm_anim_load(art.w, art.h, art.d, art.frames.length)) toast('The core rejected this animation (' + art.frames.length + ' frames, ' + art.w + 'x' + art.h + 'x' + art.d + ')');
       updateHeader(); save();
     };
     if (now) go(); else pushTimer = setTimeout(go, 120);
   }
 
   function snapshotAll() { return { w: art.w, h: art.h, d: art.d, cur: art.cur, frames: art.frames.map((f) => f.slice()), clips: art.clips.map((c) => ({ ...c })) }; }
-  function pushUndo(entry) { art.undo.push(entry); if (art.undo.length > 40) art.undo.shift(); art.redo = []; }
+  // Loading a project or the demo also replaces the mapping and the name.
+  function snapshotProject() { return { ...snapshotAll(), mapping: { ...animParamValues() }, name: $('exName').value }; }
+  const cloneClips = () => art.clips.map((c) => ({ ...c }));
+  function pushUndo(entry) { art.rev++; art.undo.push(entry); if (art.undo.length > 40) art.undo.shift(); art.redo = []; }
   function undoFrame() { pushUndo({ kind: 'frame', i: art.cur, before: art.frames[art.cur].slice() }); }
   function undoAll() { pushUndo({ kind: 'all', before: snapshotAll() }); }
+  function undoClips() { pushUndo({ kind: 'clips', before: cloneClips() }); }
   function applyUndo(fromStack, toStack) {
     const e = fromStack.pop(); if (!e) return;
+    art.rev++;
     if (e.kind === 'frame') {
       if (!art.frames[e.i]) return;
       toStack.push({ kind: 'frame', i: e.i, before: art.frames[e.i].slice() });
       art.frames[e.i] = e.before; art.cur = e.i;
+    } else if (e.kind === 'clips') {
+      toStack.push({ kind: 'clips', before: cloneClips() });
+      art.clips = e.before;
     } else {
-      toStack.push({ kind: 'all', before: snapshotAll() });
-      const s = e.before; art.w = s.w; art.h = s.h; art.d = s.d; art.frames = s.frames; art.cur = Math.min(s.cur, s.frames.length - 1);
+      const s = e.before;
+      toStack.push({ kind: 'all', before: s.mapping ? snapshotProject() : snapshotAll() });
+      art.w = s.w; art.h = s.h; art.d = s.d; art.frames = s.frames; art.cur = Math.min(s.cur, s.frames.length - 1);
       if (s.clips) art.clips = s.clips;
       art.slice = Math.min(art.slice, art.d - 1);
+      if (s.mapping) { applyMapping(s.mapping); $('exName').value = s.name; renderParams(); }
       syncSizeInputs();
     }
     artChanged(true);
@@ -1320,7 +1416,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
   function artKeys(e) {
     if ($('pane-art').hidden) return false;
     const k = e.key.toLowerCase();
-    if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); applyUndo(art.undo, art.redo); return true; }
+    if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); if (e.shiftKey) applyUndo(art.redo, art.undo); else applyUndo(art.undo, art.redo); return true; }
     if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); applyUndo(art.redo, art.undo); return true; }
     return false;
   }
@@ -1339,8 +1435,9 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
         else { if (c.start > at) c.start += delta; else if (c.start + c.count > at) c.count = Math.max(0, c.count + delta); }
       });
     };
-    $('fAdd').addEventListener('click', () => { undoAll(); art.frames.splice(art.cur + 1, 0, blank()); shiftClips(art.cur, 1); art.cur++; artChanged(true); renderClips(); });
-    $('fDup').addEventListener('click', () => { undoAll(); art.frames.splice(art.cur + 1, 0, art.frames[art.cur].slice()); shiftClips(art.cur, 1); art.cur++; artChanged(true); renderClips(); });
+    const roomFor = (n) => { if (art.frames.length + n <= MAX_FRAMES) return true; toast('An animation can have at most ' + MAX_FRAMES + ' frames'); return false; };
+    $('fAdd').addEventListener('click', () => { if (!roomFor(1)) return; undoAll(); art.frames.splice(art.cur + 1, 0, blank()); shiftClips(art.cur, 1); art.cur++; artChanged(true); renderClips(); });
+    $('fDup').addEventListener('click', () => { if (!roomFor(1)) return; undoAll(); art.frames.splice(art.cur + 1, 0, art.frames[art.cur].slice()); shiftClips(art.cur, 1); art.cur++; artChanged(true); renderClips(); });
     $('fDel').addEventListener('click', () => {
       if (art.frames.length <= 1) { toast('An animation needs at least one frame'); return; }
       undoAll(); art.frames.splice(art.cur, 1); shiftClips(art.cur, -1); art.cur = Math.min(art.cur, art.frames.length - 1); artChanged(true); renderClips();
@@ -1386,7 +1483,13 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     syncSizeInputs(); artChanged(true);
   }
   function renderSlices() {
-    const box = $('slices'); box.textContent = '';
+    const box = $('slices');
+    const btns = box.querySelectorAll('button');
+    if (box.children.length && btns.length === (art.d > 1 ? art.d : 0)) {
+      btns.forEach((b, s) => { b.className = s === art.slice ? 'on' : ''; b.setAttribute('aria-pressed', String(s === art.slice)); });
+      return;
+    }
+    box.textContent = '';
     const lab = document.createElement('span'); lab.className = 'note'; lab.textContent = art.d > 1 ? 'Slice (front to back):' : 'Single slice';
     box.appendChild(lab);
     if (art.d === 1) return;
@@ -1400,7 +1503,9 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
   }
   const thumbCache = [];
   function renderFrames() {
-    const box = $('frames'); box.textContent = '';
+    const box = $('frames');
+    const hadFocus = box.contains(document.activeElement), keepLeft = box.scrollLeft;
+    box.textContent = '';
     const colors = STATE_COLORS.map(cssVar);
     art.frames.forEach((fr, i) => {
       const t = document.createElement('button'); t.type = 'button'; t.className = 'thumb';
@@ -1420,7 +1525,16 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       t.addEventListener('click', () => { art.cur = i; artChanged(true, true); });
       box.appendChild(t);
     });
-    const cur = box.children[art.cur]; if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    // Scroll the strip sideways only; scrollIntoView would also scroll the page
+    // after every pencil stroke.
+    box.scrollLeft = keepLeft;
+    const cur = box.children[art.cur];
+    if (cur) {
+      const br = box.getBoundingClientRect(), cr = cur.getBoundingClientRect();
+      if (cr.left < br.left) box.scrollLeft += cr.left - br.left;
+      else if (cr.right > br.right) box.scrollLeft += cr.right - br.right;
+      if (hadFocus) cur.focus({ preventScroll: true });
+    }
     $('frameTitle').textContent = 'Frame ' + art.cur + ' (' + (art.cur + 1) + ' of ' + art.frames.length + ')';
   }
   let thumbTimer = 0;
@@ -1481,6 +1595,8 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     catch (e) { $('impNote').textContent = 'Could not read that file: ' + e.message + '. Try PNG or JPG.'; return; }
     const split = clamp(parseInt($('impSplit').value, 10) || 1, 1, 64);
     if (split > 1) {
+      const narrow = images.find((img) => img.width < split);
+      if (narrow) { $('impNote').textContent = 'Split strip (' + split + ') is more than the image width (' + narrow.width + ' px). Lower it and import again.'; return; }
       const parts = [];
       images.forEach((img) => {
         const fw = Math.floor(img.width / split);
@@ -1488,29 +1604,49 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       });
       images = parts;
     }
-    lastImport = images;
-    applyImport(true);
+    if (!images.length) { $('impNote').textContent = 'Nothing to import.'; return; }
+    applyImport(true, images);
   }
-  function applyImport(fresh) {
-    if (!lastImport) return;
-    const mode = $('impMode').value;
-    undoAll();
-    if (!fresh && lastImport.appliedAt !== undefined) {
-      // Re-threshold: restore the frames from before the previous import.
-      art.frames = lastImport.prevFrames.map((f) => f.slice()); art.cur = lastImport.prevCur;
+  // A fresh import converts `images` into frames. Changing Threshold, Invert,
+  // Dither or Stretch afterwards re-runs that import, but only while the artwork
+  // is exactly what the import left behind (same revision): otherwise the
+  // setting just applies to the next import, so later edits are never lost.
+  function applyImport(fresh, images) {
+    const li = fresh ? { images, mode: $('impMode').value, slice: art.slice } : lastImport;
+    if (!li) return;
+    if (!fresh && li.rev !== art.rev) {
+      $('impNote').textContent = 'The artwork changed after the last import, so this setting applies to the next import.';
+      return;
     }
-    lastImport.prevFrames = art.frames.map((f) => f.slice()); lastImport.prevCur = art.cur;
+    const base = fresh ? { frames: art.frames, cur: art.cur, clips: art.clips } : li.prev;
+    if (li.mode === 'append' && base.frames.length + li.images.length > MAX_FRAMES) {
+      $('impNote').textContent = 'That would make ' + (base.frames.length + li.images.length) + ' frames; an animation can have at most ' + MAX_FRAMES + '.';
+      return;
+    }
+    // Convert everything before touching the artwork or the undo history.
+    let bitsList;
+    try { bitsList = (li.mode === 'current' ? li.images.slice(0, 1) : li.images).map(imageToBits); }
+    catch (e) { $('impNote').textContent = 'Could not convert that image (' + e.message + ').'; return; }
     const slab = art.w * art.h;
-    const toFrame = (bits, base) => { const fr = base || new Uint8Array(slab * art.d); fr.set(bits, art.slice * slab); return fr; };
-    if (mode === 'current') art.frames[art.cur] = toFrame(imageToBits(lastImport[0]), art.frames[art.cur]);
+    const toFrame = (bits, from) => { const fr = from ? from.slice() : new Uint8Array(slab * art.d); fr.set(bits, li.slice * slab); return fr; };
+    // A re-run copies the saved frames so later drawing cannot alter them.
+    const src = fresh ? base.frames : base.frames.map((f) => f.slice());
+    let frames, cur = base.cur, clips = base.clips.map((c) => ({ ...c }));
+    if (li.mode === 'current') { frames = src.slice(); frames[cur] = toFrame(bitsList[0], src[cur]); }
     else {
-      const made = lastImport.map((img) => toFrame(imageToBits(img)));
-      if (mode === 'replace') { art.frames = made; art.cur = 0; art.clips.forEach((c, s) => { c.start = 0; c.count = s === 0 ? made.length : 0; }); }
-      else { const at = art.frames.length; art.frames = art.frames.concat(made); art.cur = at; }
+      const made = bitsList.map((b) => toFrame(b));
+      if (li.mode === 'replace') { frames = made; cur = 0; clips.forEach((c, s) => { c.start = 0; c.count = s === 0 ? made.length : 0; }); }
+      else { frames = src.concat(made); cur = src.length; }
     }
-    lastImport.appliedAt = art.cur;
-    $('impNote').textContent = 'Imported ' + lastImport.length + ' image' + (lastImport.length === 1 ? '' : 's') + '. Move the threshold to re-run it.';
-    artChanged(true); renderClips();
+    if (fresh) {
+      undoAll();   // the undo entry restores the artwork from before the import
+      li.prev = { frames: art.frames.map((f) => f.slice()), cur: art.cur, clips: art.clips.map((c) => ({ ...c })) };
+      lastImport = li;
+    }
+    art.frames = frames; art.cur = cur; art.clips = clips;
+    li.rev = art.rev;
+    $('impNote').textContent = 'Imported ' + li.images.length + ' image' + (li.images.length === 1 ? '' : 's') + '. Change the threshold or options to re-run it.';
+    artChanged(true);
   }
   function bindImport() {
     $('importFile').addEventListener('change', (e) => { importFiles([...e.target.files]); e.target.value = ''; });
@@ -1525,30 +1661,67 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
   // Clips, mapping, export, persistence
   // ===================================================================================
   let forced = -1;
+  // What the core plays for a state whose own clip is unusable (same rules as
+  // AnimationEffect::resolveClip); '' when the clip plays as written.
+  function clipFallback(s) {
+    const n = art.frames.length, cl = art.clips;
+    const usable = (c) => c.count > 0 && c.start < n;
+    if (usable(cl[s])) return '';
+    const pre = cl[s].count > 0 ? 'starts past the last frame; ' : '';
+    const idleOrAll = s !== 0 && usable(cl[0]) ? 'uses idle' : 'plays all frames';
+    if (s === 5) return pre + 'never fires (preview ' + idleOrAll + ')';
+    const m = animParamValues();
+    if ((s === 3 || s === 4) && (m.mirror || 0) > 0.5 && usable(cl[s === 3 ? 4 : 3])) return pre + 'mirrors ' + (s === 3 ? 'right' : 'left');
+    return pre + idleOrAll;
+  }
+  function refreshFallbacks() {
+    document.querySelectorAll('#clipTable tr[data-state]').forEach((tr) => {
+      const fb = tr.querySelector('.fb'), t = clipFallback(+tr.dataset.state);
+      fb.textContent = t; fb.hidden = !t;
+    });
+  }
   function renderClips() {
-    const tb = $('clipTable').querySelector('tbody'); tb.textContent = '';
+    const tb = $('clipTable').querySelector('tbody');
+    // Keep keyboard focus on the same control across a rebuild (e.g. Preview).
+    const fid = tb.contains(document.activeElement) ? document.activeElement.id : '';
+    tb.textContent = '';
     const colors = STATE_COLORS.map(cssVar);
     art.clips.forEach((c, s) => {
       const tr = document.createElement('tr'); tr.dataset.state = s;
       const st = document.createElement('td'); const lab = document.createElement('span'); lab.className = 'st';
       const dot = document.createElement('i'); dot.style.background = colors[s]; lab.append(dot, document.createTextNode(STATE_LABELS[s]));
-      st.appendChild(lab);
-      if (c.count === 0) { const fb = document.createElement('div'); fb.className = 'fb'; fb.textContent = (s === 3 || s === 4) ? 'mirrors ' + (s === 3 ? 'right' : 'left') : 'uses idle'; st.appendChild(fb); }
+      const fb = document.createElement('div'); fb.className = 'fb';
+      st.append(lab, fb);
       const mk = (key, min, max, step) => {
         const td = document.createElement('td'); const inp = document.createElement('input'); inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step; inp.value = String(c[key]);
         inp.id = 'clip-' + s + '-' + key; inp.setAttribute('aria-label', STATE_LABELS[s] + ' ' + key);
-        inp.addEventListener('change', () => { let v = parseFloat(inp.value); if (Number.isNaN(v)) v = 0; c[key] = key === 'fps' ? clamp(v, 0.5, 120) : clamp(Math.round(v), 0, art.frames.length); inp.value = String(c[key]); pushToCore(true); renderClips(); renderFrames(); });
+        // Update in place: rebuilding the table here would destroy the field
+        // the user is tabbing to.
+        inp.addEventListener('change', () => {
+          let v = parseFloat(inp.value); if (Number.isNaN(v)) v = 0;
+          const cl = art.clips[s];
+          const nv = key === 'fps' ? clamp(v, 0.5, 120) : key === 'start' ? clamp(Math.round(v), 0, Math.max(0, art.frames.length - 1)) : clamp(Math.round(v), 0, art.frames.length);
+          inp.value = String(nv);
+          if (nv === cl[key]) return;
+          undoClips(); art.clips[s][key] = nv;
+          pushToCore(true); refreshFallbacks(); renderFrames();
+        });
         td.appendChild(inp); return td;
       };
       const lp = document.createElement('td'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!c.loop; cb.id = 'clip-' + s + '-loop'; cb.setAttribute('aria-label', STATE_LABELS[s] + ' loops');
-      cb.addEventListener('change', () => { c.loop = cb.checked ? 1 : 0; pushToCore(true); }); lp.appendChild(cb);
-      const pv = document.createElement('td'); const b = document.createElement('button'); b.type = 'button'; b.textContent = forced === s ? 'Pinned' : 'Preview'; b.className = forced === s ? 'on' : '';
+      cb.addEventListener('change', () => { undoClips(); art.clips[s].loop = cb.checked ? 1 : 0; pushToCore(true); }); lp.appendChild(cb);
+      const b = document.createElement('button'); b.type = 'button'; b.id = 'clip-' + s + '-pv';
+      b.textContent = forced === s ? 'Pinned' : 'Preview'; b.className = forced === s ? 'on' : '';
+      b.classList.add('pv'); b.setAttribute('aria-pressed', String(forced === s));
+      b.setAttribute('aria-label', (forced === s ? 'Pinned: ' : 'Preview ') + STATE_LABELS[s]);
       b.addEventListener('click', () => { forceState(forced === s ? -1 : s); });
-      pv.appendChild(b);
-      tr.append(st, mk('start', 0, 65535, 1), mk('count', 0, 65535, 1), mk('fps', 0.5, 120, 0.5), lp, pv);
+      st.appendChild(b);
+      tr.append(st, mk('start', 0, 65535, 1), mk('count', 0, 65535, 1), mk('fps', 0.5, 120, 0.5), lp);
       tb.appendChild(tr);
     });
+    refreshFallbacks();
     $('clipAuto').classList.toggle('on', forced < 0);
+    if (fid) { const el = document.getElementById(fid); if (el) el.focus({ preventScroll: true }); }
   }
   function forceState(s) {
     forced = s; core.x.gm_anim_force_state(s);
@@ -1591,7 +1764,8 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     $('exSize').textContent = bits.length + ' bytes of flash, ' + art.frames.length + ' frames';
   }
 
-  const STORE_KEY = 'gmeter-studio-v1';
+  // Builds for other panel sizes keep their own copy (file:// pages share storage).
+  let STORE_KEY = 'gmeter-studio-v1';
   let saveTimer = 0;
   function projectJSON() {
     const m = animParamValues();
@@ -1601,38 +1775,68 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       clips: art.clips, mapping: m,
     });
   }
+  // Validates and decodes everything before changing any state, so a bad paste
+  // leaves the project (and the undo history) untouched. Returns a note when
+  // the project had to be cropped to this build's panel.
   function loadProject(json) {
     const p = typeof json === 'string' ? JSON.parse(json) : json;
     if (!p || p.v !== 1 || !Array.isArray(p.frames) || !p.frames.length) throw new Error('not a Gmeter Studio project');
-    const w = clamp(p.w | 0, 1, core.W), h = clamp(p.h | 0, 1, core.H), d = clamp(p.d | 0, 1, core.D), n = w * h * d;
-    art.frames = p.frames.map((s) => { const fr = new Uint8Array(n); for (let i = 0; i < s.length && i * 4 < n; i++) { const v = parseInt(s[i], 16) || 0; for (let b = 0; b < 4 && i * 4 + b < n; b++) fr[i * 4 + b] = (v >> (3 - b)) & 1; } return fr; });
-    art.w = w; art.h = h; art.d = d; art.cur = 0; art.slice = 0;
-    art.clips = core.states.map((_, s) => { const c = (p.clips && p.clips[s]) || {}; return { start: clamp(c.start | 0, 0, 65535), count: clamp(c.count | 0, 0, 65535), fps: clamp(+c.fps || 12, 0.5, 120), loop: c.loop ? 1 : 0 }; });
-    art.mapping = p.mapping || null;
-    if (p.name) $('exName').value = p.name;
-    art.undo = []; art.redo = [];
+    if (p.frames.length > MAX_FRAMES) throw new Error('too many frames, the limit is ' + MAX_FRAMES);
+    const sw = p.w | 0, sh = p.h | 0, sd = p.d | 0;
+    if (sw < 1 || sh < 1 || sd < 1 || sw > 4096 || sh > 4096 || sd > 64) throw new Error('bad size ' + sw + 'x' + sh + 'x' + sd);
+    const w = Math.min(sw, core.W), h = Math.min(sh, core.H), d = Math.min(sd, core.D), n = w * h * d;
+    // Decode with the stride the project was saved with, then crop.
+    const frames = p.frames.map((str) => {
+      str = String(str); const fr = new Uint8Array(n);
+      for (let s = 0; s < d; s++) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = (s * sh + y) * sw + x;
+        fr[(s * h + y) * w + x] = ((parseInt(str[i >> 2], 16) || 0) >> (3 - (i & 3))) & 1;
+      }
+      return fr;
+    });
+    const nf = frames.length;
+    const clips = core.states.map((_, s) => { const c = (p.clips && p.clips[s]) || {}; return { start: clamp(c.start | 0, 0, nf - 1), count: clamp(c.count | 0, 0, 65535), fps: clamp(+c.fps || 12, 0.5, 120), loop: c.loop ? 1 : 0 }; });
+    art.frames = frames; art.w = w; art.h = h; art.d = d; art.cur = 0; art.slice = 0; art.clips = clips;
+    art.mapping = p.mapping && typeof p.mapping === 'object' ? p.mapping : null;
+    if (p.name) $('exName').value = String(p.name).slice(0, 24);
+    art.rev++;
     syncSizeInputs();
     if (art.mapping) applyMapping(art.mapping);
     pushToCore(true);
+    return (sw > w || sh > h || sd > d) ? 'The project was ' + sw + 'x' + sh + ' px with ' + sd + ' slices; cropped to ' + w + 'x' + h + ' px with ' + d + '.' : '';
   }
   function applyMapping(m) {
     core.params(core.animIndex).forEach((p) => { if (m[p.name] !== undefined && Number.isFinite(+m[p.name])) core.setParam(core.animIndex, p.i, +m[p.name]); });
   }
+  const SAVE_NOTE = 'Your work also saves in this browser automatically.';
+  let saveWarned = false;
+  const isQuota = (e) => !!e && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || e.code === 22 || e.code === 1014);
+  function setSaveNote(msg) { $('saveNote').textContent = msg || SAVE_NOTE; $('saveNote').classList.toggle('warn', !!msg); }
   function save() {
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
+      try { localStorage.setItem(STORE_KEY + '-ui', JSON.stringify({ effect: currentEffectName(), sim: sim.mode, spacing: view.spacing, trans: view.transmittance })); } catch (e) { /* ignore */ }
       try {
         localStorage.setItem(STORE_KEY, projectJSON());
-        localStorage.setItem(STORE_KEY + '-ui', JSON.stringify({ effect: currentEffectName(), sim: sim.mode, spacing: view.spacing, trans: view.transmittance }));
-      } catch (e) { /* storage unavailable: nothing to do */ }
+        try { localStorage.removeItem(STORE_KEY + '-stale'); } catch (e) { /* ignore */ }
+        if (saveWarned) { saveWarned = false; setSaveNote(''); }
+      } catch (e) {
+        if (!isQuota(e)) return;   // storage blocked entirely: nothing to warn about
+        // The stored copy is now older than the page: flag it so a reload says so.
+        try { localStorage.setItem(STORE_KEY + '-stale', '1'); } catch (e2) { /* ignore */ }
+        setSaveNote('Autosave stopped: this project is too big for browser storage. Use Copy project to keep your work.');
+        if (!saveWarned) { saveWarned = true; toast('Autosave failed: project too big for browser storage'); }
+      }
     }, 400);
   }
   function restore() {
-    let restored = false;
+    let restored = false, stale = false;
     try {
       const s = localStorage.getItem(STORE_KEY);
-      if (s) { loadProject(s); restored = true; }
+      stale = localStorage.getItem(STORE_KEY + '-stale') === '1';
+      if (s) { const note = loadProject(s); restored = true; if (note) setTimeout(() => toast(note), 0); }
     } catch (e) { restored = false; }
+    if (restored && stale) setSaveNote('This is the last copy that fitted in browser storage; later changes were too big to autosave. Use Copy project to keep your work.');
     if (!restored) { loadDemoProject(); pushToCore(true); }
     let ui = null;
     try { ui = JSON.parse(localStorage.getItem(STORE_KEY + '-ui') || 'null'); } catch (e) { ui = null; }
@@ -1645,17 +1849,23 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     $('copyHeader').addEventListener('click', () => { updateHeader(); copyText($('headerOut').value, $('headerOut')); });
     $('copyProject').addEventListener('click', () => { const s = projectJSON(); $('projectIo').value = s; copyText(s, $('projectIo')); });
     $('loadProject').addEventListener('click', () => {
-      try { undoAll(); loadProject($('projectIo').value); renderParams(); renderAllArt(); toast('Project loaded'); }
-      catch (e) { toast('That text is not a Gmeter Studio project (' + e.message + ')'); }
+      const before = snapshotProject();
+      let note;
+      try { note = loadProject($('projectIo').value); }
+      catch (e) { toast('That text is not a Gmeter Studio project (' + e.message + ')'); return; }
+      pushUndo({ kind: 'all', before });
+      renderParams(); renderAllArt();
+      toast(note || 'Project loaded. Undo on the Artwork tab brings back your previous work.');
     });
     let armed = 0;
     $('resetDemo').addEventListener('click', (e) => {
       const b = e.currentTarget;
       if (Date.now() - armed > 3000) { armed = Date.now(); b.textContent = 'Click again to replace your work'; setTimeout(() => { b.textContent = 'Start from the demo'; }, 3000); return; }
       armed = 0; b.textContent = 'Start from the demo';
-      undoAll(); loadDemoProject(); syncSizeInputs(); $('exName').value = 'my_animation';
+      const before = snapshotProject();
+      loadDemoProject(); pushUndo({ kind: 'all', before }); syncSizeInputs(); $('exName').value = 'my_animation';
       renderParams();
-      pushToCore(true); renderAllArt(); toast('Demo loaded');
+      pushToCore(true); renderAllArt(); toast('Demo loaded. Undo on the Artwork tab brings back your previous work.');
     });
   }
   function renderAllArt() { editorSize(); drawEditor(); renderSlices(); renderFrames(); renderClips(); updateHeader(); }
@@ -1669,7 +1879,8 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       $('pane-' + t).hidden = t !== id;
     });
     if (id !== 'effect' && core.x.gm_effect_index() !== core.animIndex) setEffect(core.animIndex, true);
-    if (id === 'clips') updateHeader();
+    if (id === 'clips') { renderAnimParams(); refreshFallbacks(); updateHeader(); }
+    if (id === 'effect') renderParamsMain();
     if (id === 'art') { editorSize(); drawEditor(); renderFrames(); }
     try { localStorage.setItem(STORE_KEY + '-tab', id); } catch (e) { /* ignore */ }
   }
@@ -1681,7 +1892,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
     $('optGrid').addEventListener('change', (e) => { view.grid = e.target.checked; });
     $('optHw').addEventListener('change', (e) => { view.hw = e.target.checked; if (view.ok) layoutStack(); });
     $('optBoards').addEventListener('change', (e) => { view.boards = e.target.checked; if (view.ok) layoutStack(); });
-    $('optDay').addEventListener('change', (e) => { view.day = e.target.checked; });
+    $('optDay').addEventListener('change', (e) => { view.day = e.target.checked; $('stage').classList.toggle('day', view.day && view.ok); });
     document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.view)));
     document.querySelectorAll('[role=tab]').forEach((b) => b.addEventListener('click', () => selectTab(b.id.replace('tab-', ''))));
     $('fxReset').addEventListener('click', () => core.x.gm_reset_effect());
@@ -1720,6 +1931,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       $('chipLit').textContent = lit;
       const isAnim = core.x.gm_effect_index() === core.animIndex;
       $('chipStateWrap').hidden = !isAnim;
+      announce('Effect ' + core.effects[core.x.gm_effect_index()] + (isAnim ? ', animation state ' + core.states[core.x.gm_anim_state()] : ''));
       if (isAnim) {
         const s = core.x.gm_anim_state();
         $('chipState').textContent = core.states[s] + (core.x.gm_anim_mirrored() ? ' (mirrored)' : '') + ' #' + core.x.gm_anim_frame();
@@ -1736,6 +1948,7 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       const fb = $('glFallback'); fb.hidden = false; fb.textContent = 'Could not start the simulation core: ' + e.message;
       return;
     }
+    if (core.W !== 128 || core.H !== 56) STORE_KEY += '-' + core.W + 'x' + core.H;
     bindStageBar();
     initViewport();
     bindSim();

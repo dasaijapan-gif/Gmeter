@@ -1,5 +1,6 @@
 // Self-contained unit tests for the core library. Build with host/CMakeLists.txt
 // (target gmeter_tests) and run; exit code is the number of failures.
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -544,6 +545,104 @@ TEST(anim_degenerate_assets) {
   VoxelFrame f;
   b.render(f);
   CHECK(f.countLit() == 0);
+}
+
+namespace {
+// Lowest and highest panel lit by the effect after driving it with `g`.
+void litLayers(AnimationEffect& a, const GForce& g, float seconds, int& lo, int& hi) {
+  drive(a, g, seconds);
+  VoxelFrame f;
+  a.render(f);
+  lo = kD; hi = -1;
+  for (int z = 0; z < kD; ++z)
+    if (f.countLitLayer(z) > 0) { lo = std::min(lo, z); hi = std::max(hi, z); }
+}
+}  // namespace
+
+TEST(anim_even_slice_counts_reach_both_ends_of_the_stack) {
+  // All-lit 8x8 art. Before the fix, even slice counts sat half a layer too deep
+  // (depth 2 never reached panel 0, depth 6 did not move under braking).
+  static uint8_t bits[8 * 8 * 8];
+  std::memset(bits, 0xFF, sizeof(bits));
+  for (int depth : {2, 4, 6}) {
+    if (depth > kD) continue;
+    AnimationAsset asset;
+    asset.name = "block"; asset.width = 8; asset.height = 8;
+    asset.depth = static_cast<uint16_t>(depth); asset.frames = 1; asset.bits = bits;
+    AnimationEffect a(asset);
+    a.activate();
+    int lo = 0, hi = 0;
+    litLayers(a, dyn(0, 0, 0), 2.0f, lo, hi);
+    CHECK(hi - lo == depth - 1);
+    CHECK(lo == (kD - depth) / 2);
+    litLayers(a, dyn(0, 0, -3.0f), 3.0f, lo, hi);  // braking: thrown to the back
+    CHECK(hi == kD - 1 && lo == kD - depth);
+    litLayers(a, dyn(0, 0, 3.0f), 3.0f, lo, hi);   // accelerating: pressed to the front
+    CHECK(lo == 0 && hi == depth - 1);
+  }
+}
+
+TEST(anim_hysteresis_keeps_state_when_stronger_axis_cannot_enter) {
+  AnimationEffect a(demoAnimation());
+  a.activate();
+  a.params().set("enter_g", 0.5f);
+  drive(a, dyn(0, 0, -0.6f), 1.0f);
+  CHECK(a.state() == kAnimBrake);
+  // Trail braking: lateral 0.45 g is stronger but below enter_g; braking 0.35 g
+  // is above the 60 % exit level, so the state must stay brake (was idle).
+  drive(a, dyn(0.45f, 0, -0.35f), 1.0f);
+  CHECK(a.state() == kAnimBrake);
+  // Once the corner itself can enter, it takes over.
+  drive(a, dyn(0.6f, 0, -0.35f), 1.0f);
+  CHECK(a.state() == kAnimRight);
+
+  GStateTracker t;
+  t.enterG = 0.5f;
+  t.holdS = 0.0f;
+  for (int i = 0; i < 10; ++i) t.update(dyn(0, 0, -0.6f), 0.1f);
+  CHECK(t.state() == DriveState::Brake);
+  for (int i = 0; i < 10; ++i) t.update(dyn(0.45f, 0, -0.35f), 0.1f);
+  CHECK(t.state() == DriveState::Brake);
+  for (int i = 0; i < 10; ++i) t.update(dyn(0.6f, 0, -0.35f), 0.1f);
+  CHECK(t.state() == DriveState::Right);
+}
+
+TEST(anim_bump_clip_past_the_end_never_fires) {
+  static const uint8_t bits[2 * 8] = {0xFF, 0, 0, 0, 0, 0, 0, 0, 0x81, 0, 0, 0, 0, 0, 0, 0};
+  AnimationAsset asset;
+  asset.name = "tiny"; asset.width = 8; asset.height = 8; asset.depth = 1; asset.frames = 2; asset.bits = bits;
+  asset.clips[kAnimBump] = AnimClip{2, 4, 10.0f, 0};  // starts one past the last frame
+  AnimationEffect a(asset);
+  a.activate();
+  drive(a, dyn(0, 0, 0), 0.5f);
+  EffectContext ctx; ctx.dt = 1.0f / 60.0f;
+  ctx.g = dyn(0, 0.9f, 0); a.update(ctx);
+  CHECK(a.state() == kAnimIdle);
+  // And corners still work straight after the spike.
+  drive(a, dyn(0.6f, 0, 0), 1.0f);
+  CHECK(a.state() == kAnimRight);
+}
+
+TEST(anim_states_sharing_the_idle_clip_do_not_restart_it) {
+  // Idle-only asset: accelerate falls back to idle and must carry on from the
+  // frame already showing rather than jumping back to frame 0.
+  static uint8_t bits[8 * 8];
+  for (int i = 0; i < 8; ++i) bits[i * 8] = static_cast<uint8_t>(1u << i);
+  AnimationAsset asset;
+  asset.name = "idle"; asset.width = 8; asset.height = 8; asset.depth = 1; asset.frames = 8; asset.bits = bits;
+  asset.clips[kAnimIdle] = AnimClip{0, 8, 4.0f, 1};
+  asset.mapping.fpsPerG = 0.0f;
+  asset.mapping.holdS = 0.0f;
+  AnimationEffect a(asset);
+  a.activate();
+  drive(a, dyn(0, 0, 0), 0.55f);  // about frame 2 at 4 fps
+  const int before = a.currentFrame();
+  CHECK(before >= 1);
+  EffectContext ctx; ctx.dt = 1.0f / 60.0f;
+  ctx.g = dyn(0, 0, 0.6f);
+  a.update(ctx);
+  CHECK(a.state() == kAnimAccelerate);
+  CHECK(a.currentFrame() >= before);
 }
 
 // ---- review regressions --------------------------------------------------------------------

@@ -59,7 +59,11 @@ class GStateTracker {
     }
     if (state_ != DriveState::Idle) {
       const float mine = support(state_, d);
-      if (mine >= 0.6f * enterG && (best == state_ || bestV < mine + 0.1f)) return state_;
+      if (mine >= 0.6f * enterG) {
+        // Hand over only to a clearly stronger state that could itself be entered.
+        const bool handOver = best != state_ && bestV >= mine + 0.1f && bestV >= enterG;
+        return handOver ? best : state_;
+      }
     }
     return bestV >= enterG ? best : DriveState::Idle;
   }
