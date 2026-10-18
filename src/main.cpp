@@ -7,7 +7,9 @@
 //   displayTask (core 0)          streams finished frames to the 8 panels over SPI.
 //   loop()      (core 1, idle)    serial CLI, mode button, periodic housekeeping.
 #include <Arduino.h>
+#include <esp_timer.h>
 
+#include <cstdlib>
 #include <cstring>
 
 #include "board_config.hpp"
@@ -165,9 +167,12 @@ void renderTask(void*) {
     stepUs = static_cast<uint32_t>(spent);
     const float inst = 1.0f / (dt > 1e-4f ? dt : 1e-4f);
     fpsEma = fpsEma == 0.0f ? inst : fpsEma + 0.05f * (inst - fpsEma);
+    // Always sleep at least one tick: a plain yield would never let the
+    // lower-priority loop()/CLI task or the idle task run when rendering is
+    // over budget (and the idle task feeds the watchdog).
     const int64_t sleepUs = periodUs - spent;
-    if (sleepUs > 1000) vTaskDelay(pdMS_TO_TICKS(static_cast<uint32_t>(sleepUs / 1000)));
-    else taskYIELD();
+    const uint32_t sleepMs = sleepUs > 1000 ? static_cast<uint32_t>(sleepUs / 1000) : 1u;
+    vTaskDelay(pdMS_TO_TICKS(sleepMs));
   }
 }
 

@@ -1,7 +1,0 @@
-/home/user/Gmeter/host/build56/CMakeFiles/gmeter_core.dir
-/home/user/Gmeter/host/build56/CMakeFiles/gmeter_sim.dir
-/home/user/Gmeter/host/build56/CMakeFiles/gmeter_tests.dir
-/home/user/Gmeter/host/build56/CMakeFiles/firmware_hostcheck.dir
-/home/user/Gmeter/host/build56/CMakeFiles/test.dir
-/home/user/Gmeter/host/build56/CMakeFiles/edit_cache.dir
-/home/user/Gmeter/host/build56/CMakeFiles/rebuild_cache.dir

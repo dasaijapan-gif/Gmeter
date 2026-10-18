@@ -1,6 +1,6 @@
 .pio/
 build/
-host/build/
+host/build*/
 *.o
 *.a
 *.bin

@@ -1,5 +1,7 @@
 #include "display_ssd1309.hpp"
 
+#include <esp_timer.h>
+
 #include "board_config.hpp"
 
 namespace {

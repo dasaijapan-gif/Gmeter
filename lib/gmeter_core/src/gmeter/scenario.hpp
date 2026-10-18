@@ -16,8 +16,8 @@ struct GKey {
 
 class Scenario {
  public:
-  Scenario() = default;
-  Scenario(const char* name, const GKey* keys, int count, float noiseG = 0.015f, float loopAfter = 0.0f)
+  constexpr Scenario() = default;
+  constexpr Scenario(const char* name, const GKey* keys, int count, float noiseG = 0.015f, float loopAfter = 0.0f)
       : name_(name), keys_(keys), count_(count), noiseG_(noiseG), loopAfter_(loopAfter) {}
 
   const char* name() const { return name_; }

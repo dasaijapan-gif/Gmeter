@@ -61,7 +61,7 @@ const GKey kDrive[] = {
     {12.8f, {-0.6f, 0, 0}},   {14.2f, {-0.6f, 0, 0.1f}},   {15.0f, {-0.1f, 0, 0.5f}},   {16.3f, {0, 0, 0.45f}},
     {17.0f, {0, 0, 0}},       {17.6f, {0, 0, -0.8f}},      {18.9f, {0, 0, -0.85f}},     {19.3f, {0, 0, -0.2f}},
     {19.5f, {0, 0.05f, 0.1f}}, {20.0f, {0, 0, 0}},         {21.0f, {0, 0, 0}}};
-const Scenario kPresets[] = {
+constexpr Scenario kPresets[] = {
     Scenario("idle", kIdle, sizeof(kIdle) / sizeof(kIdle[0]), 0.01f),
     Scenario("launch", kLaunch, sizeof(kLaunch) / sizeof(kLaunch[0])),
     Scenario("brake", kBrake, sizeof(kBrake) / sizeof(kBrake[0])),
