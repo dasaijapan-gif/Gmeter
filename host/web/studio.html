@@ -1750,7 +1750,8 @@ footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
       if (ui.trans) { view.transmittance = ui.trans; $('trans').value = ui.trans; $('transOut').textContent = Math.round(ui.trans * 100) + '%'; }
       if (view.ok) layoutStack();
     } else {
-      core.x.gm_set_effect(core.animIndex, 0);
+      const hud = core.effects.indexOf('hud');
+      core.x.gm_set_effect(hud >= 0 ? hud : core.animIndex, 0);
       setSimMode('scenario');
     }
     renderEffects(); renderParams();
