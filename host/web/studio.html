@@ -1,0 +1,1766 @@
+<title>Gmeter Studio</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a bench instrument. The 3D glass stack is the hero on the left with
+   the g-force simulator under it; a tabbed workbench on the right holds the
+   effect tuning, the pixel-art editor and the clip/export sheet. Dark-first:
+   the subject is light-blue OLED pixels glowing on glass in a dark cabin. */
+:root {
+  --bg: #0b0f14;
+  --surface: #121922;
+  --surface-2: #0e141b;
+  --line: #243140;
+  --fg: #dde6ef;
+  --muted: #8a9aac;
+  --accent: #8fd9ff;         /* WiseChip transparent OLED emission, light blue */
+  --accent-ink: #04121b;
+  --stage: #05080c;
+  --focus: #ffd166;
+  --st-idle: #8a9aac;
+  --st-accel: #6fdc9a;
+  --st-brake: #ff7a6b;
+  --st-left: #ffb454;
+  --st-right: #c49cff;
+  --st-bump: #ffe066;
+  --font-display: "Chakra Petch", "Trebuchet MS", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  --radius: 8px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #eef2f6; --surface: #ffffff; --surface-2: #e6ecf2; --line: #c9d4df; --fg: #13202c; --muted: #556677;
+    --accent: #0a74a8; --accent-ink: #ffffff; --stage: #05080c; --focus: #b36b00;
+    --st-idle: #556677; --st-accel: #1f8a52; --st-brake: #c2392b; --st-left: #b86a00; --st-right: #6d3fc9; --st-bump: #8a6d00;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #eef2f6; --surface: #ffffff; --surface-2: #e6ecf2; --line: #c9d4df; --fg: #13202c; --muted: #556677;
+  --accent: #0a74a8; --accent-ink: #ffffff; --stage: #05080c; --focus: #b36b00;
+  --st-idle: #556677; --st-accel: #1f8a52; --st-brake: #c2392b; --st-left: #b86a00; --st-right: #6d3fc9; --st-bump: #8a6d00;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+.app { max-width: 1440px; margin: 0 auto; padding-block: 16px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 14px; }
+header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 20px; }
+h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 24px; letter-spacing: 0.02em; text-wrap: balance; }
+h1 + p { margin: 2px 0 0; color: var(--muted); max-width: 70ch; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+.chip b { color: var(--fg); font-weight: 500; }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--st-idle); }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 440px; gap: 14px; align-items: start; }
+@media (max-width: 1080px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.col { display: grid; gap: 14px; min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.card > .hd { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.card > .bd { padding: 12px; display: grid; gap: 12px; min-width: 0; }
+h2 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.note { color: var(--muted); font-size: 12.5px; max-width: 65ch; }
+.note code, .mono { font-family: var(--font-mono); font-size: 12px; }
+.note code { background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+button, select, input[type=number], input[type=text], textarea { font: inherit; color: var(--fg); background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; }
+button { padding: 6px 10px; cursor: pointer; line-height: 1.2; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+button.on, .seg button[aria-pressed="true"], .tools button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+select { padding: 5px 8px; }
+input[type=number], input[type=text] { padding: 5px 7px; width: 100%; min-width: 0; }
+input[type=range] { accent-color: var(--accent); width: 100%; min-width: 0; }
+input[type=checkbox] { accent-color: var(--accent); }
+textarea { width: 100%; min-height: 140px; padding: 8px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.4; resize: vertical; }
+:is(button, select, input, textarea, canvas[tabindex]):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.row.tight { gap: 4px; }
+.grow { flex: 1 1 140px; min-width: 0; }
+label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+.field { display: grid; gap: 3px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); min-width: 0; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); background: var(--surface-2); }
+.seg button:last-child { border-right: 0; }
+
+/* ---- 3D stage ---- */
+.stage { position: relative; background: var(--stage); border-radius: var(--radius) var(--radius) 0 0; overflow: hidden; aspect-ratio: 16 / 10; max-height: 68vh; width: 100%; }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.stage canvas:active { cursor: grabbing; }
+.stage .ov { position: absolute; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
+.stage .ov > * { pointer-events: auto; }
+.stage .ov.tl { top: 10px; left: 10px; right: 120px; }
+.stage .ov.tr { top: 10px; right: 10px; flex-direction: column; align-items: stretch; }
+.stage .ov.bl { left: 10px; bottom: 8px; }
+.stage .ov.tr button { background: rgba(14, 20, 27, 0.82); color: #dde6ef; border-color: #2b3a4a; font-size: 12px; padding: 5px 9px; }
+.stage .ov.tr button.on { background: #8fd9ff; color: #04121b; border-color: #8fd9ff; }
+.stage .chip { background: rgba(14, 20, 27, 0.82); border-color: #2b3a4a; color: #8a9aac; }
+.stage .chip b { color: #dde6ef; }
+.stage .hint { font-family: var(--font-mono); font-size: 11px; color: #6f8aa0; }
+@media (max-width: 640px) { .stage { aspect-ratio: 4 / 3; } .stage .ov.bl { display: none; } }
+.stage .fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; text-align: center; color: #8a9aac; }
+.stagebar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 10px 12px; }
+.stagebar .slider { display: grid; grid-template-columns: auto minmax(90px, 160px) 7ch; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.stagebar .slider output { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--fg); text-align: right; }
+
+/* ---- simulator ---- */
+.sim { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 14px; align-items: start; }
+@media (max-width: 640px) { .sim { grid-template-columns: minmax(0, 1fr); } }
+.gplot { display: grid; gap: 8px; justify-items: center; }
+.gplot canvas { width: 200px; height: 200px; max-width: 100%; }
+.readouts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; width: 100%; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.readouts .k { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.readouts .v { font-size: 17px; }
+.pedals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pedal { padding: 14px 8px; font-family: var(--font-display); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; user-select: none; -webkit-user-select: none; touch-action: none; }
+.pedal.held { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.speedo { display: flex; align-items: baseline; gap: 6px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.speedo b { font-family: var(--font-display); font-size: 30px; font-weight: 600; }
+.bar { height: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--accent); }
+.pad { width: 180px; height: 180px; max-width: 100%; touch-action: none; border-radius: 8px; cursor: crosshair; }
+.kbd { font-family: var(--font-mono); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; background: var(--surface-2); }
+
+/* ---- tabs ---- */
+.tabs { display: flex; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { flex: 1 0 auto; border: 0; border-radius: 0; background: transparent; padding: 11px 12px; font-family: var(--font-display); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; color: var(--muted); border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.effects { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.effects button { text-align: left; padding: 8px 9px; display: grid; gap: 2px; }
+.effects button b { font-family: var(--font-display); font-size: 13px; letter-spacing: 0.04em; }
+.effects button span { font-size: 11.5px; color: var(--muted); }
+.effects button.on span { color: var(--accent-ink); opacity: 0.85; }
+.params { display: grid; gap: 10px; }
+.param { display: grid; grid-template-columns: minmax(0, 1fr) 7ch; gap: 2px 10px; align-items: center; }
+.param .nm { font-family: var(--font-mono); font-size: 12px; }
+.param .hp { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); margin-top: -2px; }
+.param input[type=number] { padding: 2px 5px; font-family: var(--font-mono); font-size: 12px; text-align: right; }
+.param.changed .nm { color: var(--accent); }
+
+/* ---- editor ---- */
+.tools { display: flex; flex-wrap: wrap; gap: 4px; }
+.tools button { padding: 5px 8px; font-size: 12.5px; }
+.editwrap { overflow: auto; max-height: 460px; border: 1px solid var(--line); border-radius: 6px; background: var(--stage); }
+.editwrap canvas { display: block; touch-action: none; cursor: crosshair; }
+.frames { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.thumb { flex: 0 0 auto; display: grid; gap: 3px; justify-items: center; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); cursor: pointer; }
+.thumb[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.thumb canvas { height: 34px; image-rendering: pixelated; background: var(--stage); border-radius: 3px; }
+.thumb .ix { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+.thumb .dots { display: flex; gap: 2px; height: 6px; }
+.thumb .dots i { width: 6px; height: 6px; border-radius: 50%; }
+.slices { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.slices button { min-width: 34px; padding: 4px 6px; font-family: var(--font-mono); font-size: 12px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.drop { border: 1px dashed var(--line); border-radius: 8px; padding: 10px; display: grid; gap: 8px; }
+.drop.over { border-color: var(--accent); background: var(--surface-2); }
+
+/* ---- clips ---- */
+.cliptable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.cliptable th { text-align: left; font-weight: 500; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 0 4px 6px; }
+.cliptable td { padding: 3px 4px; vertical-align: middle; }
+.cliptable input[type=number] { padding: 3px 5px; font-family: var(--font-mono); font-size: 12px; width: 5.2em; }
+.cliptable .st { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+.cliptable .st i { width: 9px; height: 9px; border-radius: 50%; }
+.cliptable tr.live td { background: var(--surface-2); }
+.cliptable .fb { font-size: 11px; color: var(--muted); }
+.tablewrap { overflow-x: auto; }
+.toast { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 20; }
+footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <h1>Gmeter Studio</h1>
+      <p>Eight DFRobot DFR0934 transparent OLEDs, 128&times;56 px each, running the firmware's own rendering core. Draw an animation, tell it how to react, then drive.</p>
+    </div>
+    <div class="chips" aria-live="polite">
+      <span class="chip">effect <b id="chipEffect">-</b></span>
+      <span class="chip" id="chipStateWrap"><i class="dot" id="chipStateDot"></i>state <b id="chipState">-</b></span>
+      <span class="chip">lit <b id="chipLit">0</b></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="col">
+      <section class="card" aria-label="3D view of the panel stack">
+        <div class="stage" id="stage">
+          <canvas id="gl" tabindex="0" aria-label="Orbitable 3D view of the eight-panel stack"></canvas>
+          <div class="ov tl">
+            <span class="chip">view <b id="chipView">driver</b></span>
+            <span class="chip">fps <b id="chipFps">-</b></span>
+          </div>
+          <div class="ov tr" role="group" aria-label="Camera presets">
+            <button type="button" data-view="driver" class="on">Driver</button>
+            <button type="button" data-view="three">3/4</button>
+            <button type="button" data-view="top">Top</button>
+            <button type="button" data-view="side">Side</button>
+          </div>
+          <div class="ov bl"><span class="hint">drag to orbit &middot; shift-drag or two fingers to pan &middot; wheel or pinch to zoom</span></div>
+          <div class="fallback" id="glFallback" hidden></div>
+        </div>
+        <div class="stagebar">
+          <label class="slider" for="spacing">Panel gap <input type="range" id="spacing" min="2" max="20" step="0.1" value="4.4"><output id="spacingOut">4.4 mm</output></label>
+          <label class="slider" for="trans">Glass transmittance <input type="range" id="trans" min="0.3" max="1" step="0.01" value="0.6"><output id="transOut">60%</output></label>
+          <label class="chk"><input type="checkbox" id="optGlow" checked> Glow</label>
+          <label class="chk"><input type="checkbox" id="optGrid" checked> Pixel grid</label>
+          <label class="chk"><input type="checkbox" id="optHw" checked> Hardware</label>
+          <label class="chk"><input type="checkbox" id="optBoards"> Breakout boards</label>
+          <label class="chk"><input type="checkbox" id="optDay"> Daylight</label>
+        </div>
+      </section>
+
+      <section class="card" aria-label="G-force simulator">
+        <div class="hd">
+          <h2>G-force simulator</h2>
+          <div class="seg" role="group" aria-label="Simulator mode">
+            <button type="button" data-sim="drive" aria-pressed="true">Drive</button>
+            <button type="button" data-sim="scenario" aria-pressed="false">Scenario</button>
+            <button type="button" data-sim="manual" aria-pressed="false">Manual</button>
+          </div>
+        </div>
+        <div class="bd">
+          <div class="sim">
+            <div style="display:grid;gap:12px;min-width:0">
+              <div id="simDrive" style="display:grid;gap:10px">
+                <div class="row" style="justify-content:space-between">
+                  <div class="speedo"><b id="speed">0</b> km/h</div>
+                  <div class="note">Keys: <span class="kbd">W</span>/<span class="kbd">&uarr;</span> throttle, <span class="kbd">S</span>/<span class="kbd">&darr;</span> brake, <span class="kbd">A</span><span class="kbd">D</span>/<span class="kbd">&larr;</span><span class="kbd">&rarr;</span> steer, <span class="kbd">Space</span> bump</div>
+                </div>
+                <div class="pedals">
+                  <button type="button" class="pedal" id="pedBrake">Brake</button>
+                  <button type="button" class="pedal" id="pedBump">Bump</button>
+                  <button type="button" class="pedal" id="pedThrottle">Throttle</button>
+                </div>
+                <label class="field" for="steer">Steering
+                  <input type="range" id="steer" min="-1" max="1" step="0.01" value="0">
+                </label>
+                <div class="grid3">
+                  <label class="field" for="grip">Tyres
+                    <select id="grip"><option value="0.8">Street 0.8 g</option><option value="1.0" selected>Sport 1.0 g</option><option value="1.4">Track 1.4 g</option></select>
+                  </label>
+                  <label class="field" for="power">Power
+                    <select id="power"><option value="0.35">Hatchback</option><option value="0.6" selected>Sports car</option><option value="0.9">Supercar</option></select>
+                  </label>
+                  <label class="field" for="rough">Road
+                    <select id="rough"><option value="0">Smooth</option><option value="0.4" selected>Normal</option><option value="1">Broken</option></select>
+                  </label>
+                </div>
+                <label class="chk"><input type="checkbox" id="selfCenter" checked> Steering returns to centre</label>
+              </div>
+              <div id="simScenario" hidden style="display:grid;gap:10px">
+                <div class="row">
+                  <label class="field grow" for="scenario">Scripted drive <select id="scenario"></select></label>
+                  <button type="button" id="scPlay" class="primary">Pause</button>
+                  <label class="chk"><input type="checkbox" id="scLoop" checked> Loop</label>
+                </div>
+                <div class="bar"><i id="scBar"></i></div>
+                <div class="note mono" id="scTime">0.0 / 0.0 s</div>
+                <p class="note">The same keyframed profiles the firmware plays in demo mode: launch, brake, slalom, corner, bump and a 21 s mixed drive.</p>
+              </div>
+              <div id="simManual" hidden style="display:grid;gap:10px">
+                <div class="row" style="align-items:flex-start">
+                  <canvas class="pad" id="pad" width="360" height="360" aria-label="Drag to set lateral and longitudinal g"></canvas>
+                  <div style="display:grid;gap:8px;flex:1 1 140px;min-width:0">
+                    <label class="field" for="manVert">Vertical g <input type="range" id="manVert" min="-1" max="1" step="0.01" value="0"></label>
+                    <label class="chk"><input type="checkbox" id="manSpring" checked> Return to zero on release</label>
+                    <p class="note">Up is accelerating, down is braking, right is a right-hand turn.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="row" style="border-top:1px solid var(--line);padding-top:10px">
+                <label class="chk"><input type="checkbox" id="sensorOn"> Simulate the accelerometer</label>
+                <label class="field" for="sensorNoise" style="flex:1 1 120px">Noise <input type="range" id="sensorNoise" min="0" max="0.2" step="0.005" value="0.03"></label>
+                <label class="field" for="sensorCut" style="flex:1 1 120px">Filter <input type="range" id="sensorCut" min="1" max="15" step="0.5" value="4"></label>
+                <span class="mono note" id="sensorOut">0.030 g, 4.0 Hz</span>
+              </div>
+            </div>
+            <div class="gplot">
+              <canvas id="gg" width="400" height="400" aria-label="Friction circle: lateral and longitudinal g"></canvas>
+              <div class="readouts">
+                <div><div class="k">lateral</div><div class="v" id="rLat">+0.00</div></div>
+                <div><div class="k">longitudinal</div><div class="v" id="rLon">+0.00</div></div>
+                <div><div class="k">vertical</div><div class="v" id="rVert">+0.00</div></div>
+                <div><div class="k">combined</div><div class="v" id="rMag">0.00 g</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" aria-label="Workbench">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tab-effect" aria-selected="true" aria-controls="pane-effect">Effect</button>
+        <button type="button" role="tab" id="tab-art" aria-selected="false" aria-controls="pane-art">Artwork</button>
+        <button type="button" role="tab" id="tab-clips" aria-selected="false" aria-controls="pane-clips">Clips &amp; export</button>
+      </div>
+
+      <div class="bd" role="tabpanel" id="pane-effect" aria-labelledby="tab-effect">
+        <div class="effects" id="effects"></div>
+        <div class="row">
+          <button type="button" id="fxReset">Restart effect</button>
+          <button type="button" id="fxDefaults">Default settings</button>
+          <label class="chk"><input type="checkbox" id="fxReadout"> g readout on front panel</label>
+        </div>
+        <div class="params" id="params"></div>
+        <div style="display:grid;gap:6px">
+          <div class="row" style="justify-content:space-between"><h3>Serial commands</h3><button type="button" id="copyCli">Copy</button></div>
+          <textarea id="cliOut" readonly style="min-height:80px" aria-label="Serial commands for the changed settings"></textarea>
+          <p class="note">Paste into the serial monitor (115200 baud) to apply the same settings on the car, then type <code>save</code>.</p>
+        </div>
+      </div>
+
+      <div class="bd" role="tabpanel" id="pane-art" aria-labelledby="tab-art" hidden>
+        <div class="grid3">
+          <label class="field" for="artW">Width px <input type="number" id="artW" min="1" max="128" value="32"></label>
+          <label class="field" for="artH">Height px <input type="number" id="artH" min="1" max="56" value="24"></label>
+          <label class="field" for="artD">Depth slices <select id="artD"></select></label>
+        </div>
+        <div class="row"><button type="button" id="artResize">Apply size</button><span class="note" id="artSizeNote"></span></div>
+        <div class="tools" role="group" aria-label="Drawing tools" id="tools">
+          <button type="button" data-tool="pencil" aria-pressed="true">Pencil</button>
+          <button type="button" data-tool="eraser" aria-pressed="false">Eraser</button>
+          <button type="button" data-tool="line" aria-pressed="false">Line</button>
+          <button type="button" data-tool="rect" aria-pressed="false">Box</button>
+          <button type="button" data-tool="ellipse" aria-pressed="false">Ellipse</button>
+          <button type="button" data-tool="fill" aria-pressed="false">Fill</button>
+          <button type="button" data-tool="move" aria-pressed="false">Move</button>
+        </div>
+        <div class="row">
+          <label class="field" for="brush" style="width:90px">Brush <select id="brush"><option value="1">1 px</option><option value="2">2 px</option><option value="3">3 px</option></select></label>
+          <label class="field grow" for="zoom">Zoom <input type="range" id="zoom" min="2" max="24" step="1" value="10"></label>
+          <label class="chk"><input type="checkbox" id="mirrorX"> Mirror</label>
+          <label class="chk"><input type="checkbox" id="onion" checked> Onion skin</label>
+          <label class="chk"><input type="checkbox" id="ghost" checked> Other slices</label>
+        </div>
+        <div class="slices" id="slices" role="group" aria-label="Depth slice"></div>
+        <div class="editwrap"><canvas id="edit" aria-label="Pixel editor. Left button draws, right button or Alt erases."></canvas></div>
+        <div class="tools">
+          <button type="button" id="undo" title="Ctrl+Z">Undo</button>
+          <button type="button" id="redo" title="Ctrl+Y">Redo</button>
+          <button type="button" id="fClear">Clear</button>
+          <button type="button" id="fInvert">Invert</button>
+          <button type="button" id="fFlipH">Flip &harr;</button>
+          <button type="button" id="fFlipV">Flip &varr;</button>
+          <button type="button" data-shift="-1,0" aria-label="Shift left">&larr;</button>
+          <button type="button" data-shift="1,0" aria-label="Shift right">&rarr;</button>
+          <button type="button" data-shift="0,-1" aria-label="Shift up">&uarr;</button>
+          <button type="button" data-shift="0,1" aria-label="Shift down">&darr;</button>
+        </div>
+        <div class="row" style="justify-content:space-between">
+          <h3 id="frameTitle">Frame 1 of 1</h3>
+          <div class="tools">
+            <button type="button" id="fAdd">New</button>
+            <button type="button" id="fDup">Duplicate</button>
+            <button type="button" id="fDel">Delete</button>
+            <button type="button" id="fLeft" aria-label="Move frame earlier">&#x25C0;</button>
+            <button type="button" id="fRight" aria-label="Move frame later">&#x25B6;</button>
+          </div>
+        </div>
+        <div class="frames" id="frames"></div>
+        <div class="drop" id="drop">
+          <div class="row" style="justify-content:space-between"><h3>Import images</h3><span class="note">PNG, JPG, WebP or GIF; drop files here</span></div>
+          <input type="file" id="importFile" accept="image/*" multiple>
+          <div class="grid3">
+            <label class="field" for="impMode">Into <select id="impMode"><option value="append">New frames</option><option value="replace">Replace all</option><option value="current">Current frame</option></select></label>
+            <label class="field" for="impSplit">Split strip <input type="number" id="impSplit" min="1" max="64" value="1"></label>
+            <label class="field" for="impThresh">Threshold <input type="range" id="impThresh" min="1" max="254" value="128"></label>
+          </div>
+          <div class="row">
+            <label class="chk"><input type="checkbox" id="impInvert"> Invert</label>
+            <label class="chk"><input type="checkbox" id="impDither"> Dither</label>
+            <label class="chk"><input type="checkbox" id="impStretch"> Stretch to fit</label>
+          </div>
+          <p class="note" id="impNote">Bright pixels light up. Each image becomes a frame on the current slice; animated GIFs import every frame where the browser supports it.</p>
+        </div>
+      </div>
+
+      <div class="bd" role="tabpanel" id="pane-clips" aria-labelledby="tab-clips" hidden>
+        <p class="note">Each car state plays a range of frames. A clip with 0 frames borrows: left and right mirror each other, the rest fall back to idle. Bump plays once and hands back.</p>
+        <div class="tablewrap">
+          <table class="cliptable" id="clipTable">
+            <thead><tr><th>State</th><th>Start</th><th>Frames</th><th>fps</th><th>Loop</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="row"><button type="button" id="clipAuto" class="on">Follow g-force</button><span class="note">Preview pins one state in the 3D view.</span></div>
+        <h3>Motion and response</h3>
+        <div class="params" id="animParams"></div>
+        <h3>Export to the firmware</h3>
+        <div class="grid2">
+          <label class="field" for="exName">Animation name <input type="text" id="exName" value="my_animation" maxlength="24"></label>
+          <div class="field">Size <span class="mono" id="exSize" style="text-transform:none;letter-spacing:0;color:var(--fg)">-</span></div>
+        </div>
+        <div class="row"><button type="button" class="primary" id="copyHeader">Copy C++ header</button><span class="note">Save it as <code>src/user_animation.hpp</code> and rebuild. The firmware uses it in place of the demo.</span></div>
+        <textarea id="headerOut" readonly aria-label="Generated C++ header"></textarea>
+        <h3>Project file</h3>
+        <div class="row">
+          <button type="button" id="copyProject">Copy project</button>
+          <button type="button" id="loadProject">Load pasted project</button>
+          <button type="button" id="resetDemo">Start from the demo</button>
+        </div>
+        <textarea id="projectIo" placeholder="Paste a project here, then press Load pasted project." aria-label="Project JSON"></textarea>
+        <p class="note">Your work also saves in this browser automatically.</p>
+      </div>
+    </section>
+  </div>
+
+  <footer>Geometry from the DFR0934 datasheet: 41.92 &times; 27.08 mm glass, 35.05 &times; 15.32 mm transparent area, 0.274 mm pixel pitch. The bottom 8 controller rows sit on the opaque strip and are not used. The simulation is the firmware's C++ core compiled to WebAssembly, so what you see here is what the ESP32 renders.</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script id="gm-wasm" type="application/octet-stream">__GMWASM_B64__</script>
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  let toastTimer = 0;
+  function toast(msg) {
+    let t = document.querySelector('.toast');
+    if (!t) { t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 1800);
+  }
+  async function copyText(text, area) {
+    try { await navigator.clipboard.writeText(text); toast('Copied'); }
+    catch (e) { if (area) { area.focus(); area.select(); } toast('Press Ctrl+C to copy the selected text'); }
+  }
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  // ===================================================================================
+  // WebAssembly core
+  // ===================================================================================
+  const core = {};
+  async function loadCore() {
+    const b64 = ($('gm-wasm').textContent || '').trim();
+    if (!b64 || b64.indexOf('__GM') === 0) throw new Error('This page was opened without its compiled core. Build it with tools/build_studio.py.');
+    const bin = atob(b64);
+    let bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot unpack the core. Use a current Chrome, Edge, Firefox or Safari.');
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+    const mod = await WebAssembly.compile(bytes);
+    let memory = null;
+    const wasi = {
+      fd_write(fd, iovs, iovsLen, nwritten) {
+        const dv = new DataView(memory.buffer); let n = 0;
+        for (let i = 0; i < iovsLen; i++) n += dv.getUint32(iovs + i * 8 + 4, true);
+        dv.setUint32(nwritten, n, true); return 0;
+      },
+    };
+    const imports = {};
+    for (const imp of WebAssembly.Module.imports(mod)) {
+      imports[imp.module] = imports[imp.module] || {};
+      if (imp.kind === 'function') imports[imp.module][imp.name] = (imp.module === 'wasi_snapshot_preview1' && wasi[imp.name]) ? wasi[imp.name] : () => 0;
+    }
+    const inst = await WebAssembly.instantiate(mod, imports);
+    const x = inst.exports;
+    memory = x.memory;
+    if (x._initialize) x._initialize();
+    x.gm_init();
+    core.x = x;
+    core.u8 = () => new Uint8Array(memory.buffer);
+    core.str = (p) => { const b = core.u8(); let s = ''; while (p && b[p]) s += String.fromCharCode(b[p++]); return s; };
+    core.W = x.gm_width(); core.H = x.gm_height(); core.D = x.gm_layers();
+    core.pitchPx = x.gm_layer_pitch(); core.frameBytes = x.gm_frame_bytes();
+    core.effects = []; for (let i = 0; i < x.gm_effect_count(); i++) core.effects.push(core.str(x.gm_effect_name(i)));
+    core.states = []; for (let i = 0; i < x.gm_anim_state_count(); i++) core.states.push(core.str(x.gm_anim_state_name(i)));
+    core.scenarios = []; for (let i = 0; i < x.gm_scenario_count(); i++) core.scenarios.push({ name: core.str(x.gm_scenario_name(i)), duration: x.gm_scenario_duration(i) });
+    core.animIndex = x.gm_anim_effect_index();
+    // which: -1 = active effect, otherwise an effect index.
+    core.params = (which) => {
+      const w = which === undefined ? -1 : which;
+      const out = [];
+      for (let i = 0; i < x.gm_param_count(w); i++) out.push({ i, which: w, name: core.str(x.gm_param_name(w, i)), help: core.str(x.gm_param_help(w, i)), min: x.gm_param_min(w, i), max: x.gm_param_max(w, i), value: x.gm_param_get(w, i) });
+      return out;
+    };
+    core.setParam = (which, i, v) => x.gm_param_set(which, i, v);
+  }
+
+  // ===================================================================================
+  // 3D viewport
+  // ===================================================================================
+  const MM = {
+    pitch: 0.274, glassW: 41.92, glassH: 27.08, glassT: 1.25, activeTopMargin: 4.2,
+    stripH: 8 * 0.274, boardW: 18, boardH: 28, boardT: 1.6, fpcW: 20, fpcH: 6,
+  };
+  const OLED_RGB = [0.56, 0.85, 1.0];
+  const view = {
+    ok: false, spacing: 4.4, transmittance: 0.6, glow: true, grid: true, hw: true, boards: false, day: false,
+    theta: 0, phi: 1.47, radius: 92, target: null, anim: null, presetName: 'driver',
+  };
+  const PRESETS = {
+    driver: { theta: 0, phi: 1.47, radius: 92 },
+    three: { theta: -0.62, phi: 1.16, radius: 112 },
+    top: { theta: 0, phi: 0.16, radius: 118 },
+    side: { theta: 1.5708, phi: 1.45, radius: 108 },
+  };
+  let renderer, scene, camera, stackGroup, layerObjs = [], gridHelper, labels = [];
+  let texData = [], textures = [];
+
+  function initViewport() {
+    const canvas = $('gl');
+    if (!window.THREE) {
+      const fb = $('glFallback');
+      fb.hidden = false;
+      fb.textContent = 'The 3D view needs Three.js from cdnjs.cloudflare.com, which did not load. The simulator, editor and export still work; a flat preview is shown instead.';
+      return init2DFallback();
+    }
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    } catch (e) {
+      $('glFallback').hidden = false;
+      $('glFallback').textContent = 'WebGL is not available in this browser, so the 3D view is replaced by a flat preview.';
+      return init2DFallback();
+    }
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(32, 16 / 10, 1, 4000);
+    view.target = new THREE.Vector3(0, 0, 0);
+    stackGroup = new THREE.Group();
+    scene.add(stackGroup);
+    buildStack();
+    gridHelper = new THREE.GridHelper(240, 24, 0x2a3a48, 0x18222c);
+    gridHelper.material.transparent = true; gridHelper.material.opacity = 0.55;
+    scene.add(gridHelper);
+    labels.push(makeLabel('DRIVER', 0, 0, 1), makeLabel('WINDSHIELD', 0, 0, -1));
+    labels.forEach((l) => scene.add(l));
+    layoutStack();
+    bindOrbit(canvas);
+    const ro = new ResizeObserver(resize);
+    ro.observe($('stage'));
+    resize();
+    view.ok = true;
+  }
+
+  function makeLabel(text, x, y, side) {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 96;
+    const g = c.getContext('2d');
+    g.font = '600 52px "Chakra Petch", "Trebuchet MS", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = 'rgba(143,217,255,0.55)'; g.fillText(text, 256, 50);
+    const tex = new THREE.CanvasTexture(c);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    sp.scale.set(20, 20 * 96 / 512, 1);
+    sp.userData.side = side;
+    return sp;
+  }
+
+  const PIXEL_VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
+  const PIXEL_FRAG = [
+    'uniform sampler2D map; uniform vec3 color; uniform float opacity; uniform float glowAmt; uniform float gridOn; uniform vec2 size;',
+    'varying vec2 vUv;',
+    'void main(){',
+    '  vec2 cell = vUv * size;',
+    '  float lit = texture2D(map, (floor(cell) + 0.5) / size).r;',
+    '  vec2 f = fract(cell);',
+    '  float gap = 0.073;',  // 0.254 mm pixel in a 0.274 mm pitch
+    '  float inside = step(gap * 0.5, f.x) * step(f.x, 1.0 - gap * 0.5) * step(gap * 0.5, f.y) * step(f.y, 1.0 - gap * 0.5);',
+    '  float px = max(fwidth(cell.x), fwidth(cell.y));',
+    '  inside = mix(inside, 1.0, smoothstep(0.18, 0.45, px));',
+    '  inside = mix(1.0, inside, gridOn);',
+    '  float glow = texture2D(map, vUv).g;',
+    '  vec3 c = color * (lit * inside + glow * glowAmt);',
+    '  gl_FragColor = vec4(c * opacity, 1.0);',
+    '}',
+  ].join('\n');
+
+  function buildStack() {
+    const W = core.W, H = core.H;
+    const glassMat = new THREE.MeshBasicMaterial({ color: 0x9fbccc, transparent: true, opacity: 0.03, depthWrite: false, side: THREE.DoubleSide });
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0x8fb8cc, transparent: true, opacity: 0.32 });
+    const bandMat = new THREE.MeshBasicMaterial({ color: 0x2a3540, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide });
+    const rowsMat = new THREE.MeshBasicMaterial({ color: 0x34424f, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
+    const fpcMat = new THREE.MeshBasicMaterial({ color: 0x9a6a24, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
+    const boardMat = new THREE.MeshBasicMaterial({ color: 0x1e2c38, transparent: true, opacity: 0.92, side: THREE.DoubleSide });
+    const boardEdge = new THREE.LineBasicMaterial({ color: 0x3f5566 });
+    const glassGeom = new THREE.BoxGeometry(MM.glassW, MM.glassH, MM.glassT);
+    const glassEdges = new THREE.EdgesGeometry(glassGeom);
+    const activeW = W * MM.pitch, activeH = H * MM.pitch;
+    const activeTop = MM.glassH / 2 - MM.activeTopMargin;
+    const activeCY = activeTop - activeH / 2;
+    const transparentRows = Math.min(H, 56);
+    const rowsTop = activeTop - transparentRows * MM.pitch;  // where the opaque controller rows start
+    const bottomGlass = -MM.glassH / 2;
+    for (let k = 0; k < core.D; k++) {
+      const g = new THREE.Group();
+      const hw = new THREE.Group();
+      const glass = new THREE.Mesh(glassGeom, glassMat); glass.renderOrder = 1;
+      const edges = new THREE.LineSegments(glassEdges, edgeMat);
+      hw.add(glass, edges);
+      // Rows 56-63 (behind the getter strip) and the bonding ledge below them.
+      const rowsH = 8 * MM.pitch;
+      const rows = new THREE.Mesh(new THREE.PlaneGeometry(activeW, rowsH), rowsMat);
+      rows.position.set(0, rowsTop - rowsH / 2, MM.glassT / 2 + 0.01); rows.renderOrder = 2;
+      const ledgeTop = rowsTop - rowsH, ledgeH = ledgeTop - bottomGlass;
+      const ledge = new THREE.Mesh(new THREE.PlaneGeometry(MM.glassW, ledgeH), bandMat);
+      ledge.position.set(0, ledgeTop - ledgeH / 2, MM.glassT / 2 + 0.01); ledge.renderOrder = 2;
+      const fpc = new THREE.Mesh(new THREE.BoxGeometry(MM.fpcW, MM.fpcH, 0.12), fpcMat);
+      fpc.position.set(0, bottomGlass - MM.fpcH / 2, -MM.glassT / 2); fpc.renderOrder = 2;
+      hw.add(rows, ledge, fpc);
+      const board = new THREE.Group();
+      const pcbGeom = new THREE.BoxGeometry(MM.boardW, MM.boardH, MM.boardT);
+      board.add(new THREE.Mesh(pcbGeom, boardMat), new THREE.LineSegments(new THREE.EdgesGeometry(pcbGeom), boardEdge));
+      board.position.set(0, bottomGlass - MM.fpcH - MM.boardH / 2, -MM.glassT / 2 - MM.boardT / 2);
+      g.add(hw, board);
+      // Pixel plane with the layer texture: R = lit, G = glow.
+      const data = new Uint8Array(W * H * 4);
+      const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+      tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false; tex.needsUpdate = true;
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          map: { value: tex }, color: { value: new THREE.Color(OLED_RGB[0], OLED_RGB[1], OLED_RGB[2]) },
+          opacity: { value: 1 }, glowAmt: { value: 0.55 }, gridOn: { value: 1 }, size: { value: new THREE.Vector2(W, H) },
+        },
+        vertexShader: PIXEL_VERT, fragmentShader: PIXEL_FRAG,
+        transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+        extensions: { derivatives: true },
+      });
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(activeW, activeH), mat);
+      plane.position.set(0, activeCY, MM.glassT / 2 + 0.02); plane.renderOrder = 3;
+      g.add(plane);
+      stackGroup.add(g);
+      layerObjs.push({ group: g, hw, board, mat });
+      texData.push(data); textures.push(tex);
+    }
+    const lw = new Uint32Array(1); lw[0] = 0x01020304;
+    view.littleEndian = new Uint8Array(lw.buffer)[0] === 0x04;
+  }
+
+  function layoutStack() {
+    const D = core.D;
+    const s = view.spacing;
+    for (let k = 0; k < D; k++) layerObjs[k].group.position.z = ((D - 1) / 2 - k) * s;
+    const depth = (D - 1) * s + MM.glassT;
+    const bottom = -MM.glassH / 2 - MM.fpcH - (view.boards ? MM.boardH : 0) - 4;
+    gridHelper.position.y = bottom;
+    labels.forEach((l) => l.position.set(0, bottom + 1.5, l.userData.side * (depth / 2 + 26)));
+    view.target.set(0, -1.5, 0);
+    layerObjs.forEach((o) => { o.hw.visible = view.hw; o.board.visible = view.boards; });
+  }
+
+  function resize() {
+    if (!renderer) return;
+    const r = $('stage').getBoundingClientRect();
+    const w = Math.max(1, Math.floor(r.width)), h = Math.max(1, Math.floor(r.height));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+
+  function setPreset(name) {
+    const p = PRESETS[name]; if (!p) return;
+    view.presetName = name;
+    document.querySelectorAll('[data-view]').forEach((b) => b.classList.toggle('on', b.dataset.view === name));
+    $('chipView').textContent = name === 'three' ? '3/4' : name;
+    if (reduceMotion) { view.theta = p.theta; view.phi = p.phi; view.radius = p.radius; view.anim = null; return; }
+    view.anim = { from: { theta: view.theta, phi: view.phi, radius: view.radius }, to: p, t: 0 };
+    if (view.target) view.panTo = new THREE.Vector3(0, -1.5, 0);
+  }
+
+  function bindOrbit(canvas) {
+    const pointers = new Map();
+    let last = null, pinch = 0;
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('pointerdown', (e) => {
+      canvas.setPointerCapture(e.pointerId);
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      last = { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button === 2 };
+      view.anim = null;
+      if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch > 0) view.radius = clamp(view.radius * pinch / d, 40, 600);
+        pinch = d;
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        if (last && last.mid) pan(mid.x - last.mid.x, mid.y - last.mid.y);
+        last = { mid };
+        return;
+      }
+      if (!last || last.mid) { last = { x: e.clientX, y: e.clientY, pan: e.shiftKey }; return; }
+      const dx = e.clientX - last.x, dy = e.clientY - last.y;
+      if (last.pan || e.shiftKey) pan(dx, dy);
+      else { view.theta -= dx * 0.008; view.phi = clamp(view.phi - dy * 0.008, 0.05, Math.PI - 0.05); }
+      last.x = e.clientX; last.y = e.clientY;
+      markCustomView();
+    });
+    const end = (e) => { pointers.delete(e.pointerId); pinch = 0; last = null; };
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); view.anim = null; view.radius = clamp(view.radius * Math.exp(e.deltaY * 0.0012), 40, 600); markCustomView(); }, { passive: false });
+    canvas.addEventListener('dblclick', () => setPreset('driver'));
+    function pan(dx, dy) {
+      const s = view.radius * 0.0018;
+      const right = new THREE.Vector3(Math.cos(view.theta), 0, -Math.sin(view.theta));
+      const up = new THREE.Vector3(0, 1, 0);
+      view.target.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
+      markCustomView();
+    }
+  }
+  function markCustomView() {
+    if (view.presetName !== 'custom') {
+      view.presetName = 'custom';
+      document.querySelectorAll('[data-view]').forEach((b) => b.classList.remove('on'));
+      $('chipView').textContent = 'free';
+    }
+  }
+
+  // Unpack the core's SSD130x page-layout frame into per-layer textures.
+  const glowTmp = { a: null, b: null };
+  function uploadFrame(bits) {
+    const W = core.W, H = core.H, D = core.D, pages = H >> 3, layerBytes = W * pages;
+    if (!glowTmp.a) { glowTmp.a = new Float32Array(W * H); glowTmp.b = new Float32Array(W * H); }
+    for (let k = 0; k < D; k++) {
+      const data = texData[k];
+      data.fill(0);
+      const lum = glowTmp.a; lum.fill(0);
+      const base = k * layerBytes;
+      for (let page = 0; page < pages; page++) {
+        for (let x = 0; x < W; x++) {
+          const byte = bits[base + page * W + x];
+          if (!byte) continue;
+          for (let bit = 0; bit < 8; bit++) {
+            if (!(byte & (1 << bit))) continue;
+            const y = page * 8 + bit;
+            const row = H - 1 - y;  // texture rows start at the bottom
+            data[(row * W + x) * 4] = 255;
+            lum[row * W + x] = 1;
+          }
+        }
+      }
+      if (view.glow) {
+        // Separable box blur, radius 2, for the halo.
+        const tmp = glowTmp.b;
+        for (let y = 0; y < H; y++) {
+          let acc = 0; const o = y * W;
+          for (let x = -2; x < W + 2; x++) {
+            if (x + 2 < W) acc += lum[o + x + 2];
+            if (x - 3 >= 0) acc -= lum[o + x - 3];
+            if (x >= 0 && x < W) tmp[o + x] = acc / 5;
+          }
+        }
+        for (let x = 0; x < W; x++) {
+          let acc = 0;
+          for (let y = -2; y < H + 2; y++) {
+            if (y + 2 < H) acc += tmp[(y + 2) * W + x];
+            if (y - 3 >= 0) acc -= tmp[(y - 3) * W + x];
+            if (y >= 0 && y < H) data[(y * W + x) * 4 + 1] = Math.min(255, acc / 5 * 420);
+          }
+        }
+      }
+      textures[k].needsUpdate = true;
+    }
+  }
+
+  function renderViewport() {
+    if (!view.ok) return render2DFallback();
+    if (view.anim) {
+      view.anim.t = Math.min(1, view.anim.t + 1 / 24);
+      const e = view.anim.t < 0.5 ? 2 * view.anim.t * view.anim.t : 1 - Math.pow(-2 * view.anim.t + 2, 2) / 2;
+      for (const key of ['theta', 'phi', 'radius']) view[key] = view.anim.from[key] + (view.anim.to[key] - view.anim.from[key]) * e;
+      if (view.panTo) view.target.lerp(view.panTo, e);
+      if (view.anim.t >= 1) { view.anim = null; view.panTo = null; }
+    }
+    const t = view.target;
+    camera.position.set(
+      t.x + view.radius * Math.sin(view.phi) * Math.sin(view.theta),
+      t.y + view.radius * Math.cos(view.phi),
+      t.z + view.radius * Math.sin(view.phi) * Math.cos(view.theta));
+    camera.lookAt(t);
+    // Light from layer k reaches the eye through every panel between it and the camera.
+    const camZ = camera.position.z;
+    const D = core.D;
+    const zs = layerObjs.map((o) => o.group.position.z);
+    for (let k = 0; k < D; k++) {
+      let n = 0;
+      for (let j = 0; j < D; j++) if (j !== k && ((zs[j] > zs[k] && zs[j] < camZ) || (zs[j] < zs[k] && zs[j] > camZ))) n++;
+      const u = layerObjs[k].mat.uniforms;
+      u.opacity.value = Math.pow(view.transmittance, n);
+      u.glowAmt.value = view.glow ? 0.55 : 0;
+      u.gridOn.value = view.grid ? 1 : 0;
+    }
+    renderer.setClearColor(view.day ? 0xb7c0c8 : 0x05080c, 1);
+    gridHelper.material.opacity = view.day ? 0.25 : 0.55;
+    renderer.render(scene, camera);
+  }
+
+  // Flat fallback when Three.js or WebGL is unavailable: parallax stack on a 2D canvas.
+  let fb2d = null;
+  function init2DFallback() {
+    const c = $('gl');
+    fb2d = { ctx: c.getContext('2d'), layers: [] };
+    for (let k = 0; k < core.D; k++) { const lc = document.createElement('canvas'); lc.width = core.W; lc.height = core.H; fb2d.layers.push(lc); }
+    const ro = new ResizeObserver(() => { const r = $('stage').getBoundingClientRect(); c.width = Math.floor(r.width); c.height = Math.floor(r.height); });
+    ro.observe($('stage'));
+    $('glFallback').style.alignItems = 'end';
+    document.querySelectorAll('[data-view]').forEach((b) => { b.disabled = true; });
+  }
+  function upload2D(bits) {
+    if (!fb2d) return;
+    const W = core.W, H = core.H, pages = H >> 3, lb = W * pages;
+    for (let k = 0; k < core.D; k++) {
+      const g = fb2d.layers[k].getContext('2d'); const img = g.createImageData(W, H);
+      for (let page = 0; page < pages; page++) for (let x = 0; x < W; x++) {
+        const byte = bits[k * lb + page * W + x]; if (!byte) continue;
+        for (let bit = 0; bit < 8; bit++) if (byte & (1 << bit)) { const i = ((page * 8 + bit) * W + x) * 4; img.data[i] = 143; img.data[i + 1] = 217; img.data[i + 2] = 255; img.data[i + 3] = 255; }
+      }
+      g.putImageData(img, 0, 0);
+    }
+  }
+  function render2DFallback() {
+    if (!fb2d) return;
+    const c = $('gl'), g = fb2d.ctx; g.fillStyle = '#05080c'; g.fillRect(0, 0, c.width, c.height);
+    const S = Math.min(c.width / (core.W * 1.4), c.height / (core.H * 2));
+    g.imageSmoothingEnabled = false; g.globalCompositeOperation = 'lighter';
+    for (let k = core.D - 1; k >= 0; k--) {
+      const s = S * (1 - k * 0.05); const w = core.W * s, h = core.H * s;
+      g.globalAlpha = Math.pow(view.transmittance, k);
+      g.drawImage(fb2d.layers[k], c.width / 2 - w / 2, c.height / 2 - h / 2 - k * 2, w, h);
+    }
+    g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  }
+
+  // ===================================================================================
+  // G-force simulator
+  // ===================================================================================
+  const G0 = 9.81;
+  const sim = {
+    mode: 'drive',
+    out: { lat: 0, vert: 0, lon: 0 },
+    drive: { v: 0, steer: 0, steerTarget: 0, throttle: 0, brake: 0, y: 0, vy: 0, spike: 1, spikeG: 0.9, keys: new Set(), held: new Set() },
+    scenario: { i: 0, t: 0, playing: true, loop: true },
+    manual: { lat: 0, lon: 0, vert: 0, dragging: false },
+    trail: [],
+  };
+
+  function stepDrive(dt) {
+    const d = sim.drive;
+    const grip = parseFloat($('grip').value), accelMax = parseFloat($('power').value), rough = parseFloat($('rough').value);
+    const k = d.keys, h = d.held;
+    d.throttle = (k.has('up') || h.has('throttle')) ? 1 : 0;
+    d.brake = (k.has('down') || h.has('brake')) ? 1 : 0;
+    const steerKeys = (k.has('right') ? 1 : 0) - (k.has('left') ? 1 : 0);
+    if (steerKeys !== 0) { d.steerTarget = steerKeys; $('steer').value = d.steerTarget; d.usingKeys = true; }
+    else if (d.usingKeys) { d.usingKeys = false; if ($('selfCenter').checked) { d.steerTarget = 0; $('steer').value = 0; } }
+    const rate = 2.2;
+    d.steer += clamp(d.steerTarget - d.steer, -rate * dt, rate * dt);
+    // Longitudinal: power-limited drive, brakes, rolling resistance and aero drag.
+    const aDrive = d.throttle * Math.min(accelMax * G0, (accelMax * G0 * 14) / Math.max(d.v, 4));
+    const aBrake = d.v > 0.05 ? d.brake * 0.95 * G0 : 0;
+    const aDrag = d.v > 0.05 ? 0.12 + 0.00045 * d.v * d.v : 0;
+    let aLon = aDrive - aBrake - aDrag;
+    if (d.v <= 0.05 && aLon < 0) aLon = 0;
+    // Lateral: speed-sensitive steering, curvature limited by the tyres.
+    const kappaMax = Math.min(0.26, (1.35 * grip * G0) / Math.max(d.v * d.v, 1));
+    let aLat = d.v * d.v * d.steer * kappaMax;
+    // Friction circle: the tyres cannot exceed grip in any combination.
+    const total = Math.hypot(aLat, aLon), limit = grip * G0;
+    if (total > limit) { aLat *= limit / total; aLon *= limit / total; }
+    d.v = Math.max(0, d.v + aLon * dt);
+    // Vertical: a wheel hit is a short upward force on the sprung body
+    // (1.4 Hz, lightly damped), so the car is pushed up first and then bounces.
+    if (rough > 0 && d.v > 2 && Math.random() < rough * d.v * dt * 0.06) { d.spike = 0; d.spikeG = 0.12 + 0.25 * rough * Math.random(); }
+    const w = 2 * Math.PI * 1.4, zeta = 0.3;
+    const hit = d.spike < 0.08 ? (d.spikeG || 0.9) * G0 * Math.sin(Math.PI * Math.min(1, (d.spike + dt * 0.5) / 0.08)) : 0;
+    d.spike += dt;
+    const aVert = -w * w * d.y - 2 * zeta * w * d.vy + hit;
+    d.vy += aVert * dt; d.y += d.vy * dt;
+    sim.out.lat = aLat / G0; sim.out.lon = aLon / G0; sim.out.vert = aVert / G0;
+    $('speed').textContent = Math.round(d.v * 3.6);
+  }
+  function bump() { sim.drive.spike = 0; sim.drive.spikeG = 0.9; if (sim.mode !== 'drive') sim.manual.bumpT = 0; }
+
+  function stepScenario(dt) {
+    const s = sim.scenario, sc = core.scenarios[s.i];
+    if (s.playing) {
+      s.t += dt;
+      if (s.t > sc.duration + 0.8) { if (s.loop) s.t = 0; else { s.t = sc.duration; s.playing = false; $('scPlay').textContent = 'Play'; } }
+    }
+    const p = core.x.gm_scenario_sample(s.i, Math.min(s.t, sc.duration));
+    const f = new Float32Array(core.x.memory.buffer, p, 3);
+    sim.out.lat = f[0]; sim.out.vert = f[1]; sim.out.lon = f[2];
+    $('scBar').style.width = (100 * Math.min(1, s.t / sc.duration)) + '%';
+    $('scTime').textContent = Math.min(s.t, sc.duration).toFixed(1) + ' / ' + sc.duration.toFixed(1) + ' s';
+  }
+
+  function stepManual(dt) {
+    const m = sim.manual;
+    if (!m.dragging && $('manSpring').checked) { const k = Math.exp(-dt * 6); m.lat *= k; m.lon *= k; }
+    let vert = parseFloat($('manVert').value);
+    if (m.bumpT !== undefined && m.bumpT < 0.08) { vert += 0.9 * Math.sin(Math.PI * Math.min(1, (m.bumpT + dt * 0.5) / 0.08)); m.bumpT += dt; }
+    sim.out.lat = m.lat; sim.out.lon = m.lon; sim.out.vert = vert;
+    drawPad();
+  }
+
+  function drawPad() {
+    const c = $('pad'), g = c.getContext('2d'), W = c.width, H = c.height, cx = W / 2, cy = H / 2, R = W * 0.42;
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = cssVar('--surface-2'); g.fillRect(0, 0, W, H);
+    g.strokeStyle = cssVar('--line'); g.lineWidth = 2;
+    for (const r of [0.5, 1]) { g.beginPath(); g.arc(cx, cy, R * r, 0, Math.PI * 2); g.stroke(); }
+    g.beginPath(); g.moveTo(cx - R, cy); g.lineTo(cx + R, cy); g.moveTo(cx, cy - R); g.lineTo(cx, cy + R); g.stroke();
+    g.fillStyle = cssVar('--muted'); g.font = '22px ' + cssVar('--font-mono'); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('ACCEL', cx, 20); g.fillText('BRAKE', cx, H - 18); g.fillText('L', 16, cy); g.fillText('R', W - 16, cy);
+    const m = sim.manual;
+    g.fillStyle = cssVar('--accent');
+    g.beginPath(); g.arc(cx + m.lat * R, cy - m.lon * R, 13, 0, Math.PI * 2); g.fill();
+  }
+  function bindPad() {
+    const c = $('pad');
+    const set = (e) => {
+      const r = c.getBoundingClientRect();
+      const R = r.width * 0.42;
+      let lat = (e.clientX - r.left - r.width / 2) / R, lon = -(e.clientY - r.top - r.height / 2) / R;
+      const mag = Math.hypot(lat, lon); if (mag > 1.5) { lat *= 1.5 / mag; lon *= 1.5 / mag; }
+      sim.manual.lat = lat; sim.manual.lon = lon;
+    };
+    c.addEventListener('pointerdown', (e) => { c.setPointerCapture(e.pointerId); sim.manual.dragging = true; set(e); });
+    c.addEventListener('pointermove', (e) => { if (sim.manual.dragging) set(e); });
+    const up = () => { sim.manual.dragging = false; };
+    c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
+  }
+
+  function drawGG(applied) {
+    const c = $('gg'), g = c.getContext('2d'), W = c.width, H = c.height, cx = W / 2, cy = H / 2, R = W * 0.4;
+    g.clearRect(0, 0, W, H);
+    const line = cssVar('--line'), muted = cssVar('--muted'), accent = cssVar('--accent'), fg = cssVar('--fg');
+    g.strokeStyle = line; g.lineWidth = 2;
+    for (const r of [0.5, 1.0]) { g.beginPath(); g.arc(cx, cy, R * r, 0, Math.PI * 2); g.stroke(); }
+    g.beginPath(); g.moveTo(cx - R * 1.15, cy); g.lineTo(cx + R * 1.15, cy); g.moveTo(cx, cy - R * 1.15); g.lineTo(cx, cy + R * 1.15); g.stroke();
+    g.fillStyle = muted; g.font = '20px ' + cssVar('--font-mono'); g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('ACCEL', cx, cy - R * 1.15 - 14); g.fillText('BRAKE', cx, cy + R * 1.15 + 14);
+    g.textAlign = 'left'; g.fillText('R', cx + R * 1.15 + 6, cy); g.textAlign = 'right'; g.fillText('L', cx - R * 1.15 - 6, cy);
+    g.textAlign = 'left'; g.fillText('1 g', cx + R * 0.72, cy - R * 0.78); g.fillText('0.5', cx + R * 0.36, cy - R * 0.4);
+    // Trail of applied g over the last 3 s.
+    const tr = sim.trail;
+    for (let i = 1; i < tr.length; i++) {
+      g.strokeStyle = accent; g.globalAlpha = (i / tr.length) * 0.6; g.lineWidth = 3;
+      g.beginPath(); g.moveTo(cx + tr[i - 1][0] * R, cy - tr[i - 1][1] * R); g.lineTo(cx + tr[i][0] * R, cy - tr[i][1] * R); g.stroke();
+    }
+    g.globalAlpha = 1;
+    // Commanded (ring) and applied (dot).
+    g.strokeStyle = fg; g.lineWidth = 2;
+    g.beginPath(); g.arc(cx + clamp(sim.out.lat, -1.3, 1.3) * R, cy - clamp(sim.out.lon, -1.3, 1.3) * R, 11, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = accent;
+    g.beginPath(); g.arc(cx + clamp(applied[0], -1.3, 1.3) * R, cy - clamp(applied[2], -1.3, 1.3) * R, 8, 0, Math.PI * 2); g.fill();
+  }
+
+  function setSimMode(mode) {
+    sim.mode = mode;
+    document.querySelectorAll('[data-sim]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sim === mode)));
+    $('simDrive').hidden = mode !== 'drive'; $('simScenario').hidden = mode !== 'scenario'; $('simManual').hidden = mode !== 'manual';
+    if (mode === 'manual') drawPad();
+    save();
+  }
+
+  function bindSim() {
+    document.querySelectorAll('[data-sim]').forEach((b) => b.addEventListener('click', () => setSimMode(b.dataset.sim)));
+    const hold = (id, key) => {
+      const el = $(id);
+      const on = (e) => { e.preventDefault(); el.setPointerCapture && el.setPointerCapture(e.pointerId); sim.drive.held.add(key); el.classList.add('held'); };
+      const off = () => { sim.drive.held.delete(key); el.classList.remove('held'); };
+      el.addEventListener('pointerdown', on); el.addEventListener('pointerup', off); el.addEventListener('pointercancel', off); el.addEventListener('lostpointercapture', off);
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sim.drive.held.add(key); el.classList.add('held'); } });
+      el.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') off(); });
+    };
+    hold('pedThrottle', 'throttle'); hold('pedBrake', 'brake');
+    $('pedBump').addEventListener('click', bump);
+    $('steer').addEventListener('input', (e) => { sim.drive.steerTarget = parseFloat(e.target.value); });
+    const recentre = () => { if ($('selfCenter').checked) { sim.drive.steerTarget = 0; $('steer').value = 0; } };
+    $('steer').addEventListener('pointerup', recentre); $('steer').addEventListener('touchend', recentre);
+    const sel = $('scenario');
+    core.scenarios.forEach((s, i) => { const o = document.createElement('option'); o.value = i; o.textContent = s.name + ' (' + s.duration.toFixed(0) + ' s)'; sel.appendChild(o); });
+    sel.value = String(core.scenarios.findIndex((s) => s.name === 'drive'));
+    sim.scenario.i = parseInt(sel.value, 10);
+    sel.addEventListener('change', () => { sim.scenario.i = parseInt(sel.value, 10); sim.scenario.t = 0; sim.scenario.playing = true; $('scPlay').textContent = 'Pause'; });
+    $('scPlay').addEventListener('click', () => { const s = sim.scenario; if (!s.playing && s.t >= core.scenarios[s.i].duration) s.t = 0; s.playing = !s.playing; $('scPlay').textContent = s.playing ? 'Pause' : 'Play'; });
+    $('scLoop').addEventListener('change', (e) => { sim.scenario.loop = e.target.checked; });
+    bindPad();
+    const keyMap = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+    const typing = (t) => t && t.closest && t.closest('input, textarea, select, [contenteditable]');
+    document.addEventListener('keydown', (e) => {
+      if (typing(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (artKeys(e)) return;
+      if (sim.mode !== 'drive' && keyMap[e.code]) setSimMode('drive');
+      if (sim.mode !== 'drive') { if (e.code === 'Space' && !(e.target && e.target.closest && e.target.closest('button'))) { e.preventDefault(); bump(); } return; }
+      const k = keyMap[e.code];
+      if (k) { e.preventDefault(); sim.drive.keys.add(k); }
+      else if (e.code === 'Space' && !(e.target && e.target.closest && e.target.closest('button'))) { e.preventDefault(); if (!e.repeat) bump(); }
+    });
+    document.addEventListener('keyup', (e) => { const k = keyMap[e.code]; if (k) sim.drive.keys.delete(k); });
+    window.addEventListener('blur', () => { sim.drive.keys.clear(); sim.drive.held.clear(); document.querySelectorAll('.pedal.held').forEach((p) => p.classList.remove('held')); });
+    const sensor = () => {
+      const on = $('sensorOn').checked, n = parseFloat($('sensorNoise').value), c = parseFloat($('sensorCut').value);
+      core.x.gm_set_sensor(on ? 1 : 0, n, c);
+      $('sensorOut').textContent = on ? n.toFixed(3) + ' g, ' + c.toFixed(1) + ' Hz' : 'off: effects see the exact g';
+    };
+    ['sensorOn', 'sensorNoise', 'sensorCut'].forEach((id) => $(id).addEventListener('input', sensor));
+    sensor();
+  }
+
+  // ===================================================================================
+  // Effect tab: chooser, parameters, serial commands
+  // ===================================================================================
+  const EFFECT_INFO = {
+    ball: 'Marble thrown through the volume', slosh: 'Liquid tank with real waves', particles: 'Granular pile that slides',
+    smoke: 'Plume blown by the g-force', tunnel: 'Rings that bend and pulse', sprite: 'Built-in 2D sprite demo', anim: 'Your artwork, driven by g',
+  };
+  const defaults = {};   // effect name -> {param: default}
+  const INT_PARAMS = new Set(['count', 'substeps', 'iters', 'segments', 'echo', 'scrub_axis', 'style', 'mirror', 'inertia', 'hud', 'rings']);
+  function currentEffectName() { return core.effects[core.x.gm_effect_index()]; }
+  function setEffect(i, crossfade) {
+    if (i === core.x.gm_effect_index()) return;
+    core.x.gm_set_effect(i, crossfade ? 1 : 0);
+    renderEffects(); renderParams(); save();
+  }
+  function renderEffects() {
+    const box = $('effects'); box.textContent = '';
+    const cur = core.x.gm_effect_index();
+    core.effects.forEach((name, i) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = i === cur ? 'on' : '';
+      b.setAttribute('aria-pressed', String(i === cur));
+      const t = document.createElement('b'); t.textContent = name;
+      const d = document.createElement('span'); d.textContent = EFFECT_INFO[name] || '';
+      b.append(t, d);
+      b.addEventListener('click', () => setEffect(i, true));
+      box.appendChild(b);
+    });
+    $('chipEffect').textContent = core.effects[cur];
+  }
+  function niceStep(p) {
+    if (INT_PARAMS.has(p.name)) return 1;
+    const span = p.max - p.min; const raw = span / 200;
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const m = raw / pow; return (m < 2 ? 1 : m < 5 ? 2 : 5) * pow;
+  }
+  function fmtNum(v, step) { const d = step >= 1 ? 0 : Math.min(4, Math.ceil(-Math.log10(step))); return v.toFixed(d); }
+  function captureDefaults() {
+    core.effects.forEach((name, k) => { defaults[name] = {}; core.params(k).forEach((p) => { defaults[name][p.name] = p.value; }); });
+  }
+  // which: effect index whose table to edit (-1 = active effect).
+  function buildParamList(container, onChange, which) {
+    container.textContent = '';
+    const w = which === undefined ? -1 : which;
+    const name = w < 0 ? currentEffectName() : core.effects[w];
+    const list = core.params(w);
+    list.forEach((p) => {
+      const step = niceStep(p);
+      const row = document.createElement('div'); row.className = 'param';
+      const id = 'p-' + container.id + '-' + p.name;
+      const lab = document.createElement('label'); lab.className = 'nm'; lab.htmlFor = id; lab.textContent = p.name;
+      const num = document.createElement('input'); num.type = 'number'; num.step = String(step); num.min = String(p.min); num.max = String(p.max); num.value = fmtNum(p.value, step);
+      num.setAttribute('aria-label', p.name + ' value'); num.id = id + '-n';
+      const rng = document.createElement('input'); rng.type = 'range'; rng.id = id; rng.min = String(p.min); rng.max = String(p.max); rng.step = String(step); rng.value = String(p.value);
+      rng.style.gridColumn = '1 / -1';
+      const hp = document.createElement('div'); hp.className = 'hp'; hp.textContent = p.help;
+      const apply = (v) => {
+        const got = core.setParam(w, p.i, v);
+        rng.value = String(got); num.value = fmtNum(got, step);
+        row.classList.toggle('changed', Math.abs(got - defaults[name][p.name]) > step * 0.5);
+        onChange && onChange();
+      };
+      rng.addEventListener('input', () => apply(parseFloat(rng.value)));
+      num.addEventListener('change', () => { const v = parseFloat(num.value); if (!Number.isNaN(v)) apply(v); });
+      rng.addEventListener('dblclick', () => apply(defaults[name][p.name]));
+      row.classList.toggle('changed', Math.abs(p.value - defaults[name][p.name]) > step * 0.5);
+      row.append(lab, num, rng, hp);
+      container.appendChild(row);
+    });
+  }
+  function renderParams() {
+    buildParamList($('params'), () => { updateCli(); updateHeader(); save(); });
+    updateCli();
+    buildParamList($('animParams'), () => { updateHeader(); if (currentEffectName() === 'anim') renderParamsMain(); save(); }, core.animIndex);
+  }
+  function renderParamsMain() { buildParamList($('params'), () => { updateCli(); updateHeader(); save(); }); updateCli(); }
+  function updateCli() {
+    const name = currentEffectName();
+    const lines = ['mode ' + name];
+    core.params().forEach((p) => {
+      const d = defaults[name] && defaults[name][p.name];
+      if (d !== undefined && Math.abs(p.value - d) > 1e-4) lines.push('set ' + p.name + ' ' + (+p.value.toFixed(4)));
+    });
+    if ($('sensorOn').checked) lines.push('filter ' + parseFloat($('sensorCut').value).toFixed(1));
+    $('cliOut').value = lines.join('\n');
+  }
+
+  // ===================================================================================
+  // Artwork: project model, editor, frames, import
+  // ===================================================================================
+  const art = {
+    w: 32, h: 24, d: 3, frames: [], cur: 0, slice: 1, tool: 'pencil',
+    clips: [], name: 'my_animation', mapping: null,
+    undo: [], redo: [], dirty: true,
+  };
+  const STATE_COLORS = ['--st-idle', '--st-accel', '--st-brake', '--st-left', '--st-right', '--st-bump'];
+  const STATE_LABELS = ['Idle', 'Accelerate', 'Brake', 'Corner left', 'Corner right', 'Bump'];
+  const px = (f, s, x, y) => f[(s * art.h + y) * art.w + x];
+
+  function loadDemoProject() {
+    const x = core.x;
+    const info = new Int32Array(x.memory.buffer, x.gm_demo_anim_info(), 4 + 4 * core.states.length);
+    const w = info[0], h = info[1], d = info[2], n = info[3];
+    const bits = core.u8().slice(x.gm_demo_anim_bits(), x.gm_demo_anim_bits() + ((w + 7) >> 3) * h * d * n);
+    art.w = w; art.h = h; art.d = d; art.frames = [];
+    const rb = (w + 7) >> 3;
+    for (let f = 0; f < n; f++) {
+      const fr = new Uint8Array(w * h * d);
+      for (let s = 0; s < d; s++) for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++)
+        fr[(s * h + yy) * w + xx] = (bits[((f * d + s) * h + yy) * rb + (xx >> 3)] >> (7 - (xx & 7))) & 1;
+      art.frames.push(fr);
+    }
+    art.clips = core.states.map((_, s) => ({ start: info[4 + s * 4], count: info[5 + s * 4], fps: info[6 + s * 4] / 1000, loop: info[7 + s * 4] }));
+    art.cur = 0; art.slice = Math.min(1, d - 1); art.name = 'demo_chevrons'; art.mapping = null;
+    art.undo = []; art.redo = [];
+    x.gm_anim_use_demo();
+  }
+
+  function packBits() {
+    const { w, h, d, frames } = art; const rb = (w + 7) >> 3;
+    const out = new Uint8Array(rb * h * d * frames.length);
+    frames.forEach((fr, f) => {
+      for (let s = 0; s < d; s++) for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+        if (fr[(s * h + y) * w + x]) out[((f * d + s) * h + y) * rb + (x >> 3)] |= 0x80 >> (x & 7);
+    });
+    return out;
+  }
+
+  let pushTimer = 0;
+  function pushToCore(now) {
+    clearTimeout(pushTimer);
+    const go = () => {
+      const bits = packBits();
+      const ptr = core.x.gm_anim_alloc(bits.length);
+      if (!ptr) { toast('Out of memory for this animation'); return; }
+      core.u8().set(bits, ptr);
+      art.clips.forEach((c, s) => core.x.gm_anim_set_clip(s, c.start, c.count, c.fps, c.loop ? 1 : 0));
+      core.x.gm_anim_load(art.w, art.h, art.d, art.frames.length);
+      updateHeader(); save();
+    };
+    if (now) go(); else pushTimer = setTimeout(go, 120);
+  }
+
+  function snapshotAll() { return { w: art.w, h: art.h, d: art.d, cur: art.cur, frames: art.frames.map((f) => f.slice()), clips: art.clips.map((c) => ({ ...c })) }; }
+  function pushUndo(entry) { art.undo.push(entry); if (art.undo.length > 40) art.undo.shift(); art.redo = []; }
+  function undoFrame() { pushUndo({ kind: 'frame', i: art.cur, before: art.frames[art.cur].slice() }); }
+  function undoAll() { pushUndo({ kind: 'all', before: snapshotAll() }); }
+  function applyUndo(fromStack, toStack) {
+    const e = fromStack.pop(); if (!e) return;
+    if (e.kind === 'frame') {
+      if (!art.frames[e.i]) return;
+      toStack.push({ kind: 'frame', i: e.i, before: art.frames[e.i].slice() });
+      art.frames[e.i] = e.before; art.cur = e.i;
+    } else {
+      toStack.push({ kind: 'all', before: snapshotAll() });
+      const s = e.before; art.w = s.w; art.h = s.h; art.d = s.d; art.frames = s.frames; art.cur = Math.min(s.cur, s.frames.length - 1);
+      if (s.clips) art.clips = s.clips;
+      art.slice = Math.min(art.slice, art.d - 1);
+      syncSizeInputs();
+    }
+    artChanged(true);
+  }
+
+  // ---- editor canvas --------------------------------------------------------------------
+  const ed = { cell: 10, drag: null, preview: null };
+  function editorSize() {
+    ed.cell = parseInt($('zoom').value, 10);
+    const c = $('edit'); const dpr = Math.min(2, window.devicePixelRatio || 1);
+    c.width = Math.ceil(art.w * ed.cell * dpr); c.height = Math.ceil(art.h * ed.cell * dpr);
+    c.style.width = (art.w * ed.cell) + 'px'; c.style.height = (art.h * ed.cell) + 'px';
+    ed.dpr = dpr;
+  }
+  function drawEditor() {
+    const c = $('edit'), g = c.getContext('2d'), cs = ed.cell * ed.dpr;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = '#05080c'; g.fillRect(0, 0, c.width, c.height);
+    const fr = art.frames[art.cur]; if (!fr) return;
+    const { w, h, d } = art;
+    if ($('ghost').checked && d > 1) {
+      g.fillStyle = 'rgba(196,156,255,0.22)';
+      for (let s = 0; s < d; s++) { if (s === art.slice) continue; for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (px(fr, s, x, y)) g.fillRect(x * cs, y * cs, cs, cs); }
+    }
+    if ($('onion').checked && art.cur > 0) {
+      const pf = art.frames[art.cur - 1]; g.fillStyle = 'rgba(255,180,84,0.28)';
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (px(pf, art.slice, x, y)) g.fillRect(x * cs, y * cs, cs, cs);
+    }
+    const prev = ed.preview;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let v = px(fr, art.slice, x, y);
+      if (prev && prev.has(y * w + x)) v = prev.value;
+      if (ed.drag && ed.drag.tool === 'move') {
+        const sx = x - ed.drag.dx, sy = y - ed.drag.dy;
+        v = (sx >= 0 && sx < w && sy >= 0 && sy < h) ? px(ed.drag.base, art.slice, sx, sy) : 0;
+      }
+      if (v) { g.fillStyle = '#8fd9ff'; g.fillRect(x * cs + (cs > 6 ? 1 : 0), y * cs + (cs > 6 ? 1 : 0), cs - (cs > 6 ? 1 : 0), cs - (cs > 6 ? 1 : 0)); }
+    }
+    if (cs >= 8) {
+      g.strokeStyle = 'rgba(143,217,255,0.08)'; g.lineWidth = 1; g.beginPath();
+      for (let x = 0; x <= w; x++) { g.moveTo(x * cs + 0.5, 0); g.lineTo(x * cs + 0.5, h * cs); }
+      for (let y = 0; y <= h; y++) { g.moveTo(0, y * cs + 0.5); g.lineTo(w * cs, y * cs + 0.5); }
+      g.stroke();
+    }
+    if ($('mirrorX').checked) { g.strokeStyle = 'rgba(255,209,102,0.5)'; g.beginPath(); g.moveTo(w * cs / 2, 0); g.lineTo(w * cs / 2, h * cs); g.stroke(); }
+  }
+  function cellAt(e) {
+    const r = $('edit').getBoundingClientRect();
+    return { x: Math.floor((e.clientX - r.left) / ed.cell), y: Math.floor((e.clientY - r.top) / ed.cell) };
+  }
+  function brushCells(x, y, set) {
+    const b = parseInt($('brush').value, 10), o = Math.floor((b - 1) / 2);
+    for (let dy = 0; dy < b; dy++) for (let dx = 0; dx < b; dx++) {
+      const xx = x - o + dx, yy = y - o + dy;
+      if (xx >= 0 && xx < art.w && yy >= 0 && yy < art.h) {
+        set.add(yy * art.w + xx);
+        if ($('mirrorX').checked) set.add(yy * art.w + (art.w - 1 - xx));
+      }
+    }
+  }
+  function lineCells(x0, y0, x1, y1, set) {
+    let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1, dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1, err = dx + dy;
+    for (let guard = 0; guard < 1000; guard++) {
+      brushCells(x0, y0, set);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err; if (e2 >= dy) { err += dy; x0 += sx; } if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+  }
+  function rectCells(a, b, set) {
+    const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+    lineCells(x0, y0, x1, y0, set); lineCells(x1, y0, x1, y1, set); lineCells(x1, y1, x0, y1, set); lineCells(x0, y1, x0, y0, set);
+  }
+  function ellipseCells(a, b, set) {
+    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2, rx = Math.abs(b.x - a.x) / 2, ry = Math.abs(b.y - a.y) / 2;
+    if (rx < 0.5 && ry < 0.5) { brushCells(Math.round(cx), Math.round(cy), set); return; }
+    const n = Math.max(16, Math.ceil(Math.PI * 2 * Math.max(rx, ry) * 1.5));
+    let prev = null;
+    for (let i = 0; i <= n; i++) {
+      const t = (i / n) * Math.PI * 2, p = { x: Math.round(cx + rx * Math.cos(t)), y: Math.round(cy + ry * Math.sin(t)) };
+      if (prev) lineCells(prev.x, prev.y, p.x, p.y, set); prev = p;
+    }
+  }
+  function floodFill(x, y) {
+    const fr = art.frames[art.cur], { w, h } = art, s = art.slice;
+    const target = px(fr, s, x, y), value = target ? 0 : 1;
+    const stack = [[x, y]]; const seen = new Uint8Array(w * h);
+    while (stack.length) {
+      const [cx, cy] = stack.pop();
+      if (cx < 0 || cy < 0 || cx >= w || cy >= h || seen[cy * w + cx]) continue;
+      seen[cy * w + cx] = 1;
+      if (px(fr, s, cx, cy) !== target) continue;
+      fr[(s * h + cy) * w + cx] = value;
+      stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+    }
+  }
+  function commitCells(set, value) {
+    const fr = art.frames[art.cur], s = art.slice;
+    set.forEach((i) => { fr[s * art.w * art.h + i] = value; });
+  }
+  function bindEditor() {
+    const c = $('edit');
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('pointerdown', (e) => {
+      const p = cellAt(e); if (p.x < 0 || p.y < 0 || p.x >= art.w || p.y >= art.h) return;
+      c.setPointerCapture(e.pointerId);
+      const erase = art.tool === 'eraser' || e.button === 2 || e.altKey;
+      const value = erase ? 0 : 1;
+      undoFrame();
+      if (art.tool === 'fill') { floodFill(p.x, p.y); artChanged(); return; }
+      if (art.tool === 'move') { ed.drag = { tool: 'move', start: p, dx: 0, dy: 0, base: art.frames[art.cur].slice() }; return; }
+      if (art.tool === 'pencil' || art.tool === 'eraser') {
+        const set = new Set(); brushCells(p.x, p.y, set); commitCells(set, value);
+        ed.drag = { tool: 'pencil', last: p, value };
+        drawEditor(); return;
+      }
+      ed.drag = { tool: art.tool, start: p, value };
+      ed.preview = new Set(); ed.preview.value = value; brushCells(p.x, p.y, ed.preview); drawEditor();
+    });
+    c.addEventListener('pointermove', (e) => {
+      const d = ed.drag; if (!d) return;
+      const p = cellAt(e);
+      if (d.tool === 'pencil') {
+        const set = new Set(); lineCells(d.last.x, d.last.y, clamp(p.x, -1, art.w), clamp(p.y, -1, art.h), set); commitCells(set, d.value);
+        d.last = { x: clamp(p.x, -1, art.w), y: clamp(p.y, -1, art.h) }; drawEditor(); pushToCore(false); return;
+      }
+      if (d.tool === 'move') { d.dx = p.x - d.start.x; d.dy = p.y - d.start.y; drawEditor(); return; }
+      const set = new Set(); set.value = d.value;
+      if (d.tool === 'line') lineCells(d.start.x, d.start.y, p.x, p.y, set);
+      else if (d.tool === 'rect') rectCells(d.start, p, set);
+      else if (d.tool === 'ellipse') ellipseCells(d.start, p, set);
+      ed.preview = set; drawEditor();
+    });
+    const end = () => {
+      const d = ed.drag; if (!d) return;
+      if (d.tool === 'move') {
+        const fr = art.frames[art.cur], s = art.slice, { w, h } = art;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const sx = x - d.dx, sy = y - d.dy;
+          fr[(s * h + y) * w + x] = (sx >= 0 && sx < w && sy >= 0 && sy < h) ? px(d.base, s, sx, sy) : 0;
+        }
+      } else if (ed.preview) commitCells(ed.preview, ed.preview.value);
+      ed.drag = null; ed.preview = null; artChanged();
+    };
+    c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+  }
+  function artKeys(e) {
+    if ($('pane-art').hidden) return false;
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); applyUndo(art.undo, art.redo); return true; }
+    if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); applyUndo(art.redo, art.undo); return true; }
+    return false;
+  }
+  document.addEventListener('keydown', (e) => {
+    if ($('pane-art').hidden || !(e.ctrlKey || e.metaKey)) return;
+    if (e.target && e.target.closest && e.target.closest('input[type=text], input[type=number], textarea')) return;
+    artKeys(e);
+  });
+
+  function frameOps() {
+    const blank = () => new Uint8Array(art.w * art.h * art.d);
+    const shiftClips = (at, delta) => {
+      art.clips.forEach((c) => {
+        if (c.count === 0) return;
+        if (delta > 0) { if (c.start > at) c.start += delta; else if (c.start + c.count > at) c.count += delta; }
+        else { if (c.start > at) c.start += delta; else if (c.start + c.count > at) c.count = Math.max(0, c.count + delta); }
+      });
+    };
+    $('fAdd').addEventListener('click', () => { undoAll(); art.frames.splice(art.cur + 1, 0, blank()); shiftClips(art.cur, 1); art.cur++; artChanged(true); renderClips(); });
+    $('fDup').addEventListener('click', () => { undoAll(); art.frames.splice(art.cur + 1, 0, art.frames[art.cur].slice()); shiftClips(art.cur, 1); art.cur++; artChanged(true); renderClips(); });
+    $('fDel').addEventListener('click', () => {
+      if (art.frames.length <= 1) { toast('An animation needs at least one frame'); return; }
+      undoAll(); art.frames.splice(art.cur, 1); shiftClips(art.cur, -1); art.cur = Math.min(art.cur, art.frames.length - 1); artChanged(true); renderClips();
+    });
+    const move = (dir) => {
+      const j = art.cur + dir; if (j < 0 || j >= art.frames.length) return;
+      undoAll(); const t = art.frames[j]; art.frames[j] = art.frames[art.cur]; art.frames[art.cur] = t; art.cur = j; artChanged(true);
+    };
+    $('fLeft').addEventListener('click', () => move(-1)); $('fRight').addEventListener('click', () => move(1));
+    const mutate = (fn) => { undoFrame(); const fr = art.frames[art.cur], s = art.slice, { w, h } = art; const src = fr.slice(); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) fr[(s * h + y) * w + x] = fn(src, s, x, y, w, h); artChanged(); };
+    $('fClear').addEventListener('click', () => mutate(() => 0));
+    $('fInvert').addEventListener('click', () => mutate((src, s, x, y) => 1 - px(src, s, x, y)));
+    $('fFlipH').addEventListener('click', () => mutate((src, s, x, y, w) => px(src, s, w - 1 - x, y)));
+    $('fFlipV').addEventListener('click', () => mutate((src, s, x, y, w, h) => px(src, s, x, h - 1 - y)));
+    document.querySelectorAll('[data-shift]').forEach((b) => b.addEventListener('click', () => {
+      const [dx, dy] = b.dataset.shift.split(',').map(Number);
+      mutate((src, s, x, y, w, h) => px(src, s, (x - dx + w) % w, (y - dy + h) % h));
+    }));
+    $('undo').addEventListener('click', () => applyUndo(art.undo, art.redo));
+    $('redo').addEventListener('click', () => applyUndo(art.redo, art.undo));
+    document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => {
+      art.tool = b.dataset.tool;
+      document.querySelectorAll('[data-tool]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)));
+    }));
+    ['zoom'].forEach((id) => $(id).addEventListener('input', () => { editorSize(); drawEditor(); }));
+    ['onion', 'ghost', 'mirrorX'].forEach((id) => $(id).addEventListener('change', drawEditor));
+    $('artResize').addEventListener('click', resizeArt);
+  }
+  function syncSizeInputs() {
+    $('artW').max = String(core.W); $('artH').max = String(core.H);
+    $('artW').value = art.w; $('artH').value = art.h; $('artD').value = String(art.d);
+  }
+  function resizeArt() {
+    const w = clamp(parseInt($('artW').value, 10) || art.w, 1, core.W), h = clamp(parseInt($('artH').value, 10) || art.h, 1, core.H), d = clamp(parseInt($('artD').value, 10) || 1, 1, core.D);
+    if (w === art.w && h === art.h && d === art.d) return;
+    undoAll();
+    art.frames = art.frames.map((fr) => {
+      const out = new Uint8Array(w * h * d);
+      for (let s = 0; s < Math.min(d, art.d); s++) for (let y = 0; y < Math.min(h, art.h); y++) for (let x = 0; x < Math.min(w, art.w); x++) out[(s * h + y) * w + x] = px(fr, s, x, y);
+      return out;
+    });
+    art.w = w; art.h = h; art.d = d; art.slice = Math.min(art.slice, d - 1);
+    syncSizeInputs(); artChanged(true);
+  }
+  function renderSlices() {
+    const box = $('slices'); box.textContent = '';
+    const lab = document.createElement('span'); lab.className = 'note'; lab.textContent = art.d > 1 ? 'Slice (front to back):' : 'Single slice';
+    box.appendChild(lab);
+    if (art.d === 1) return;
+    for (let s = 0; s < art.d; s++) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = String(s + 1);
+      b.className = s === art.slice ? 'on' : ''; b.setAttribute('aria-pressed', String(s === art.slice));
+      b.title = s === 0 ? 'Front slice, nearest the driver' : (s === art.d - 1 ? 'Back slice' : 'Slice ' + (s + 1));
+      b.addEventListener('click', () => { art.slice = s; renderSlices(); drawEditor(); });
+      box.appendChild(b);
+    }
+  }
+  const thumbCache = [];
+  function renderFrames() {
+    const box = $('frames'); box.textContent = '';
+    const colors = STATE_COLORS.map(cssVar);
+    art.frames.forEach((fr, i) => {
+      const t = document.createElement('button'); t.type = 'button'; t.className = 'thumb';
+      t.setAttribute('aria-current', String(i === art.cur)); t.setAttribute('aria-label', 'Frame ' + (i + 1));
+      const c = document.createElement('canvas'); c.width = art.w; c.height = art.h;
+      c.style.width = Math.round(34 * art.w / art.h) + 'px';
+      const g = c.getContext('2d'); const img = g.createImageData(art.w, art.h);
+      for (let y = 0; y < art.h; y++) for (let x = 0; x < art.w; x++) {
+        let on = 0; for (let s = 0; s < art.d; s++) on |= px(fr, s, x, y);
+        if (on) { const k = (y * art.w + x) * 4; img.data[k] = 143; img.data[k + 1] = 217; img.data[k + 2] = 255; img.data[k + 3] = 255; }
+      }
+      g.putImageData(img, 0, 0);
+      const ix = document.createElement('span'); ix.className = 'ix'; ix.textContent = String(i);
+      const dots = document.createElement('span'); dots.className = 'dots';
+      art.clips.forEach((cl, s) => { if (cl.count > 0 && i >= cl.start && i < cl.start + cl.count) { const d = document.createElement('i'); d.style.background = colors[s]; d.title = STATE_LABELS[s]; dots.appendChild(d); } });
+      t.append(c, ix, dots);
+      t.addEventListener('click', () => { art.cur = i; artChanged(true, true); });
+      box.appendChild(t);
+    });
+    const cur = box.children[art.cur]; if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    $('frameTitle').textContent = 'Frame ' + art.cur + ' (' + (art.cur + 1) + ' of ' + art.frames.length + ')';
+  }
+  let thumbTimer = 0;
+  function artChanged(structural, noPush) {
+    editorSize(); drawEditor(); renderSlices();
+    clearTimeout(thumbTimer); thumbTimer = setTimeout(renderFrames, structural ? 0 : 150);
+    if (structural) renderClips();
+    if (!noPush) pushToCore(false); else save();
+  }
+
+  // ---- import ------------------------------------------------------------------------------
+  async function decodeFile(file) {
+    const out = [];
+    if (/gif/i.test(file.type) && 'ImageDecoder' in window) {
+      try {
+        const dec = new ImageDecoder({ data: await file.arrayBuffer(), type: file.type });
+        await dec.tracks.ready;
+        const n = dec.tracks.selectedTrack.frameCount;
+        for (let i = 0; i < n; i++) {
+          const { image } = await dec.decode({ frameIndex: i });
+          const c = document.createElement('canvas'); c.width = image.displayWidth; c.height = image.displayHeight;
+          c.getContext('2d').drawImage(image, 0, 0); image.close(); out.push(c);
+        }
+        return out;
+      } catch (e) { /* fall through to a single frame */ }
+    }
+    const bmp = await createImageBitmap(file);
+    out.push(bmp);
+    return out;
+  }
+  function imageToBits(img) {
+    const { w, h } = art;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    const iw = img.width, ih = img.height;
+    if ($('impStretch').checked) g.drawImage(img, 0, 0, w, h);
+    else { const s = Math.min(w / iw, h / ih); const dw = iw * s, dh = ih * s; g.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh); }
+    const d = g.getImageData(0, 0, w, h).data;
+    const lum = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) lum[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    if ($('impInvert').checked) for (let i = 0; i < lum.length; i++) lum[i] = 255 - lum[i];
+    const thr = parseInt($('impThresh').value, 10);
+    const bits = new Uint8Array(w * h);
+    if ($('impDither').checked) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x, old = lum[i], nv = old >= thr ? 255 : 0; bits[i] = nv ? 1 : 0; const err = old - nv;
+        if (x + 1 < w) lum[i + 1] += err * 7 / 16;
+        if (y + 1 < h) { if (x > 0) lum[i + w - 1] += err * 3 / 16; lum[i + w] += err * 5 / 16; if (x + 1 < w) lum[i + w + 1] += err / 16; }
+      }
+    } else for (let i = 0; i < w * h; i++) bits[i] = lum[i] >= thr ? 1 : 0;
+    return bits;
+  }
+  let lastImport = null;
+  async function importFiles(files) {
+    if (!files || !files.length) return;
+    let images = [];
+    try { for (const f of files) images = images.concat(await decodeFile(f)); }
+    catch (e) { $('impNote').textContent = 'Could not read that file: ' + e.message + '. Try PNG or JPG.'; return; }
+    const split = clamp(parseInt($('impSplit').value, 10) || 1, 1, 64);
+    if (split > 1) {
+      const parts = [];
+      images.forEach((img) => {
+        const fw = Math.floor(img.width / split);
+        for (let i = 0; i < split; i++) { const c = document.createElement('canvas'); c.width = fw; c.height = img.height; c.getContext('2d').drawImage(img, i * fw, 0, fw, img.height, 0, 0, fw, img.height); parts.push(c); }
+      });
+      images = parts;
+    }
+    lastImport = images;
+    applyImport(true);
+  }
+  function applyImport(fresh) {
+    if (!lastImport) return;
+    const mode = $('impMode').value;
+    undoAll();
+    if (!fresh && lastImport.appliedAt !== undefined) {
+      // Re-threshold: restore the frames from before the previous import.
+      art.frames = lastImport.prevFrames.map((f) => f.slice()); art.cur = lastImport.prevCur;
+    }
+    lastImport.prevFrames = art.frames.map((f) => f.slice()); lastImport.prevCur = art.cur;
+    const slab = art.w * art.h;
+    const toFrame = (bits, base) => { const fr = base || new Uint8Array(slab * art.d); fr.set(bits, art.slice * slab); return fr; };
+    if (mode === 'current') art.frames[art.cur] = toFrame(imageToBits(lastImport[0]), art.frames[art.cur]);
+    else {
+      const made = lastImport.map((img) => toFrame(imageToBits(img)));
+      if (mode === 'replace') { art.frames = made; art.cur = 0; art.clips.forEach((c, s) => { c.start = 0; c.count = s === 0 ? made.length : 0; }); }
+      else { const at = art.frames.length; art.frames = art.frames.concat(made); art.cur = at; }
+    }
+    lastImport.appliedAt = art.cur;
+    $('impNote').textContent = 'Imported ' + lastImport.length + ' image' + (lastImport.length === 1 ? '' : 's') + '. Move the threshold to re-run it.';
+    artChanged(true); renderClips();
+  }
+  function bindImport() {
+    $('importFile').addEventListener('change', (e) => { importFiles([...e.target.files]); e.target.value = ''; });
+    ['impThresh', 'impInvert', 'impDither', 'impStretch'].forEach((id) => $(id).addEventListener('change', () => applyImport(false)));
+    const drop = $('drop');
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); importFiles([...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'))); });
+  }
+
+  // ===================================================================================
+  // Clips, mapping, export, persistence
+  // ===================================================================================
+  let forced = -1;
+  function renderClips() {
+    const tb = $('clipTable').querySelector('tbody'); tb.textContent = '';
+    const colors = STATE_COLORS.map(cssVar);
+    art.clips.forEach((c, s) => {
+      const tr = document.createElement('tr'); tr.dataset.state = s;
+      const st = document.createElement('td'); const lab = document.createElement('span'); lab.className = 'st';
+      const dot = document.createElement('i'); dot.style.background = colors[s]; lab.append(dot, document.createTextNode(STATE_LABELS[s]));
+      st.appendChild(lab);
+      if (c.count === 0) { const fb = document.createElement('div'); fb.className = 'fb'; fb.textContent = (s === 3 || s === 4) ? 'mirrors ' + (s === 3 ? 'right' : 'left') : 'uses idle'; st.appendChild(fb); }
+      const mk = (key, min, max, step) => {
+        const td = document.createElement('td'); const inp = document.createElement('input'); inp.type = 'number'; inp.min = min; inp.max = max; inp.step = step; inp.value = String(c[key]);
+        inp.id = 'clip-' + s + '-' + key; inp.setAttribute('aria-label', STATE_LABELS[s] + ' ' + key);
+        inp.addEventListener('change', () => { let v = parseFloat(inp.value); if (Number.isNaN(v)) v = 0; c[key] = key === 'fps' ? clamp(v, 0.5, 120) : clamp(Math.round(v), 0, art.frames.length); inp.value = String(c[key]); pushToCore(true); renderClips(); renderFrames(); });
+        td.appendChild(inp); return td;
+      };
+      const lp = document.createElement('td'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!c.loop; cb.id = 'clip-' + s + '-loop'; cb.setAttribute('aria-label', STATE_LABELS[s] + ' loops');
+      cb.addEventListener('change', () => { c.loop = cb.checked ? 1 : 0; pushToCore(true); }); lp.appendChild(cb);
+      const pv = document.createElement('td'); const b = document.createElement('button'); b.type = 'button'; b.textContent = forced === s ? 'Pinned' : 'Preview'; b.className = forced === s ? 'on' : '';
+      b.addEventListener('click', () => { forceState(forced === s ? -1 : s); });
+      pv.appendChild(b);
+      tr.append(st, mk('start', 0, 65535, 1), mk('count', 0, 65535, 1), mk('fps', 0.5, 120, 0.5), lp, pv);
+      tb.appendChild(tr);
+    });
+    $('clipAuto').classList.toggle('on', forced < 0);
+  }
+  function forceState(s) {
+    forced = s; core.x.gm_anim_force_state(s);
+    if (core.x.gm_effect_index() !== core.animIndex) setEffect(core.animIndex, false);
+    renderClips();
+  }
+  function cIdent(s) { return s.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 24) || 'animation'; }
+  const MAPPING_ORDER = ['px_g_x', 'px_g_y', 'px_g_z', 'hz', 'inertia', 'enter_g', 'hold_s', 'bump_g', 'fps_g', 'scrub_axis', 'frames_g', 'echo', 'mirror'];
+  function animParamValues() {
+    const vals = {};
+    core.params(core.animIndex).forEach((p) => { vals[p.name] = p.value; });
+    art.mapping = vals;
+    return vals;
+  }
+  function f(v) { let s = (+v).toFixed(4).replace(/0+$/, ''); if (s.endsWith('.')) s += '0'; return s + 'f'; }
+  function updateHeader() {
+    const bits = packBits(); const m = animParamValues();
+    const name = cIdent($('exName').value);
+    const lines = [];
+    lines.push('// Generated by Gmeter Studio. Save as src/user_animation.hpp and rebuild the firmware.');
+    lines.push('// ' + art.frames.length + ' frames, ' + art.w + 'x' + art.h + ' px, ' + art.d + ' slice' + (art.d > 1 ? 's' : '') + ', ' + bits.length + ' bytes.');
+    lines.push('#pragma once');
+    lines.push('#include <cstdint>');
+    lines.push('#include "gmeter/effects/anim.hpp"');
+    lines.push('');
+    lines.push('static const uint8_t kUserAnimationBits[' + bits.length + '] = {');
+    for (let i = 0; i < bits.length; i += 16) lines.push('  ' + Array.from(bits.subarray(i, i + 16), (b) => '0x' + b.toString(16).toUpperCase().padStart(2, '0')).join(', ') + ',');
+    lines.push('};');
+    lines.push('');
+    lines.push('static const gm::AnimationAsset kUserAnimation = {');
+    lines.push('    "' + name + '", ' + art.w + ', ' + art.h + ', ' + art.d + ', ' + art.frames.length + ', kUserAnimationBits,');
+    lines.push('    {  // clips: start, count, fps, loop');
+    art.clips.forEach((c, s) => lines.push('        {' + c.start + ', ' + c.count + ', ' + f(c.fps) + ', ' + (c.loop ? 1 : 0) + '},  // ' + core.states[s]));
+    lines.push('    },');
+    lines.push('    {  // mapping: ' + MAPPING_ORDER.join(', '));
+    lines.push('        ' + MAPPING_ORDER.map((k) => f(m[k] !== undefined ? m[k] : 0)).join(', ') + ',');
+    lines.push('    },');
+    lines.push('};');
+    $('headerOut').value = lines.join('\n') + '\n';
+    $('exSize').textContent = bits.length + ' bytes of flash, ' + art.frames.length + ' frames';
+  }
+
+  const STORE_KEY = 'gmeter-studio-v1';
+  let saveTimer = 0;
+  function projectJSON() {
+    const m = animParamValues();
+    return JSON.stringify({
+      v: 1, name: $('exName').value, w: art.w, h: art.h, d: art.d,
+      frames: art.frames.map((fr) => { let s = ''; for (let i = 0; i < fr.length; i += 4) s += ((fr[i] << 3) | (fr[i + 1] << 2) | (fr[i + 2] << 1) | (fr[i + 3] | 0)).toString(16); return s; }),
+      clips: art.clips, mapping: m,
+    });
+  }
+  function loadProject(json) {
+    const p = typeof json === 'string' ? JSON.parse(json) : json;
+    if (!p || p.v !== 1 || !Array.isArray(p.frames) || !p.frames.length) throw new Error('not a Gmeter Studio project');
+    const w = clamp(p.w | 0, 1, core.W), h = clamp(p.h | 0, 1, core.H), d = clamp(p.d | 0, 1, core.D), n = w * h * d;
+    art.frames = p.frames.map((s) => { const fr = new Uint8Array(n); for (let i = 0; i < s.length && i * 4 < n; i++) { const v = parseInt(s[i], 16) || 0; for (let b = 0; b < 4 && i * 4 + b < n; b++) fr[i * 4 + b] = (v >> (3 - b)) & 1; } return fr; });
+    art.w = w; art.h = h; art.d = d; art.cur = 0; art.slice = 0;
+    art.clips = core.states.map((_, s) => { const c = (p.clips && p.clips[s]) || {}; return { start: clamp(c.start | 0, 0, 65535), count: clamp(c.count | 0, 0, 65535), fps: clamp(+c.fps || 12, 0.5, 120), loop: c.loop ? 1 : 0 }; });
+    art.mapping = p.mapping || null;
+    if (p.name) $('exName').value = p.name;
+    art.undo = []; art.redo = [];
+    syncSizeInputs();
+    if (art.mapping) applyMapping(art.mapping);
+    pushToCore(true);
+  }
+  function applyMapping(m) {
+    core.params(core.animIndex).forEach((p) => { if (m[p.name] !== undefined && Number.isFinite(+m[p.name])) core.setParam(core.animIndex, p.i, +m[p.name]); });
+  }
+  function save() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      try {
+        localStorage.setItem(STORE_KEY, projectJSON());
+        localStorage.setItem(STORE_KEY + '-ui', JSON.stringify({ effect: currentEffectName(), sim: sim.mode, spacing: view.spacing, trans: view.transmittance }));
+      } catch (e) { /* storage unavailable: nothing to do */ }
+    }, 400);
+  }
+  function restore() {
+    let restored = false;
+    try {
+      const s = localStorage.getItem(STORE_KEY);
+      if (s) { loadProject(s); restored = true; }
+    } catch (e) { restored = false; }
+    if (!restored) { loadDemoProject(); pushToCore(true); }
+    let ui = null;
+    try { ui = JSON.parse(localStorage.getItem(STORE_KEY + '-ui') || 'null'); } catch (e) { ui = null; }
+    return ui;
+  }
+
+  function bindClips() {
+    $('clipAuto').addEventListener('click', () => forceState(-1));
+    $('exName').addEventListener('input', () => { updateHeader(); save(); });
+    $('copyHeader').addEventListener('click', () => { updateHeader(); copyText($('headerOut').value, $('headerOut')); });
+    $('copyProject').addEventListener('click', () => { const s = projectJSON(); $('projectIo').value = s; copyText(s, $('projectIo')); });
+    $('loadProject').addEventListener('click', () => {
+      try { undoAll(); loadProject($('projectIo').value); renderParams(); renderAllArt(); toast('Project loaded'); }
+      catch (e) { toast('That text is not a Gmeter Studio project (' + e.message + ')'); }
+    });
+    let armed = 0;
+    $('resetDemo').addEventListener('click', (e) => {
+      const b = e.currentTarget;
+      if (Date.now() - armed > 3000) { armed = Date.now(); b.textContent = 'Click again to replace your work'; setTimeout(() => { b.textContent = 'Start from the demo'; }, 3000); return; }
+      armed = 0; b.textContent = 'Start from the demo';
+      undoAll(); loadDemoProject(); syncSizeInputs(); $('exName').value = 'my_animation';
+      renderParams();
+      pushToCore(true); renderAllArt(); toast('Demo loaded');
+    });
+  }
+  function renderAllArt() { editorSize(); drawEditor(); renderSlices(); renderFrames(); renderClips(); updateHeader(); }
+
+  // ===================================================================================
+  // Tabs, stage bar, main loop
+  // ===================================================================================
+  function selectTab(id) {
+    ['effect', 'art', 'clips'].forEach((t) => {
+      $('tab-' + t).setAttribute('aria-selected', String(t === id));
+      $('pane-' + t).hidden = t !== id;
+    });
+    if (id !== 'effect' && core.x.gm_effect_index() !== core.animIndex) setEffect(core.animIndex, true);
+    if (id === 'clips') updateHeader();
+    if (id === 'art') { editorSize(); drawEditor(); renderFrames(); }
+    try { localStorage.setItem(STORE_KEY + '-tab', id); } catch (e) { /* ignore */ }
+  }
+  function bindStageBar() {
+    const sp = $('spacing'), tr = $('trans');
+    sp.addEventListener('input', () => { view.spacing = parseFloat(sp.value); $('spacingOut').textContent = view.spacing.toFixed(1) + ' mm'; if (view.ok) layoutStack(); save(); });
+    tr.addEventListener('input', () => { view.transmittance = parseFloat(tr.value); $('transOut').textContent = Math.round(view.transmittance * 100) + '%'; save(); });
+    $('optGlow').addEventListener('change', (e) => { view.glow = e.target.checked; });
+    $('optGrid').addEventListener('change', (e) => { view.grid = e.target.checked; });
+    $('optHw').addEventListener('change', (e) => { view.hw = e.target.checked; if (view.ok) layoutStack(); });
+    $('optBoards').addEventListener('change', (e) => { view.boards = e.target.checked; if (view.ok) layoutStack(); });
+    $('optDay').addEventListener('change', (e) => { view.day = e.target.checked; });
+    document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => setPreset(b.dataset.view)));
+    document.querySelectorAll('[role=tab]').forEach((b) => b.addEventListener('click', () => selectTab(b.id.replace('tab-', ''))));
+    $('fxReset').addEventListener('click', () => core.x.gm_reset_effect());
+    $('fxDefaults').addEventListener('click', () => {
+      const name = currentEffectName(), d = defaults[name]; if (!d) return;
+      core.params().forEach((p) => { if (d[p.name] !== undefined) core.setParam(-1, p.i, d[p.name]); });
+      renderParams(); save();
+    });
+    $('fxReadout').addEventListener('change', (e) => core.x.gm_set_readout(e.target.checked ? 1 : 0));
+    $('copyCli').addEventListener('click', () => copyText($('cliOut').value, $('cliOut')));
+    for (let d = 1; d <= core.D; d++) { const o = document.createElement('option'); o.value = String(d); o.textContent = d === 1 ? '1 (flat)' : String(d); $('artD').appendChild(o); }
+  }
+
+  let lastTs = 0, fpsAcc = 0, fpsN = 0, uiTick = 0;
+  function loop(ts) {
+    requestAnimationFrame(loop);
+    let dt = lastTs ? (ts - lastTs) / 1000 : 1 / 60;
+    lastTs = ts;
+    dt = clamp(dt, 1 / 240, 1 / 20);
+    if (sim.mode === 'drive') stepDrive(dt); else if (sim.mode === 'scenario') stepScenario(dt); else stepManual(dt);
+    const o = sim.out;
+    const ptr = core.x.gm_step(o.lat, o.vert, o.lon, dt);
+    const bits = new Uint8Array(core.x.memory.buffer, ptr, core.frameBytes);
+    if (view.ok) uploadFrame(bits); else upload2D(bits);
+    renderViewport();
+    const ap = new Float32Array(core.x.memory.buffer, core.x.gm_applied_g(), 3);
+    const applied = [ap[0], ap[1], ap[2]];
+    sim.trail.push([applied[0], applied[2]]); if (sim.trail.length > 180) sim.trail.shift();
+    fpsAcc += dt; fpsN++;
+    if (++uiTick % 4 === 0) {
+      drawGG(applied);
+      const fmt = (v) => (v >= 0 ? '+' : '') + v.toFixed(2);
+      $('rLat').textContent = fmt(applied[0]); $('rLon').textContent = fmt(applied[2]); $('rVert').textContent = fmt(applied[1]);
+      $('rMag').textContent = Math.hypot(applied[0], applied[2]).toFixed(2) + ' g';
+      let lit = 0; for (let i = 0; i < bits.length; i++) { let b = bits[i]; while (b) { lit += b & 1; b >>= 1; } }
+      $('chipLit').textContent = lit;
+      const isAnim = core.x.gm_effect_index() === core.animIndex;
+      $('chipStateWrap').hidden = !isAnim;
+      if (isAnim) {
+        const s = core.x.gm_anim_state();
+        $('chipState').textContent = core.states[s] + (core.x.gm_anim_mirrored() ? ' (mirrored)' : '') + ' #' + core.x.gm_anim_frame();
+        $('chipStateDot').style.background = cssVar(STATE_COLORS[s]);
+        document.querySelectorAll('#clipTable tr[data-state]').forEach((r) => r.classList.toggle('live', +r.dataset.state === s));
+      }
+    }
+    if (fpsAcc >= 0.5) { $('chipFps').textContent = Math.round(fpsN / fpsAcc); fpsAcc = 0; fpsN = 0; }
+  }
+
+  async function boot() {
+    try { await loadCore(); }
+    catch (e) {
+      const fb = $('glFallback'); fb.hidden = false; fb.textContent = 'Could not start the simulation core: ' + e.message;
+      return;
+    }
+    bindStageBar();
+    initViewport();
+    bindSim();
+    bindEditor(); frameOps(); bindImport(); bindClips();
+    captureDefaults();
+    const ui = restore();
+    syncSizeInputs();
+    if (ui) {
+      const i = core.effects.indexOf(ui.effect); if (i >= 0) core.x.gm_set_effect(i, 0);
+      if (ui.sim) setSimMode(ui.sim);
+      if (ui.spacing) { view.spacing = ui.spacing; $('spacing').value = ui.spacing; $('spacingOut').textContent = ui.spacing.toFixed(1) + ' mm'; }
+      if (ui.trans) { view.transmittance = ui.trans; $('trans').value = ui.trans; $('transOut').textContent = Math.round(ui.trans * 100) + '%'; }
+      if (view.ok) layoutStack();
+    } else {
+      core.x.gm_set_effect(core.animIndex, 0);
+      setSimMode('scenario');
+    }
+    renderEffects(); renderParams();
+    renderAllArt();
+    let tab = 'effect'; try { tab = localStorage.getItem(STORE_KEY + '-tab') || 'effect'; } catch (e) { tab = 'effect'; }
+    selectTab(['effect', 'art', 'clips'].includes(tab) ? tab : 'effect');
+    setPreset('driver');
+    if (view.ok) { view.theta = PRESETS.driver.theta; view.phi = PRESETS.driver.phi; view.radius = PRESETS.driver.radius; view.anim = null; }
+    window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { renderFrames(); renderClips(); drawPad(); });
+    requestAnimationFrame(loop);
+  }
+  boot();
+})();
+</script>

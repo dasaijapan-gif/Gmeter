@@ -18,6 +18,15 @@ OLED, DFRobot DFR0934) is the same glass: **WiseChip UG-2856KLBAG01**.
 | Transmittance | 40 % min / 50 % typ at 550 nm per WiseChip (vendors quote up to 70 %) |
 | SPI timing | cycle >= 100 ns (10 MHz max), SCLK high/low >= 50 ns, CS hold 50 ns, data latched on the rising edge |
 
+The DFRobot **DFR0934** ("Fermion 1.51" OLED Transparent Display with
+Converter") adds an 18 x 28 mm adapter board with the 12 V boost converter and
+exposes SPI (pins include DC, RES, CS and MOSI) and DFRobot's GDI connector.
+DFRobot lists the module as 128 x 64 and 3.3 V. The controller has 64 rows, but
+the fully transparent area is 128 x 56; the remaining rows sit on the
+non-transparent strip near the pins. Only SPI is useful for a stack, since
+there is one GDI connector per controller board. Gmeter Studio models this
+module.
+
 Consequences for a stack of eight:
 
 - The firmware default geometry is **128 x 56 x 8**, seven GDDRAM pages per layer.

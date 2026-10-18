@@ -9,7 +9,13 @@
                        auto re-zero (opt.)
 ```
 
-The same chain runs on the PC: `host/sim_main.cpp` replaces the sensor with a
+The same chain runs in the browser: `host/web/wasm_api.cpp` exposes the
+engine, effects, scenarios, sensor model and animation loader as a small C API,
+`tools/build_studio.py` compiles it to WebAssembly (Zig's clang with libc++
+for wasm32-wasi, about 80 KB) and embeds it in `host/web/studio.html`, which
+renders the frames on a Three.js model of the panels.
+
+The same chain also runs on the PC: `host/sim_main.cpp` replaces the sensor with a
 `Scenario` (keyframed dynamic g) passed through `simulateRawSensor()`, which
 applies the inverse of a mounting rotation plus noise, so the estimator and
 calibration code are exercised exactly as on the car.
@@ -122,6 +128,6 @@ ESP32; measure on target with `status` (step and SPI microseconds).
 3. Move the SPI transfer to the ESP-IDF DMA queue to free core 0.
 4. A Wi-Fi tuning page (the `ParamTable` already exposes everything by name).
 5. More effects: a wireframe box that shears with g, a "needle" through the
-   depth, authored sprite sheets via `tools/img2sprite.py`.
+   depth. Authored animations already go through Gmeter Studio.
 6. Optional gyro use (yaw rate) to separate hills from braking and to spin
    the smoke.

@@ -19,6 +19,15 @@
 #include "serial_cli.hpp"
 #include "storage.hpp"
 
+// Artwork exported from Gmeter Studio (host/web): save it as
+// src/user_animation.hpp and it replaces the built-in demo animation.
+#if __has_include("user_animation.hpp")
+#include "user_animation.hpp"
+#define GM_USER_ANIMATION kUserAnimation
+#else
+#define GM_USER_ANIMATION gm::demoAnimation()
+#endif
+
 using namespace gm;
 
 namespace {
@@ -34,6 +43,7 @@ ParticleEffect particleEffect;
 SmokeEffect smokeEffect;
 TunnelEffect tunnelEffect;
 SpriteEffect spriteEffect(demoSprite());
+AnimationEffect animEffect(GM_USER_ANIMATION);
 
 Settings settings;
 Calibration calibration;
@@ -242,6 +252,11 @@ class App : public AppControl {
     if (calState == CalState::Rest || calState == CalState::Brake) out.print("  [capturing]");
     out.println();
     if (calMessage[0]) out.printf("last calibration: %s\n", calMessage);
+    if (::engine.current() == &animEffect) {
+      const AnimationAsset& a = animEffect.asset();
+      out.printf("animation '%s' %ux%u x%u slices, %u frames: state %s, frame %d%s\n", a.name, a.width, a.height, a.depth,
+                 a.frames, animStateName(animEffect.state()), animEffect.currentFrame(), animEffect.mirrored() ? " (mirrored)" : "");
+    }
     out.printf("contrast ramp %u..%u  cycle %.0f s  readout %s  panel reinit every %u min\n", settings.contrastFront,
                settings.contrastBack, static_cast<double>(settings.autoCycleS), settings.readout ? "on" : "off",
                settings.reinitMinutes);
@@ -331,6 +346,16 @@ class App : public AppControl {
   void setAutoZero(bool on) override { settings.autoZero = on; estimator.setAutoZero(on); }
   void testPattern(int panel) override { testPanel = panel < 0 ? -2 : panel; if (panel < 0) wantReinit = false; }
   void reinitPanels() override { wantReinit = true; }
+  bool pinAnimState(const char* name) override {
+    if (!name || !strcmp(name, "auto")) { animEffect.forceState(-1); return true; }
+    for (int i = 0; i < kAnimStateCount; ++i)
+      if (!strcmp(name, animStateName(i))) {
+        animEffect.forceState(i);
+        setMode("anim");
+        return true;
+      }
+    return false;
+  }
   void reboot() override { ESP.restart(); }
 };
 
@@ -381,6 +406,7 @@ void setup() {
   engine.addEffect(&smokeEffect);
   engine.addEffect(&tunnelEffect);
   engine.addEffect(&spriteEffect);
+  engine.addEffect(&animEffect);
   engine.setEffect(settings.mode < engine.effectCount() ? settings.mode : 0, false);
   applySettings();
 

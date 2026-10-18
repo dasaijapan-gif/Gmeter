@@ -30,6 +30,7 @@ class AppControl {
   virtual void setAutoZero(bool on) = 0;
   virtual void testPattern(int panel) = 0;
   virtual void reinitPanels() = 0;
+  virtual bool pinAnimState(const char* name) = 0;                // idle|accelerate|brake|left|right|bump|auto
   virtual void reboot() = 0;
 };
 

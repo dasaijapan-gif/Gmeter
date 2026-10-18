@@ -1,5 +1,7 @@
 #include "gball.hpp"
 
+#include <algorithm>
+
 #include <cstdio>
 
 namespace gm {

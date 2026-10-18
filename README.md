@@ -27,8 +27,36 @@ the car.
 | `lib/gmeter_core/` | Hardware-agnostic C++17 core: voxel frame, g-force conventions, IMU estimator, effects, engine, scripted scenarios. Shared by firmware and simulator. |
 | `src/` | ESP32 firmware (PlatformIO + Arduino): SSD1309 panel-stack driver, MPU-6050 driver, dual-core render/transfer tasks, serial CLI, NVS storage. |
 | `host/` | Native build: unit tests, the scenario-driven simulator that records frames, the browser viewer, Arduino stub headers for compile-checking the firmware on a PC. |
-| `tools/` | `make_viewer.py` (bundle a recording into the viewer), `img2sprite.py` (PNG/GIF to sprite header), `serial_gforce.py` (drive the display from a laptop). |
+| `host/web/` | **Gmeter Studio**: a single-page tool with a 3D model of the panel stack, a pixel-art animation editor and a drivable g-force simulator, running the core compiled to WebAssembly. |
+| `tools/` | `build_studio.py` (build Gmeter Studio), `make_viewer.py` (bundle a recording into the replay viewer), `img2sprite.py` (PNG/GIF to sprite header), `serial_gforce.py` (drive the display from a laptop). |
 | `docs/` | [HARDWARE.md](docs/HARDWARE.md) wiring and panel facts, [ARCHITECTURE.md](docs/ARCHITECTURE.md) data flow and conventions, [EFFECTS.md](docs/EFFECTS.md) physics and tuning of each effect. |
+
+## Gmeter Studio: design animations and watch them in 3D
+
+```sh
+pip install ziglang                       # once: a WebAssembly C++ compiler
+python3 tools/build_studio.py -o gmeter_studio.html
+```
+
+Open `gmeter_studio.html` in a browser. It has three parts:
+
+- **3D viewport.** The eight DFR0934 panels modelled to datasheet size (41.92 x
+  27.08 mm glass, 0.274 mm pixels, the opaque strip and FPC). Orbit, pan and zoom.
+  Panel gap, glass transmittance, glow and daylight are adjustable, so you can
+  judge depth and brightness before cutting a spacer.
+- **G-force simulator.** Drive a car with the keyboard or on-screen pedals
+  (throttle, brake, steering, bumps, tyre grip and road roughness). Play the
+  scripted launch/brake/slalom/corner/bump drives, or drag a g-vector by hand.
+  Optionally route it through the simulated accelerometer and filter.
+- **Animation studio.** Draw frames pixel by pixel (pencil, line, box, ellipse,
+  fill, move, mirror, onion skin) or import PNG/GIF. Use up to eight depth
+  slices for volumetric artwork. Assign frame ranges to the car states (idle,
+  accelerate, brake, corner left/right, bump) and tune how the artwork moves
+  with g. **Copy C++ header** produces `src/user_animation.hpp`; rebuild the
+  firmware and the `anim` effect plays your artwork on the car.
+
+Every effect in the viewport is the firmware's own C++ code, so tuning done in
+the Studio carries over: the Effect tab prints the matching serial commands.
 
 ## Quick start without hardware
 
@@ -39,7 +67,7 @@ code, and the real effects, then records the voxel frames.
 ```sh
 cd host && mkdir -p build && cd build
 cmake -G Ninja -DGM_PANEL_H=56 .. && ninja
-./gmeter_tests                                   # 130+ checks on the core
+./gmeter_tests                                   # 170+ checks on the core
 ./gmeter_sim --effect slosh --scenario corner --ascii    # terminal preview
 ./gmeter_sim --effect all --scenario drive --out frames.bin
 python3 ../../tools/make_viewer.py frames.bin -o gmeter_viewer.html   # open in a browser
@@ -52,7 +80,7 @@ the depth, plus a classic g-meter dial.
 
 Scenarios: `idle`, `launch`, `brake`, `slalom`, `corner`, `bump`, `drive`
 (a 21 s mix). Effects: `ball`, `slosh`, `particles`, `smoke`, `tunnel`,
-`sprite`. Any effect parameter can be overridden with `--param name=value`
+`sprite`, `anim`. Any effect parameter can be overridden with `--param name=value`
 (see `docs/EFFECTS.md`).
 
 ## Firmware
@@ -79,7 +107,8 @@ checked on the bench. `tools/serial_gforce.py /dev/ttyUSB0 --scenario slalom`
 pushes synthetic g over USB; `src serial` + `g 0.3 0 -0.5` does it by hand.
 
 Serial commands worth knowing: `mode slosh`, `get`, `set damping 0.3`,
-`contrast all 128`, `ramp 60 255`, `test 3`, `status`, `cycle 20`.
+`contrast all 128`, `ramp 60 255`, `test 3`, `status`, `cycle 20`,
+`anim brake` (pin an animation clip on the bench; `anim auto` releases it).
 The BOOT button steps through effects; holding it two seconds starts a rest
 calibration.
 

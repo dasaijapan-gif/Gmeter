@@ -8,6 +8,8 @@
 #include <vector>
 
 #include "gmeter/gmeter.hpp"
+// A header exactly as Gmeter Studio exports it; compiling it here pins the format.
+#include "fixtures/studio_export.hpp"
 
 using namespace gm;
 
@@ -404,6 +406,8 @@ TEST(tunnel_and_sprite_render) {
 
 TEST(engine_switching_and_params) {
   GBallEffect ball; SloshEffect slosh; TunnelEffect tunnel;
+  AnimationEffect anim(demoAnimation());
+  CHECK(anim.params().count() <= ParamTable::kMax);
   Engine eng;
   CHECK(eng.addEffect(&ball) && eng.addEffect(&slosh) && eng.addEffect(&tunnel));
   CHECK(eng.effectCount() == 3);
@@ -429,6 +433,117 @@ TEST(engine_switching_and_params) {
   eng.setAutoCycle(0.5f);
   for (int i = 0; i < 40; ++i) eng.step(g, 1.0f / 60.0f);
   CHECK(eng.currentIndex() == 0);
+}
+
+// ---- authored animation -----------------------------------------------------------------------
+namespace {
+GForce dyn(float lat, float vert, float lon) { GForce g; g.proper = GForce::kRestProper() + Vec3{lat, vert, lon}; return g; }
+void drive(AnimationEffect& a, const GForce& g, float seconds) {
+  EffectContext ctx; ctx.g = g; ctx.dt = 1.0f / 60.0f;
+  for (int i = 0; i < static_cast<int>(seconds * 60.0f); ++i) a.update(ctx);
+}
+}  // namespace
+
+TEST(anim_demo_asset_and_states) {
+  const AnimationAsset& demo = demoAnimation();
+  CHECK(demo.valid());
+  CHECK(demo.width == 32 && demo.height == 24 && demo.depth == 3 && demo.frames == 32);
+  AnimationEffect a(demo);
+  a.activate();
+  drive(a, dyn(0, 0, 0), 1.0f);
+  CHECK(a.state() == kAnimIdle);
+  CHECK(a.currentFrame() >= 0 && a.currentFrame() < 8);
+  drive(a, dyn(0, 0, 0.5f), 1.0f);
+  CHECK(a.state() == kAnimAccelerate);
+  CHECK(a.currentFrame() >= 8 && a.currentFrame() < 14);
+  drive(a, dyn(0, 0, -0.5f), 1.0f);
+  CHECK(a.state() == kAnimBrake);
+  CHECK(a.position().z > 5.0f);  // thrown toward the windshield under braking
+  drive(a, dyn(0.5f, 0, 0), 1.0f);
+  CHECK(a.state() == kAnimRight);
+  CHECK(!a.mirrored());
+  CHECK(a.position().x < -5.0f);  // thrown left in a right turn
+  drive(a, dyn(-0.5f, 0, 0), 1.0f);
+  CHECK(a.state() == kAnimLeft);
+  CHECK(a.mirrored());             // demo has no left clip: right is mirrored
+  CHECK(a.currentFrame() >= 20 && a.currentFrame() < 26);
+  // Hysteresis: a dip to 70 % of the entry threshold keeps the state.
+  drive(a, dyn(-0.18f, 0, 0), 0.5f);
+  CHECK(a.state() == kAnimLeft);
+  drive(a, dyn(0, 0, 0), 1.0f);
+  CHECK(a.state() == kAnimIdle);
+  // A vertical spike fires the one-shot bump clip, which then hands back.
+  EffectContext ctx; ctx.dt = 1.0f / 60.0f;
+  ctx.g = dyn(0, 0.6f, 0); a.update(ctx);
+  CHECK(a.state() == kAnimBump);
+  ctx.g = dyn(0, 0, 0);
+  for (int i = 0; i < 60; ++i) a.update(ctx);
+  CHECK(a.state() == kAnimIdle);
+  // Forced state for previews.
+  a.forceState(kAnimBrake);
+  drive(a, dyn(0.8f, 0, 0), 0.5f);
+  CHECK(a.state() == kAnimBrake);
+  a.forceState(-1);
+  drive(a, dyn(0.8f, 0, 0), 1.0f);
+  CHECK(a.state() == kAnimRight);
+}
+
+TEST(anim_render_slices_and_bounds) {
+  AnimationEffect a(demoAnimation());
+  a.activate();
+  drive(a, dyn(0, 0, 0), 0.2f);
+  VoxelFrame f;
+  a.render(f);
+  int layersLit = 0;
+  for (int z = 0; z < kD; ++z) layersLit += f.countLitLayer(z) > 0;
+  CHECK(layersLit == 3);  // three slices on three consecutive panels
+  // Extreme g never pushes slices outside the stack or the panel.
+  drive(a, dyn(3.0f, 3.0f, -3.0f), 2.0f);
+  f.clear();
+  a.render(f);
+  CHECK(f.countLit() > 20);
+}
+
+TEST(anim_studio_export_compiles_and_plays) {
+  CHECK(kUserAnimation.valid());
+  CHECK(kUserAnimation.totalBytes() == static_cast<int>(sizeof(kUserAnimationBits)));
+  for (int s = 0; s < kAnimStateCount; ++s)
+    CHECK(kUserAnimation.clips[s].count == 0 || kUserAnimation.clips[s].start < kUserAnimation.frames);
+  AnimationEffect a(kUserAnimation);
+  a.activate();
+  float v = 0.0f;
+  CHECK(a.params().get("enter_g", v) && std::fabs(v - kUserAnimation.mapping.enterG) < 1e-6f);
+  drive(a, dyn(0, 0, -0.6f), 1.0f);
+  CHECK(a.state() == kAnimBrake);
+  VoxelFrame f;
+  a.render(f);
+  CHECK(f.countLit() > 0);
+}
+
+TEST(anim_degenerate_assets) {
+  // Empty idle clip: plays all frames. Clip past the end: clamped.
+  static const uint8_t bits[2 * 1 * 8] = {0xFF, 0, 0, 0, 0, 0, 0, 0, 0x81, 0, 0, 0, 0, 0, 0, 0};
+  AnimationAsset asset;
+  asset.name = "tiny"; asset.width = 8; asset.height = 8; asset.depth = 1; asset.frames = 2; asset.bits = bits;
+  asset.clips[kAnimBrake] = AnimClip{1, 50, 10.0f, 1};
+  AnimationEffect a(asset);
+  a.activate();
+  bool mirror = false;
+  const AnimClip idle = a.resolveClip(kAnimIdle, mirror);
+  CHECK(idle.start == 0 && idle.count == 2);
+  const AnimClip brake = a.resolveClip(kAnimBrake, mirror);
+  CHECK(brake.start == 1 && brake.count == 1);
+  const AnimClip left = a.resolveClip(kAnimLeft, mirror);
+  CHECK(left.count == 2 && !mirror);
+  drive(a, dyn(0, 0, -0.6f), 1.0f);
+  CHECK(a.currentFrame() == 1);
+  AnimationAsset none;
+  AnimationEffect b(none);
+  b.activate();
+  drive(b, dyn(0.5f, 0, 0), 0.5f);
+  VoxelFrame f;
+  b.render(f);
+  CHECK(f.countLit() == 0);
 }
 
 int main() {

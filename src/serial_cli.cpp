@@ -57,6 +57,7 @@ void SerialCli::help(Print& out) {
   out.println("  cycle <seconds>        auto-rotate effects (0 = off)");
   out.println("  readout on|off         numeric g overlay");
   out.println("  invert on|off          inverted pixels");
+  out.println("  anim <state|auto>      pin the animation clip: idle accelerate brake left right bump");
   out.println("  test [n]               light panel n with its index (no arg: back to normal)");
   out.println("  reinit                 re-send panel init");
   out.println("  save                   persist settings + calibration");
@@ -150,6 +151,10 @@ void SerialCli::execute(char* line, Print& out) {
   if (!strcmp(cmd, "cycle")) { if (a1) app_.setAutoCycle(strtof(a1, nullptr)); else out.println("usage: cycle <seconds>"); return; }
   if (!strcmp(cmd, "readout")) { bool on; if (parseOnOff(a1, on)) app_.setReadout(on); else out.println("usage: readout on|off"); return; }
   if (!strcmp(cmd, "invert")) { bool on; if (parseOnOff(a1, on)) app_.setInvert(on); else out.println("usage: invert on|off"); return; }
+  if (!strcmp(cmd, "anim")) {
+    if (!app_.pinAnimState(a1)) out.println("usage: anim idle|accelerate|brake|left|right|bump|auto");
+    return;
+  }
   if (!strcmp(cmd, "test")) { app_.testPattern(a1 ? atoi(a1) : -1); return; }
   if (!strcmp(cmd, "reinit")) { app_.reinitPanels(); out.println("panels re-initialised"); return; }
   if (!strcmp(cmd, "save")) { out.println(app_.saveState() ? "saved" : "save failed"); return; }

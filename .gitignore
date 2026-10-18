@@ -14,3 +14,5 @@ frames*.gz
 
 # generated demo page
 gmeter_viewer*.html
+gmeter_studio*.html
+*.wasm

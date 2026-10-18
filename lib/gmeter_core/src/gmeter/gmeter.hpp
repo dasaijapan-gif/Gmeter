@@ -16,3 +16,4 @@
 #include "effects/smoke.hpp"
 #include "effects/tunnel.hpp"
 #include "effects/sprite.hpp"
+#include "effects/anim.hpp"

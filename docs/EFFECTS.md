@@ -129,6 +129,44 @@ Export artwork with `tools/img2sprite.py anim.gif -o src/my_sprite.hpp
 --name kMySprite --width 24` and construct `SpriteEffect(kMySprite, mapping)`.
 A procedurally generated 16 x 16, 12-frame demo sprite is built in.
 
+## anim (`AnimationEffect`): authored artwork interpreted by g-force
+
+The effect behind Gmeter Studio. An `AnimationAsset` holds frames of pixel
+art (`width` x `height`, up to 128 x 56) with `depth` slices per frame that sit
+on consecutive panels, so artwork can be volumetric. Clips map car states to
+frame ranges:
+
+| State | Chosen when |
+| --- | --- |
+| idle | horizontal g below `enter_g` |
+| accelerate / brake | longitudinal g is the strongest component, forward / backward |
+| left / right | lateral g is the strongest component (a right turn is lateral g to the right) |
+| bump | vertical g crosses `bump_g`; plays once, then hands back |
+
+Hysteresis keeps a state until its support falls below 60 % of `enter_g`, and
+`hold_s` sets the minimum time in a state, so clips do not flicker at the
+threshold. A clip with 0 frames falls back: left and right mirror each other
+(when `mirror` is 1), the rest use idle, and an empty idle plays everything.
+
+On top of the clip choice the artwork moves like a loose object (spring
+smoothed, clamped inside the volume), playback can speed up with g (`fps_g`),
+frames can be scrubbed by g on one axis (`scrub_axis`, `frames_g`), and a
+single-slice sprite can be ghosted onto neighbouring layers (`echo`).
+
+| Param | Default | Meaning |
+| --- | --- | --- |
+| `px_g_x`, `px_g_y`, `px_g_z` | 50, 16, 60 px/g | travel per g on each axis |
+| `hz`, `inertia` | 2, 1 | motion smoothing; 1 = thrown like a loose object |
+| `enter_g`, `hold_s`, `bump_g` | 0.25 g, 0.3 s, 0.3 g | state selection |
+| `fps_g`, `scrub_axis`, `frames_g` | 0, -1, 0 | g-driven playback |
+| `echo`, `mirror` | 0, 1 | depth ghosting, left/right mirroring |
+
+Assets are plain aggregates. Gmeter Studio exports them as
+`src/user_animation.hpp`, which the firmware and the simulator pick up
+automatically (`__has_include`); without it the built-in demo plays (a
+breathing ring, chevrons per direction and a starburst on bumps). On the car,
+`anim brake` pins a clip and `anim auto` returns to g-force control.
+
 ## Writing a new effect
 
 1. Subclass `gm::Effect`; implement `name()`, `update()`, `render()`.

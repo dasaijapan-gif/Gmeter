@@ -10,6 +10,7 @@
 //   "GMV1" u16 w, u16 h, u16 d, f32 pitch, u16 fps, u16 clipCount
 //   per clip: u8 len, effect name, u8 len, scenario name, u32 frames,
 //             frames x { f32 lat, f32 vert, f32 lon, u8 frame[w*h/8*d] }
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -18,6 +19,13 @@
 #include <vector>
 
 #include "gmeter/gmeter.hpp"
+
+#if __has_include("user_animation.hpp")
+#include "user_animation.hpp"
+#define GM_USER_ANIMATION kUserAnimation
+#else
+#define GM_USER_ANIMATION gm::demoAnimation()
+#endif
 
 using namespace gm;
 
@@ -43,7 +51,7 @@ struct Options {
 void usage() {
   std::printf(
       "gmeter_sim [options]\n"
-      "  --effect NAME[,NAME]   ball|slosh|particles|smoke|tunnel|sprite|all (default all)\n"
+      "  --effect NAME[,NAME]   ball|slosh|particles|smoke|tunnel|sprite|anim|all (default all)\n"
       "  --scenario NAME[,..]   idle|launch|brake|slalom|corner|bump|drive|all (default drive)\n"
       "  --fps N                frame rate (default 30)\n"
       "  --seconds S            override clip length\n"
@@ -107,7 +115,8 @@ struct EffectSet {
   SmokeEffect smoke;
   TunnelEffect tunnel;
   SpriteEffect sprite{demoSprite()};
-  Effect* all[6] = {&ball, &slosh, &particles, &smoke, &tunnel, &sprite};
+  AnimationEffect anim{GM_USER_ANIMATION};
+  Effect* all[7] = {&ball, &slosh, &particles, &smoke, &tunnel, &sprite, &anim};
   Effect* byName(const std::string& n) {
     for (Effect* e : all) if (n == e->name()) return e;
     return nullptr;
