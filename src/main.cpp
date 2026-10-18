@@ -51,6 +51,9 @@ SmokeEffect smokeEffect;
 TunnelEffect tunnelEffect;
 SpriteEffect spriteEffect(demoSprite());
 AnimationEffect animEffect(GM_USER_ANIMATION);
+HudEffect hudEffect;
+AtFieldEffect atFieldEffect;
+SyncEffect syncEffect;
 
 Settings settings;
 Calibration calibration;
@@ -527,6 +530,9 @@ void setup() {
   engine.addEffect(&tunnelEffect);
   engine.addEffect(&spriteEffect);
   engine.addEffect(&animEffect);
+  engine.addEffect(&hudEffect);
+  engine.addEffect(&atFieldEffect);
+  engine.addEffect(&syncEffect);
   engine.setEffect(settings.mode < engine.effectCount() ? settings.mode : 0, false);
   applySettings();
 

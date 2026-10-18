@@ -659,6 +659,93 @@ TEST(voxel_clipping_edges) {
   CHECK(f.countLit() > 0);
 }
 
+// ---- NGE-inspired effects and Japanese text -------------------------------------------------
+TEST(jp_text_covers_every_string_the_effects_draw) {
+  const char* large[] = {"待機", "加速", "制動", "左旋回", "右旋回", "衝撃", "危険", "警告"};
+  const char* small[] = {"横G", "縦G", "正常", "警告", "A.T.フィールド", "全開", "横", "縦", "上下", "同期率"};
+  auto allPresent = [](const JpFont& font, const char* s) {
+    for (const unsigned char* p = reinterpret_cast<const unsigned char*>(s); *p;) {
+      uint32_t cp = *p;
+      int extra = cp >= 0xF0 ? 3 : cp >= 0xE0 ? 2 : cp >= 0xC0 ? 1 : 0;
+      if (extra) cp &= (0x3Fu >> extra);
+      ++p;
+      for (int i = 0; i < extra; ++i) cp = (cp << 6) | (*p++ & 0x3Fu);
+      if (cp >= 0x80 && !findGlyph(font, cp)) return false;
+    }
+    return true;
+  };
+  for (const char* w : large) { CHECK(allPresent(kJpLarge, w)); CHECK(measureJp(kJpLarge, w, 2) <= kW - 8); }
+  for (const char* w : small) CHECK(allPresent(kJpSmall, w));
+  CHECK(kJpLarge.height == 24 && kJpSmall.height == 14);
+  for (int i = 1; i < kJpLarge.count; ++i) CHECK(kJpLarge.glyphs[i - 1].codepoint < kJpLarge.glyphs[i].codepoint);
+  VoxelFrame f;
+  const int w = drawJp(f, kJpLarge, 2, 10, 10, "制動", 2);
+  CHECK(w == measureJp(kJpLarge, "制動", 2));
+  CHECK(f.countLitLayer(2) > 80);
+  const int lit = f.countLit();
+  f.fillRect(3, 0, 0, kW - 1, kH - 1);
+  drawJp(f, kJpLarge, 3, 10, 10, "制動", 2, -1.0f);  // knock-out
+  CHECK(f.countLitLayer(3) == kW * kH - lit);
+  f.clear();
+  CHECK(drawJpVertical(f, kJpSmall, 0, 100, 0, "正常", 1) == 2 * (kJpSmall.height + 1));
+}
+
+TEST(hud_follows_g_and_names_the_state) {
+  HudEffect hud;
+  hud.activate();
+  {
+    EffectContext ctx; ctx.dt = 1.0f / 60.0f;
+    auto run = [&](float lat, float vert, float lon, float secs) {
+      ctx.g.proper = GForce::kRestProper() + Vec3{lat, vert, lon};
+      for (int i = 0; i < static_cast<int>(secs * 60.0f); ++i) hud.update(ctx);
+    };
+    run(0, 0, 0, 1.0f);
+    CHECK(std::strcmp(hud.titleText(), "待機") == 0);
+    run(0, 0, -0.5f, 2.0f);
+    CHECK(std::strcmp(hud.titleText(), "制動") == 0);
+    CHECK(hud.ballPosition().z > 10.0f);                       // thrown toward the windshield
+    CHECK((hud.ballPosition() - hud.tipPosition()).length() < 2.0f);  // ball has caught the line's tip
+    run(0.5f, 0, 0, 2.0f);
+    CHECK(std::strcmp(hud.titleText(), "右旋回") == 0);
+    CHECK(hud.ballPosition().x < -10.0f);
+    run(1.2f, 0, 0, 1.0f);
+    CHECK(std::strcmp(hud.titleText(), "危険") == 0);
+    VoxelFrame f;
+    hud.render(f);
+    for (int z = 0; z < 3; ++z) CHECK(f.countLitLayer(z) > 0);
+    run(0, 0, 0, 2.0f);
+    ctx.g.proper = GForce::kRestProper() + Vec3{0, 0.6f, 0};
+    hud.update(ctx);
+    CHECK(std::strcmp(hud.titleText(), "衝撃") == 0);
+  }
+}
+
+TEST(atfield_and_sync_react) {
+  AtFieldEffect at;
+  at.activate();
+  EffectContext ctx; ctx.dt = 1.0f / 60.0f;
+  ctx.g.proper = GForce::kRestProper() + Vec3{0.6f, 0, 0};
+  for (int i = 0; i < 60; ++i) at.update(ctx);
+  CHECK(at.activeRipples() >= 2);
+  VoxelFrame f;
+  at.render(f);
+  int layers = 0;
+  for (int z = 0; z < kD; ++z) layers += f.countLitLayer(z) > 0;
+  CHECK(layers >= 3);  // the wavefront crosses several panels
+  ctx.g.proper = GForce::kRestProper();
+  for (int i = 0; i < 400; ++i) at.update(ctx);
+  CHECK(at.activeRipples() <= 2);  // only the idle heartbeat remains
+
+  SyncEffect sync;
+  sync.activate();
+  ctx.g.proper = GForce::kRestProper() + Vec3{0.5f, 0, -0.5f};
+  for (int i = 0; i < 120; ++i) sync.update(ctx);
+  VoxelFrame s;
+  sync.render(s);
+  CHECK(s.countLitLayer(0) > 50);  // labels
+  CHECK(s.countLitLayer(1) > 20 && s.countLitLayer(2) > 20 && s.countLitLayer(3) > 20);  // three traces
+}
+
 int main() {
   for (const Test& t : tests()) {
     gCurrent = t.name;

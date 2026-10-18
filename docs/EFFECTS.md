@@ -181,6 +181,64 @@ automatically (`__has_include`); without it the built-in demo plays (a
 breathing ring, chevrons per direction and a starburst on bumps). On the car,
 `anim brake` pins a clip and `anim auto` returns to g-force control.
 
+## NGE-inspired effects: hud, atfield, sync
+
+Three effects take their look from the NERV screens in Neon Genesis
+Evangelion: hard-edged frames, hazard stripes, large condensed kanji and
+octagonal shockwaves. The panels emit light blue only, so the style comes
+from shape, type and motion, not colour. The Japanese text uses bitmaps
+rendered from Noto Serif JP Black and Noto Sans JP Bold (see
+`docs/THIRD_PARTY.md`); `tools/make_glyphs.py` regenerates them if you want
+more characters.
+
+### hud (`HudEffect`)
+
+| Where | What |
+| --- | --- |
+| front panel | chamfered frame with corner brackets; 横G (lateral) and 縦G (longitudinal) readouts; a lateral ruler along the bottom and a vertical ruler on the left whose carets ride the ball; a vertical 正常 ("normal") column that turns into a blinking 警告 ("warning") with scrolling hazard stripes above `warn_g` |
+| middle panel | lateral and vertical axis lines with 0.5 g and 1 g ticks; a dotted depth axis runs through all panels with ticks on the 0.5 g / 1 g panels |
+| through the stack | the g-vector line from the centre to the current g, and a ball that follows it to the tip, leaving a trail; small markers ride each axis line with the ball's components; a target-lock bracket on the front panel tracks the ball and shrinks as it recedes, so it stays readable when the ball is deep in the dimmer rear panels |
+| third panel (`title_z`) | the driving state in large kanji: 待機 standby, 加速 accelerating, 制動 braking, 左旋回 / 右旋回 left / right turn, 衝撃 impact, 危険 danger; it flashes in reverse video when it changes, and the idle word fades after 3 s so nothing static burns in |
+
+| Param | Default | Meaning |
+| --- | --- | --- |
+| `scale_g`, `vscale_g`, `dscale_g` | 1.0, 0.6, 1.0 | g at full travel: lateral, vertical, depth |
+| `hz`, `inertia` | 2.5, 1 | how fast the ball follows; 1 = moves like a loose object |
+| `warn_g`, `danger_g` | 0.7, 1.0 | hazard stripes and 警告; 危険 title |
+| `ball_r`, `trail_s` | 4.5 px, 0.8 s | ball size, trail length |
+| `title`, `title_z` | 1, 2 | state kanji on/off, which panel |
+| `axes`, `frame` | 1, 1 | axis lines and rulers; frame, readouts and status |
+| `enter_g`, `hold_s`, `bump_g` | 0.25, 0.4 s, 0.3 | state word selection |
+
+### atfield (`AtFieldEffect`)
+
+Concentric double octagons spread from the point where the g-force pushes (the
+wall a loose object would hit) as a spherical wavefront, so each panel shows
+the wave at a different radius and the ripple visibly travels through the
+stack. Sustained g emits continuously, every `step_g` crossed fires a strong
+ripple, a bump fires one from the floor, and a calm heartbeat pulses from deep
+in the stack when idle. A.T.フィールド appears after strong ripples, and 全開
+("full power") blinks above 0.8 g.
+
+| Param | Default | Meaning |
+| --- | --- | --- |
+| `speed`, `life` | 70 px/s, 1.6 s | wavefront speed and lifetime |
+| `rate_g`, `min_g`, `step_g` | 2.5, 0.15, 0.25 | emission per g, threshold, strong-ripple steps |
+| `idle`, `double`, `label`, `bump_g` | 1, 1, 1, 0.3 | heartbeat, inner octagon, captions, bump threshold |
+
+### sync (`SyncEffect`)
+
+Lateral, longitudinal and vertical g scroll right to left as three
+oscilloscope traces, labelled 横, 縦 and 上下, each in its own band and on its
+own panel (panels 2 to 4), over a scrolling grid on the back panel. 同期率
+("sync rate") is written vertically on the right with the combined horizontal
+g as a percentage of 1 g.
+
+| Param | Default | Meaning |
+| --- | --- | --- |
+| `rate`, `gain` | 30 samples/s, 9 px/g | scroll speed (window = 128 / rate), trace scale |
+| `grid`, `labels` | 1, 1 | grid lines; labels and 同期率 |
+
 ## Writing a new effect
 
 1. Subclass `gm::Effect`; implement `name()`, `update()`, `render()`.

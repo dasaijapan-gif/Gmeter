@@ -23,6 +23,9 @@ SmokeEffect gSmoke;
 TunnelEffect gTunnel;
 SpriteEffect gSprite(demoSprite());
 AnimationEffect gAnim(demoAnimation());
+HudEffect gHud;
+AtFieldEffect gAtField;
+SyncEffect gSync;
 Engine gEngine;
 bool gInit = false;
 
@@ -53,6 +56,9 @@ void ensureInit() {
   gEngine.addEffect(&gTunnel);
   gEngine.addEffect(&gSprite);
   gEngine.addEffect(&gAnim);
+  gEngine.addEffect(&gHud);
+  gEngine.addEffect(&gAtField);
+  gEngine.addEffect(&gSync);
   gEngine.setShowModeName(false);
   gEngine.setCrossfadeSeconds(0.3f);
   gEstimator.setFilter(4.0f, kSensorHz);

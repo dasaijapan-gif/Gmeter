@@ -53,7 +53,7 @@ struct Options {
 void usage() {
   std::printf(
       "gmeter_sim [options]\n"
-      "  --effect NAME[,NAME]   ball|slosh|particles|smoke|tunnel|sprite|anim|all (default all)\n"
+      "  --effect NAME[,NAME]   ball|slosh|particles|smoke|tunnel|sprite|anim|hud|atfield|sync|all\n"
       "  --scenario NAME[,..]   idle|launch|brake|slalom|corner|bump|drive|all (default drive)\n"
       "  --fps N                frame rate (default 30)\n"
       "  --seconds S            override clip length\n"
@@ -133,7 +133,10 @@ struct EffectSet {
   TunnelEffect tunnel;
   SpriteEffect sprite{demoSprite()};
   AnimationEffect anim{GM_USER_ANIMATION};
-  Effect* all[7] = {&ball, &slosh, &particles, &smoke, &tunnel, &sprite, &anim};
+  HudEffect hud;
+  AtFieldEffect atfield;
+  SyncEffect sync;
+  Effect* all[10] = {&ball, &slosh, &particles, &smoke, &tunnel, &sprite, &anim, &hud, &atfield, &sync};
   Effect* byName(const std::string& n) {
     for (Effect* e : all) if (n == e->name()) return e;
     return nullptr;

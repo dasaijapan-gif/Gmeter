@@ -11,7 +11,7 @@ namespace gm {
 
 class Engine {
  public:
-  static constexpr int kMaxEffects = 8;
+  static constexpr int kMaxEffects = 12;
 
   // Effects are not owned; keep them alive for the engine's lifetime.
   bool addEffect(Effect* e);

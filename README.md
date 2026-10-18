@@ -29,7 +29,7 @@ the car.
 | `host/` | Native build: unit tests, the scenario-driven simulator that records frames, the browser viewer, Arduino stub headers for compile-checking the firmware on a PC. |
 | `host/web/` | **Gmeter Studio**: a single-page tool with a 3D model of the panel stack, a pixel-art animation editor and a drivable g-force simulator, running the core compiled to WebAssembly. |
 | `tools/` | `build_studio.py` (build Gmeter Studio), `make_viewer.py` (bundle a recording into the replay viewer), `img2sprite.py` (PNG/GIF to sprite header), `serial_gforce.py` (drive the display from a laptop). |
-| `docs/` | [HARDWARE.md](docs/HARDWARE.md) wiring and panel facts, [ARCHITECTURE.md](docs/ARCHITECTURE.md) data flow and conventions, [EFFECTS.md](docs/EFFECTS.md) physics and tuning of each effect. |
+| `docs/` | [HARDWARE.md](docs/HARDWARE.md) wiring and panel facts, [ARCHITECTURE.md](docs/ARCHITECTURE.md) data flow and conventions, [EFFECTS.md](docs/EFFECTS.md) physics and tuning of each effect, [THIRD_PARTY.md](docs/THIRD_PARTY.md) font licence for the Japanese glyphs. |
 
 ## Gmeter Studio: design animations and watch them in 3D
 
@@ -86,7 +86,9 @@ the depth, plus a classic g-meter dial.
 
 Scenarios: `idle`, `launch`, `brake`, `slalom`, `corner`, `bump`, `drive`
 (a 21 s mix). Effects: `ball`, `slosh`, `particles`, `smoke`, `tunnel`,
-`sprite`, `anim`. Any effect parameter can be overridden with `--param name=value`
+`sprite`, `anim`, and three inspired by Neon Genesis Evangelion: `hud` (NERV-style
+frame, axis lines, a ball that follows the g-vector line, state kanji),
+`atfield` (octagon shockwaves through the stack) and `sync` (sync-graph traces). Any effect parameter can be overridden with `--param name=value`
 (see `docs/EFFECTS.md`).
 
 ## Firmware
@@ -168,4 +170,7 @@ the single source of truth; `docs/ARCHITECTURE.md` has the derivation.
   (see `docs/HARDWARE.md` for sources and the open questions list).
 - Next steps are listed at the end of `docs/ARCHITECTURE.md`.
 
-MIT licensed.
+MIT licensed, except the Japanese glyph bitmaps in
+`lib/gmeter_core/src/gmeter/jp_glyphs.cpp`, which are derived from Noto Serif JP
+and Noto Sans JP under the SIL Open Font License 1.1 (see
+`docs/THIRD_PARTY.md`).

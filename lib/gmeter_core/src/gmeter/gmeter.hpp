@@ -17,3 +17,8 @@
 #include "effects/tunnel.hpp"
 #include "effects/sprite.hpp"
 #include "effects/anim.hpp"
+#include "effects/hud.hpp"
+#include "effects/atfield.hpp"
+#include "effects/sync.hpp"
+#include "jp_text.hpp"
+#include "gstate.hpp"
