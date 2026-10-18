@@ -1,0 +1,515 @@
+<title>Gmeter Stack Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: an instrument panel. One wide stage shows the eight glass layers in
+   depth; a narrow readout column carries the g-meter and the top/side views;
+   a transport rail below drives playback. Dark-first: the subject is a
+   light-blue OLED glowing on black glass in a car at night. */
+:root {
+  --bg: #0a0e13;
+  --panel: #111821;
+  --panel-2: #0d1319;
+  --line: #22303d;
+  --fg: #dde6ef;
+  --muted: #8797a9;
+  --accent: #8fd9ff;        /* WiseChip transparent OLED emits light blue */
+  --accent-dim: #2f6b8c;
+  --glass: #04070b;
+  --lat: #ffb454;
+  --lon: #8fd9ff;
+  --vert: #c49cff;
+  --focus: #ffd166;
+  --font-display: "Chakra Petch", "Trebuchet MS", "Segoe UI", sans-serif;
+  --font-body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f2f5f8; --panel: #ffffff; --panel-2: #e9eef3; --line: #cfd9e3; --fg: #15202b; --muted: #5b6b7c;
+    --accent: #0b7db3; --accent-dim: #8cc3dd; --glass: #04070b; --lat: #b86a00; --lon: #0b7db3; --vert: #6d3fc9; --focus: #b36b00;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f2f5f8; --panel: #ffffff; --panel-2: #e9eef3; --line: #cfd9e3; --fg: #15202b; --muted: #5b6b7c;
+  --accent: #0b7db3; --accent-dim: #8cc3dd; --glass: #04070b; --lat: #b86a00; --lon: #0b7db3; --vert: #6d3fc9; --focus: #b36b00;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.45; }
+.app { max-width: 1180px; margin: 0 auto; padding-block: 18px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: 0.02em; margin: 0; text-wrap: balance; }
+h1 small { display: block; font-family: var(--font-body); font-weight: 400; font-size: 13px; color: var(--muted); letter-spacing: 0; margin-top: 2px; }
+.selects { display: flex; flex-wrap: wrap; gap: 10px; }
+label.field { display: grid; gap: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+select, button, input[type=file] { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+select { min-width: 140px; }
+button { cursor: pointer; }
+button:hover { border-color: var(--accent-dim); }
+button.primary { background: var(--accent); color: #04070b; border-color: var(--accent); font-weight: 600; min-width: 84px; }
+:is(button, select, input, canvas[tabindex]):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+main.grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px; }
+@media (max-width: 760px) { main.grid { grid-template-columns: minmax(0, 1fr); } }
+.stage { position: relative; background: var(--glass); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; min-width: 0; }
+.stage canvas { display: block; width: 100%; height: auto; cursor: grab; touch-action: none; }
+.stage canvas:active { cursor: grabbing; }
+.stage .hint { position: absolute; left: 12px; bottom: 10px; font-family: var(--font-mono); font-size: 11px; color: #6f8aa0; pointer-events: none; }
+.stage .label { position: absolute; top: 10px; left: 12px; font-family: var(--font-display); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: #6f8aa0; pointer-events: none; }
+aside { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }
+.card h2 { margin: 0 0 8px; font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.card canvas { display: block; width: 100%; height: auto; background: var(--glass); border-radius: 6px; }
+.readouts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 10px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.readouts .k { font-size: 10px; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+.readouts .v { font-size: 18px; font-weight: 500; }
+.readouts .v.lat { color: var(--lat); } .readouts .v.lon { color: var(--lon); } .readouts .v.vert { color: var(--vert); }
+.caption { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 10px; color: var(--muted); margin-top: 6px; letter-spacing: 0.04em; }
+.transport { display: grid; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.row.scrub { gap: 10px; }
+input[type=range] { flex: 1 1 200px; min-width: 0; accent-color: var(--accent); }
+.time { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; min-width: 11ch; }
+.toggles label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg); }
+.toggles input { accent-color: var(--accent); }
+.loader { display: grid; gap: 8px; padding: 18px; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); }
+footer { color: var(--muted); font-size: 12px; max-width: 70ch; }
+footer code { font-family: var(--font-mono); font-size: 11px; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header>
+    <h1>Gmeter Stack Viewer<small>Recorded output of the firmware's rendering core, replayed as the eight-panel glass stack</small></h1>
+    <div class="selects">
+      <label class="field">Effect
+        <select id="effect"></select>
+      </label>
+      <label class="field">Drive scenario
+        <select id="scenario"></select>
+      </label>
+    </div>
+  </header>
+
+  <div id="loader" class="loader" hidden>
+    <strong>No recording embedded.</strong>
+    <span>Load a <code>frames.bin</code> or <code>frames.bin.gz</code> produced by <code>gmeter_sim --out</code>.</span>
+    <input type="file" id="file" accept=".bin,.gz">
+  </div>
+
+  <main class="grid">
+    <section class="stage">
+      <canvas id="stage" width="960" height="480" tabindex="0" aria-label="Volumetric display stack"></canvas>
+      <span class="label" id="stageLabel">front view</span>
+      <span class="hint">drag to shift your viewpoint</span>
+    </section>
+    <aside>
+      <div class="card">
+        <h2>G-meter</h2>
+        <canvas id="gwidget" width="236" height="236"></canvas>
+        <div class="readouts">
+          <div><div class="k">lateral</div><div class="v lat" id="rLat">+0.00</div></div>
+          <div><div class="k">longitudinal</div><div class="v lon" id="rLon">+0.00</div></div>
+          <div><div class="k">vertical</div><div class="v vert" id="rVert">+0.00</div></div>
+          <div><div class="k">horizontal</div><div class="v" id="rMag">0.00 g</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Top view</h2>
+        <canvas id="top" width="256" height="128"></canvas>
+        <div class="caption"><span>driver side</span><span>windshield side</span></div>
+      </div>
+      <div class="card">
+        <h2>Side view</h2>
+        <canvas id="side" width="256" height="112"></canvas>
+        <div class="caption"><span>layer 0 (driver)</span><span>layer 7</span></div>
+      </div>
+    </aside>
+  </main>
+
+  <section class="transport">
+    <div class="row scrub">
+      <button id="play" class="primary" type="button">Pause</button>
+      <button id="stepBack" type="button" aria-label="Step back one frame">&#x2039;</button>
+      <button id="stepFwd" type="button" aria-label="Step forward one frame">&#x203A;</button>
+      <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="Timeline">
+      <span class="time" id="time">0.00 / 0.00 s</span>
+      <label class="field">Speed
+        <select id="speed">
+          <option value="0.25">0.25x</option>
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+        </select>
+      </label>
+    </div>
+    <div class="row toggles">
+      <label><input type="checkbox" id="optPersp" checked> Perspective</label>
+      <label><input type="checkbox" id="optAtten" checked> Glass attenuation</label>
+      <label><input type="checkbox" id="optGlow" checked> Glow</label>
+      <label><input type="checkbox" id="optOutline" checked> Panel outlines</label>
+      <button id="resetView" type="button">Reset viewpoint</button>
+    </div>
+  </section>
+
+  <footer>
+    Frames come from the same C++ core that runs on the ESP32, driven through a simulated accelerometer and the real calibration and filtering code.
+    Regenerate with <code>gmeter_sim --effect all --scenario drive --out frames.bin</code>, then <code>tools/make_viewer.py frames.bin</code>.
+  </footer>
+</div>
+
+<script id="gmv-data" type="application/octet-stream">__GMV_B64__</script>
+<script>
+(function () {
+  'use strict';
+  // ---- data ------------------------------------------------------------------------------------
+  const state = {
+    meta: null, clips: [], clip: null, frame: 0, playing: true, speed: 1, acc: 0, lastTs: 0,
+    yaw: 0, pitch: 0, persp: true, atten: true, glow: true, outline: true, peak: 0,
+  };
+  const $ = (id) => document.getElementById(id);
+  const stage = $('stage'), sctx = stage.getContext('2d');
+  const gcan = $('gwidget'), gctx = gcan.getContext('2d');
+  const topcan = $('top'), tctx = topcan.getContext('2d');
+  const sidecan = $('side'), dctx = sidecan.getContext('2d');
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) state.playing = false;
+
+  async function inflate(bytes) {
+    if (bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot decompress gzip; use a current Chrome, Edge, Firefox or Safari.');
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+    return bytes;
+  }
+  function parse(buf) {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let o = 0;
+    const magic = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]); o += 4;
+    if (magic !== 'GMV1') throw new Error('Not a gmeter_sim recording (bad magic ' + magic + ')');
+    const meta = { w: dv.getUint16(o, true), h: dv.getUint16(o + 2, true), d: dv.getUint16(o + 4, true) }; o += 6;
+    meta.pitch = dv.getFloat32(o, true); o += 4;
+    meta.fps = dv.getUint16(o, true); o += 2;
+    const clipCount = dv.getUint16(o, true); o += 2;
+    meta.pages = meta.h >> 3;
+    meta.layerBytes = meta.w * meta.pages;
+    meta.frameBytes = meta.layerBytes * meta.d;
+    const clips = [];
+    const td = new TextDecoder();
+    for (let c = 0; c < clipCount; c++) {
+      const n1 = buf[o++]; const effect = td.decode(buf.subarray(o, o + n1)); o += n1;
+      const n2 = buf[o++]; const scenario = td.decode(buf.subarray(o, o + n2)); o += n2;
+      const frames = dv.getUint32(o, true); o += 4;
+      const rec = 12 + meta.frameBytes;
+      clips.push({ effect, scenario, frames, offset: o, rec, buf, dv });
+      o += frames * rec;
+    }
+    return { meta, clips };
+  }
+  function clipG(clip, i) {
+    const p = clip.offset + i * clip.rec;
+    return { lat: clip.dv.getFloat32(p, true), vert: clip.dv.getFloat32(p + 4, true), lon: clip.dv.getFloat32(p + 8, true) };
+  }
+  function clipBits(clip, i) {
+    const p = clip.offset + i * clip.rec + 12;
+    return clip.buf.subarray(p, p + state.meta.frameBytes);
+  }
+
+  // ---- layer rasterisation -----------------------------------------------------------------------
+  let layerCanvases = [], layerImages = [];
+  function prepareLayers() {
+    const { w, h, d } = state.meta;
+    layerCanvases = []; layerImages = [];
+    for (let k = 0; k < d; k++) {
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      layerCanvases.push(c);
+      layerImages.push(c.getContext('2d').createImageData(w, h));
+    }
+  }
+  function accentRGB() {
+    // Read the accent token so the OLED colour follows the theme.
+    const css = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    const m = /^#([0-9a-f]{6})$/i.exec(css);
+    if (!m) return [143, 217, 255];
+    const v = parseInt(m[1], 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  }
+  function rasterise(bits) {
+    const { w, pages, layerBytes, d } = state.meta;
+    const [r, g, b] = [160, 225, 255];  // emitted light colour, independent of UI theme
+    for (let k = 0; k < d; k++) {
+      const img = layerImages[k]; const px = img.data; px.fill(0);
+      const base = k * layerBytes;
+      for (let page = 0; page < pages; page++) {
+        for (let x = 0; x < w; x++) {
+          const byte = bits[base + page * w + x];
+          if (!byte) continue;
+          for (let bit = 0; bit < 8; bit++) {
+            if (!(byte & (1 << bit))) continue;
+            const y = page * 8 + bit;
+            const i = (y * w + x) * 4;
+            px[i] = r; px[i + 1] = g; px[i + 2] = b; px[i + 3] = 255;
+          }
+        }
+      }
+      layerCanvases[k].getContext('2d').putImageData(img, 0, 0);
+    }
+  }
+
+  // ---- stage drawing ------------------------------------------------------------------------------------
+  function drawStage() {
+    const { w, h, d, pitch } = state.meta;
+    const W = stage.width, H = stage.height;
+    sctx.setTransform(1, 0, 0, 1, 0, 0);
+    sctx.globalCompositeOperation = 'source-over';
+    sctx.globalAlpha = 1; sctx.filter = 'none';
+    sctx.fillStyle = '#04070b'; sctx.fillRect(0, 0, W, H);
+    // Fit the front panel comfortably; deeper panels shrink toward the centre.
+    const S = Math.min(W / (w * 1.5), H / (h * 2.2));
+    const cx = W / 2, cy = H / 2;
+    const F = 520;  // perspective focal length in world px
+    const layer = (k) => {
+      const z = (k - (d - 1) / 2) * pitch;
+      const s = state.persp ? F / (F + z) : 1;
+      const ox = state.yaw * z, oy = state.pitch * z;
+      return { s, x: cx + S * s * ox - S * s * w / 2, y: cy + S * s * oy - S * s * h / 2, sw: S * s * w, sh: S * s * h };
+    };
+    if (state.outline) {
+      for (let k = d - 1; k >= 0; k--) {
+        const L = layer(k);
+        sctx.strokeStyle = 'rgba(143,217,255,' + (0.05 + 0.1 * (1 - k / (d - 1))) + ')';
+        sctx.lineWidth = 1;
+        sctx.strokeRect(L.x + 0.5, L.y + 0.5, L.sw, L.sh);
+        // Getter strip along the bottom edge of each real panel.
+        sctx.fillStyle = 'rgba(143,217,255,0.03)';
+        sctx.fillRect(L.x, L.y + L.sh, L.sw, Math.max(2, L.sh * 0.06));
+      }
+    }
+    sctx.imageSmoothingEnabled = false;
+    sctx.globalCompositeOperation = 'lighter';
+    for (let k = d - 1; k >= 0; k--) {
+      const L = layer(k);
+      const a = state.atten ? Math.pow(0.72, k) : 1;
+      if (state.glow) {
+        sctx.globalAlpha = 0.55 * a; sctx.filter = 'blur(' + Math.max(2, S * 0.9) + 'px)';
+        sctx.drawImage(layerCanvases[k], L.x, L.y, L.sw, L.sh);
+        sctx.filter = 'none';
+      }
+      sctx.globalAlpha = a;
+      sctx.drawImage(layerCanvases[k], L.x, L.y, L.sw, L.sh);
+    }
+    sctx.globalAlpha = 1; sctx.globalCompositeOperation = 'source-over';
+  }
+
+  function drawOrtho() {
+    const { w, h, d, pages, layerBytes } = state.meta;
+    const bits = clipBits(state.clip, state.frame);
+    // Top view: x across, layers down (driver side at top).
+    const tw = topcan.width, th = topcan.height;
+    tctx.fillStyle = '#04070b'; tctx.fillRect(0, 0, tw, th);
+    const cellW = tw / w, rowH = th / d;
+    for (let k = 0; k < d; k++) {
+      for (let x = 0; x < w; x++) {
+        let n = 0;
+        for (let page = 0; page < pages; page++) { let b = bits[k * layerBytes + page * w + x]; while (b) { n += b & 1; b >>= 1; } }
+        if (!n) continue;
+        tctx.fillStyle = 'rgba(160,225,255,' + Math.min(1, 0.25 + n / 10) + ')';
+        tctx.fillRect(x * cellW, k * rowH + 1, Math.max(1, cellW), rowH - 2);
+      }
+    }
+    tctx.strokeStyle = 'rgba(143,217,255,0.15)';
+    for (let k = 1; k < d; k++) { tctx.beginPath(); tctx.moveTo(0, k * rowH + 0.5); tctx.lineTo(tw, k * rowH + 0.5); tctx.stroke(); }
+    // Side view: layers across (driver side left), rows down.
+    const sw = sidecan.width, sh = sidecan.height;
+    dctx.fillStyle = '#04070b'; dctx.fillRect(0, 0, sw, sh);
+    const colW = sw / d, cellH = sh / h;
+    for (let k = 0; k < d; k++) {
+      for (let page = 0; page < pages; page++) {
+        for (let bit = 0; bit < 8; bit++) {
+          let n = 0;
+          const mask = 1 << bit;
+          for (let x = 0; x < w; x++) if (bits[k * layerBytes + page * w + x] & mask) n++;
+          if (!n) continue;
+          const y = page * 8 + bit;
+          dctx.fillStyle = 'rgba(160,225,255,' + Math.min(1, 0.25 + n / 24) + ')';
+          dctx.fillRect(k * colW + 1, y * cellH, colW - 2, Math.max(1, cellH));
+        }
+      }
+    }
+    dctx.strokeStyle = 'rgba(143,217,255,0.15)';
+    for (let k = 1; k < d; k++) { dctx.beginPath(); dctx.moveTo(k * colW + 0.5, 0); dctx.lineTo(k * colW + 0.5, sh); dctx.stroke(); }
+  }
+
+  function drawGauge(g) {
+    const W = gcan.width, H = gcan.height;
+    const css = getComputedStyle(document.documentElement);
+    const col = (name) => css.getPropertyValue(name).trim();
+    gctx.setTransform(1, 0, 0, 1, 0, 0);
+    gctx.clearRect(0, 0, W, H);
+    const cx = W * 0.42, cy = H / 2, R = H * 0.40;
+    gctx.font = '10px ' + col('--font-mono');
+    gctx.textAlign = 'center'; gctx.textBaseline = 'middle';
+    gctx.strokeStyle = col('--line'); gctx.fillStyle = col('--muted'); gctx.lineWidth = 1;
+    for (const r of [0.5, 1.0]) { gctx.beginPath(); gctx.arc(cx, cy, R * r, 0, Math.PI * 2); gctx.stroke(); }
+    gctx.beginPath(); gctx.moveTo(cx - R, cy); gctx.lineTo(cx + R, cy); gctx.moveTo(cx, cy - R); gctx.lineTo(cx, cy + R); gctx.stroke();
+    gctx.fillText('ACCEL', cx, cy - R - 9); gctx.fillText('BRAKE', cx, cy + R + 9);
+    gctx.textAlign = 'right'; gctx.fillText('L', cx - R - 4, cy); gctx.textAlign = 'left'; gctx.fillText('R', cx + R + 4, cy);
+    gctx.textAlign = 'center'; gctx.fillText('1g', cx + R * 0.72, cy - R * 0.72);
+    // Felt-force dot: where a loose object on the dash would go.
+    const dx = -g.lat * R, dy = g.lon * R;
+    const len = Math.hypot(dx, dy), lim = R * 1.08;
+    const k = len > lim ? lim / len : 1;
+    gctx.strokeStyle = col('--accent-dim'); gctx.lineWidth = 2;
+    gctx.beginPath(); gctx.moveTo(cx, cy); gctx.lineTo(cx + dx * k, cy + dy * k); gctx.stroke();
+    gctx.fillStyle = col('--accent');
+    gctx.beginPath(); gctx.arc(cx + dx * k, cy + dy * k, 6, 0, Math.PI * 2); gctx.fill();
+    // Vertical bar on the right: +1 g up.
+    const bx = W * 0.88, by0 = cy - R, bh = 2 * R;
+    gctx.strokeStyle = col('--line'); gctx.lineWidth = 1;
+    gctx.strokeRect(bx - 7 + 0.5, by0 + 0.5, 14, bh);
+    gctx.beginPath(); gctx.moveTo(bx - 10, cy + 0.5); gctx.lineTo(bx + 10, cy + 0.5); gctx.stroke();
+    const v = Math.max(-1, Math.min(1, g.vert));
+    gctx.fillStyle = col('--vert');
+    if (v >= 0) gctx.fillRect(bx - 6, cy - v * R, 12, v * R); else gctx.fillRect(bx - 6, cy, 12, -v * R);
+    gctx.fillStyle = col('--muted'); gctx.fillText('UP', bx, by0 - 9); gctx.fillText('DN', bx, by0 + bh + 9);
+  }
+
+  function fmt(v) { return (v >= 0 ? '+' : '') + v.toFixed(2); }
+  function updateReadouts(g) {
+    $('rLat').textContent = fmt(g.lat);
+    $('rLon').textContent = fmt(g.lon);
+    $('rVert').textContent = fmt(g.vert);
+    const mag = Math.hypot(g.lat, g.lon);
+    state.peak = Math.max(state.peak, mag);
+    $('rMag').textContent = mag.toFixed(2) + ' g';
+  }
+
+  function render() {
+    if (!state.clip) return;
+    const bits = clipBits(state.clip, state.frame);
+    rasterise(bits);
+    drawStage();
+    drawOrtho();
+    const g = clipG(state.clip, state.frame);
+    drawGauge(g);
+    updateReadouts(g);
+    const fps = state.meta.fps;
+    $('time').textContent = (state.frame / fps).toFixed(2) + ' / ' + (state.clip.frames / fps).toFixed(2) + ' s';
+    $('scrub').value = state.frame;
+  }
+
+  // ---- playback ---------------------------------------------------------------------------------------------
+  function tick(ts) {
+    requestAnimationFrame(tick);
+    if (!state.clip) return;
+    if (state.playing) {
+      if (!state.lastTs) state.lastTs = ts;
+      state.acc += (ts - state.lastTs) / 1000 * state.speed * state.meta.fps;
+      let advanced = 0;
+      while (state.acc >= 1) { state.acc -= 1; advanced++; }
+      if (advanced) { state.frame = (state.frame + advanced) % state.clip.frames; render(); }
+    }
+    state.lastTs = ts;
+  }
+
+  function setClip(effect, scenario) {
+    const clip = state.clips.find((c) => c.effect === effect && c.scenario === scenario) || state.clips.find((c) => c.effect === effect) || state.clips[0];
+    if (!clip) return;
+    state.clip = clip; state.frame = 0; state.acc = 0; state.peak = 0;
+    $('scrub').max = clip.frames - 1;
+    $('stageLabel').textContent = clip.effect + ' / ' + clip.scenario;
+    render();
+  }
+  function populateSelects() {
+    const effects = [...new Set(state.clips.map((c) => c.effect))];
+    const eff = $('effect'); eff.innerHTML = '';
+    for (const e of effects) { const o = document.createElement('option'); o.value = e; o.textContent = e; eff.appendChild(o); }
+    const refreshScen = () => {
+      const scen = $('scenario'); const current = scen.value; scen.innerHTML = '';
+      const list = state.clips.filter((c) => c.effect === eff.value).map((c) => c.scenario);
+      for (const s of list) { const o = document.createElement('option'); o.value = s; o.textContent = s; scen.appendChild(o); }
+      if (list.includes(current)) scen.value = current;
+    };
+    refreshScen();
+    eff.addEventListener('change', () => { refreshScen(); setClip(eff.value, $('scenario').value); });
+    $('scenario').addEventListener('change', () => setClip(eff.value, $('scenario').value));
+  }
+
+  function bindControls() {
+    const play = $('play');
+    const setPlaying = (p) => { state.playing = p; play.textContent = p ? 'Pause' : 'Play'; };
+    play.addEventListener('click', () => setPlaying(!state.playing));
+    setPlaying(state.playing);
+    $('stepBack').addEventListener('click', () => { setPlaying(false); state.frame = (state.frame - 1 + state.clip.frames) % state.clip.frames; render(); });
+    $('stepFwd').addEventListener('click', () => { setPlaying(false); state.frame = (state.frame + 1) % state.clip.frames; render(); });
+    $('scrub').addEventListener('input', (e) => { state.frame = +e.target.value; render(); });
+    $('speed').addEventListener('change', (e) => { state.speed = +e.target.value; });
+    for (const [id, key] of [['optPersp', 'persp'], ['optAtten', 'atten'], ['optGlow', 'glow'], ['optOutline', 'outline']]) {
+      $(id).addEventListener('change', (e) => { state[key] = e.target.checked; render(); });
+    }
+    $('resetView').addEventListener('click', () => { state.yaw = 0; state.pitch = 0; render(); });
+    // Drag to look around: parallax between the glass layers.
+    let drag = null;
+    stage.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, yaw: state.yaw, pitch: state.pitch }; stage.setPointerCapture(e.pointerId); });
+    stage.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      state.yaw = Math.max(-0.6, Math.min(0.6, drag.yaw + (e.clientX - drag.x) / 250));
+      state.pitch = Math.max(-0.4, Math.min(0.4, drag.pitch + (e.clientY - drag.y) / 250));
+      render();
+    });
+    const end = () => { drag = null; };
+    stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
+    document.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+      if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.playing); }
+      else if (e.code === 'ArrowRight') { setPlaying(false); state.frame = (state.frame + (e.shiftKey ? 10 : 1)) % state.clip.frames; render(); }
+      else if (e.code === 'ArrowLeft') { setPlaying(false); state.frame = (state.frame - (e.shiftKey ? 10 : 1) + state.clip.frames) % state.clip.frames; render(); }
+    });
+    const ro = new ResizeObserver(() => {
+      const rect = stage.parentElement.getBoundingClientRect();
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const wpx = Math.max(320, Math.floor(rect.width));
+      stage.width = Math.floor(wpx * dpr); stage.height = Math.floor(wpx * 0.5 * dpr);
+      render();
+    });
+    ro.observe(stage.parentElement);
+    if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+  }
+
+  async function boot() {
+    bindControls();
+    requestAnimationFrame(tick);
+    const el = $('gmv-data');
+    const b64 = (el.textContent || '').trim();
+    if (!b64 || b64.indexOf('__GMV') === 0) {
+      $('loader').hidden = false;
+      $('file').addEventListener('change', async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        try { load(await inflate(new Uint8Array(await f.arrayBuffer()))); $('loader').hidden = true; }
+        catch (err) { $('loader').querySelector('strong').textContent = 'Could not read that file: ' + err.message; }
+      });
+      return;
+    }
+    try {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      load(await inflate(bytes));
+    } catch (err) {
+      $('loader').hidden = false;
+      $('loader').querySelector('strong').textContent = 'Embedded recording failed to load: ' + err.message;
+    }
+  }
+  function load(bytes) {
+    const parsed = parse(bytes);
+    state.meta = parsed.meta; state.clips = parsed.clips;
+    prepareLayers();
+    populateSelects();
+    setClip($('effect').value, $('scenario').value);
+  }
+  boot();
+})();
+</script>

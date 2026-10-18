@@ -1,0 +1,18 @@
+// Umbrella header for the core library.
+#pragma once
+
+#include "config.hpp"
+#include "math.hpp"
+#include "gforce.hpp"
+#include "voxel_frame.hpp"
+#include "params.hpp"
+#include "effect.hpp"
+#include "gforce_estimator.hpp"
+#include "engine.hpp"
+#include "scenario.hpp"
+#include "effects/gball.hpp"
+#include "effects/slosh.hpp"
+#include "effects/particles.hpp"
+#include "effects/smoke.hpp"
+#include "effects/tunnel.hpp"
+#include "effects/sprite.hpp"

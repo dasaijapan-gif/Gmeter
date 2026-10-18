@@ -1,0 +1,16 @@
+.pio/
+build/
+host/build/
+*.o
+*.a
+*.bin
+*.elf
+__pycache__/
+*.pyc
+.vscode/
+out/
+frames*.json
+frames*.gz
+
+# generated demo page
+gmeter_viewer*.html

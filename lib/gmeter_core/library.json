@@ -1,0 +1,11 @@
+{
+  "name": "gmeter_core",
+  "version": "0.1.0",
+  "description": "Hardware-agnostic volumetric G-force meter core: voxel frame, g-force frame conventions, fluid/particle effects, scenarios.",
+  "license": "MIT",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "flags": ["-std=gnu++17"]
+  }
+}
