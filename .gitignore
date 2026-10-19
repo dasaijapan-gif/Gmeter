@@ -9,6 +9,7 @@ __pycache__/
 *.pyc
 .vscode/
 out/
+dist/
 frames*.json
 frames*.gz
 

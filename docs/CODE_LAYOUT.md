@@ -1,0 +1,81 @@
+# Code layout
+
+The repository root is a PlatformIO project. Only `platformio.ini`, `src/` and
+`lib/` go into the ESP32 firmware; everything else runs on a PC.
+
+```
+gmeter/
+├── platformio.ini            Firmware build settings: boards, pinned platform, panel size, SPI speed
+├── src/                      ESP32 firmware (Arduino framework, FreeRTOS tasks)
+├── lib/gmeter_core/          Hardware-independent core: g-force maths and all effects
+├── host/                     PC builds: simulator, unit tests, browser Studio (WebAssembly)
+├── tests/                    Unit tests for the core
+├── tools/                    Helper scripts (Studio build, glyphs, sprites, serial g feed, QEMU check, release)
+└── docs/                     Hardware, architecture, effects, supplier guide, licences
+```
+
+## Firmware: `src/`
+
+| File | Lines | What it does |
+| --- | ---: | --- |
+| `main.cpp` | 644 | Starts everything. Three FreeRTOS tasks: IMU sampling (core 0), rendering (core 1) and SPI display output (core 0), with a triple-buffered frame hand-off. Also calibration, demo/serial g sources, the BOOT button and the `App` object behind the serial commands. |
+| `board_config.hpp` | 64 | Pin map for the classic ESP32 and the ESP32-S3, panel model, SPI speed. Edit this to change wiring. |
+| `display_ssd1309.hpp/.cpp` | 61 / 238 | Driver for eight SSD1309 panels on one SPI bus with separate chip selects: init sequence, frame transfer, contrast ramp, soft and hard refresh, test pattern. |
+| `imu_mpu6050.hpp/.cpp` | 50 / 122 | Register-level MPU-6050 driver: ±4 g, 44 Hz low-pass, 200 Hz; recovers a stuck I2C bus; accepts common clone chips. |
+| `serial_cli.hpp/.cpp` | 66 / 275 | The serial command line (115200 baud): `help`, `status`, `mode`, `set`, `cal`, `test`, `save` and the rest. |
+| `storage.hpp/.cpp` | 32 / 127 | Saves settings and calibration in the ESP32's NVS flash. |
+| `user_animation.hpp` | (optional) | Artwork exported from Gmeter Studio. If present, it replaces the built-in demo animation. |
+
+## Core library: `lib/gmeter_core/src/gmeter/`
+
+Plain C++17 with no Arduino dependency, so the same code runs on the ESP32, in
+the PC simulator and in the browser Studio.
+
+| File | What it does |
+| --- | --- |
+| `gmeter.hpp` | Includes the whole core. |
+| `config.hpp` | Display geometry: 128 x 56 (or 64) pixels x 8 layers, layer spacing. |
+| `math.hpp` | Small single-precision vector maths, a damped spring and a low-pass filter. |
+| `gforce.hpp` | The car frame used everywhere: x right, y up, z forward. |
+| `gforce_estimator.hpp/.cpp` | Turns raw accelerometer samples into filtered g-force in the car frame; rest and braking calibration. |
+| `voxel_frame.hpp/.cpp` | The 3D frame buffer (one bit per pixel per layer, in the panels' own memory layout) and drawing: lines, spheres, text. |
+| `effect.hpp` | The interface every effect implements. |
+| `engine.hpp/.cpp` | Runs the active effect, switches effects with a dithered crossfade, draws the optional g readout. |
+| `params.hpp` | Named, range-checked parameters, so every effect can be tuned over serial. |
+| `scenario.hpp/.cpp` | Recorded drives (launch, brake, slalom, corner, bump, mixed) used as demo input. |
+| `gstate.hpp` | Classifies g-force into idle, accelerate, brake, left, right and bump. |
+| `jp_text.hpp/.cpp` | Draws Japanese text from built-in bitmap fonts. |
+| `jp_glyphs.cpp` | The Japanese glyph bitmaps (generated from Noto fonts, SIL Open Font License). |
+
+**Effects** (`effects/`):
+
+| Effect | Files | What it shows |
+| --- | --- | --- |
+| `ball` | `gball.*` | A ball thrown around the volume by g-force, with rings and a trail. |
+| `slosh` | `slosh.*` | Liquid in a tank, with real waves. |
+| `particles` | `particles.*` | A pile of grains that slides and splashes. |
+| `smoke` | `smoke.*` | A smoke plume blown by g-force (a small fluid solver). |
+| `tunnel` | `tunnel.*` | One ring per layer, bending with g. |
+| `sprite` | `sprite.*` | A built-in 2D sprite animation driven by g. |
+| `anim` | `anim.*` | Your own artwork from Gmeter Studio, with a clip per driving state. |
+| `hud` | `hud.*` | Neon Genesis Evangelion-style screen: frame, axis lines, a ball following the g line, kanji state titles. |
+| `atfield` | `atfield.*` | Octagon shockwaves through the stack. |
+| `sync` | `sync.*` | Sync-graph traces of each g axis. |
+
+## PC side
+
+| Path | What it does |
+| --- | --- |
+| `host/CMakeLists.txt` | Builds the core, the unit tests, the simulator and a compile check of `src/` against Arduino stand-ins. |
+| `host/sim_main.cpp` | Simulator: feeds recorded drives through a simulated sensor and the real effects; prints or records frames. |
+| `host/arduino_stubs/` | Minimal Arduino and ESP32 headers so `src/` can be compile-checked on a PC. |
+| `host/viewer/index.html` | Replay viewer for recorded frames. |
+| `host/web/studio.html`, `host/web/wasm_api.cpp` | Gmeter Studio: the core compiled to WebAssembly, a 3D view of the stack, a drive simulator and an animation editor. |
+| `tests/test_core.cpp` | Unit tests for the core (288 checks). |
+| `tools/build_studio.py` | Compiles the core to WebAssembly and bundles Gmeter Studio. |
+| `tools/make_viewer.py` | Wraps a recording into a standalone viewer page. |
+| `tools/img2sprite.py` | Converts images into 1-bit sprite data. |
+| `tools/make_glyphs.py` | Regenerates the Japanese glyph bitmaps. |
+| `tools/serial_gforce.py` | Sends recorded g-force to the ESP32 over USB for bench tests. |
+| `tools/qemu_boot_check.py` | Boots a firmware image in Espressif's QEMU emulator and reports crashes or resets. |
+| `tools/make_release.py` | Builds the firmware for every board and assembles the supplier package. |

@@ -28,8 +28,8 @@ the car.
 | `src/` | ESP32 firmware (PlatformIO + Arduino): SSD1309 panel-stack driver, MPU-6050 driver, dual-core render/transfer tasks, serial CLI, NVS storage. |
 | `host/` | Native build: unit tests, the scenario-driven simulator that records frames, the browser viewer, Arduino stub headers for compile-checking the firmware on a PC. |
 | `host/web/` | **Gmeter Studio**: a single-page tool with a 3D model of the panel stack, a pixel-art animation editor and a drivable g-force simulator, running the core compiled to WebAssembly. |
-| `tools/` | `build_studio.py` (build Gmeter Studio), `make_viewer.py` (bundle a recording into the replay viewer), `img2sprite.py` (PNG/GIF to sprite header), `serial_gforce.py` (drive the display from a laptop). |
-| `docs/` | [HARDWARE.md](docs/HARDWARE.md) wiring and panel facts, [ARCHITECTURE.md](docs/ARCHITECTURE.md) data flow and conventions, [EFFECTS.md](docs/EFFECTS.md) physics and tuning of each effect, [THIRD_PARTY.md](docs/THIRD_PARTY.md) font licence for the Japanese glyphs. |
+| `tools/` | `build_studio.py` (build Gmeter Studio), `make_viewer.py` (bundle a recording into the replay viewer), `img2sprite.py` (PNG/GIF to sprite header), `serial_gforce.py` (drive the display from a laptop), `qemu_boot_check.py` (boot a firmware image in Espressif's emulator), `make_release.py` (build every board and assemble the supplier package). |
+| `docs/` | [SUPPLIER.md](docs/SUPPLIER.md) flashing, wiring and bring-up for whoever builds the hardware, [CODE_LAYOUT.md](docs/CODE_LAYOUT.md) what every file does, [HARDWARE.md](docs/HARDWARE.md) wiring and panel facts, [ARCHITECTURE.md](docs/ARCHITECTURE.md) data flow and conventions, [EFFECTS.md](docs/EFFECTS.md) physics and tuning of each effect, [THIRD_PARTY.md](docs/THIRD_PARTY.md) font licence for the Japanese glyphs. |
 
 ## Gmeter Studio: design animations and watch them in 3D
 
