@@ -75,9 +75,12 @@ bool Mpu6050::probeAndConfigure() {
   } else if (who_ == 0x98) {
     clone_ = true;
     tempScale_ = 1.0f / 326.8f; tempOffset_ = 25.0f;       // ICM-20689
-  } else if (who_ == 0x72) {
+  } else if (who_ == 0x70 || who_ == 0x71 || who_ == 0x72 || who_ == 0x73) {
+    // MPU-6500 (0x70), MPU-9250 (0x71, a 6500 plus magnetometer), MPU-9255
+    // (0x73) and the 0x72 clone: same accelerometer registers, ACCEL_CONFIG2
+    // filter and temperature formula.
     clone_ = true;
-    tempScale_ = 1.0f / 333.87f; tempOffset_ = 21.0f;      // 6500-family estimate
+    tempScale_ = 1.0f / 333.87f; tempOffset_ = 21.0f;      // MPU-6500 datasheet
   } else {
     return false;
   }

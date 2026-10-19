@@ -474,6 +474,12 @@ class App : public AppControl {
   }
 
   bool saveState() override {
+    {
+      // Auto-cycle changes the effect without going through setMode(): save
+      // the one on screen. (The CLI calls this without holding the lock.)
+      Lock l(engineMtx);
+      settings.mode = static_cast<uint8_t>(::engine.currentIndex());
+    }
     Calibration c;
     {
       Lock l(estMtx);  // imuTask writes `calibration` under this lock

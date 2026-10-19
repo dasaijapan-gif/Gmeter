@@ -1,6 +1,7 @@
 // Register-level MPU-6050 driver (no library dependency). Configured for
 // +/-4 g (vertical bumps exceed 2 g), 44 Hz hardware low-pass, 200 Hz output.
-// Clone dies that answer WHO_AM_I 0x98 (ICM-20689) or 0x72 are accepted; for
+// Clone dies that answer WHO_AM_I 0x98 (ICM-20689), or 6500-family parts
+// (0x70 MPU-6500, 0x71 MPU-9250, 0x72, 0x73 MPU-9255), are accepted; for
 // those the accelerometer low-pass lives in ACCEL_CONFIG2 and is set too.
 #pragma once
 

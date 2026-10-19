@@ -4,8 +4,10 @@ report crashes, watchdog resets and reboots.
 
 QEMU: https://github.com/espressif/qemu/releases (qemu-xtensa-softmmu-*).
 Build the image with esptool merge_bin (bootloader, partitions, boot_app0 and
-firmware at their offsets, --fill-flash-size 4MB for the ESP32; the ESP32-S3
-emulator needs a 16MB flash header and fill). No IMU or panels are emulated:
+firmware at their offsets), or take a release *_full.bin, and pad the file to
+4 MB for the ESP32 (--fill-flash-size 4MB or truncate -s 4M). The ESP32-S3
+emulator only accepts a 16 MB file: pad S3 images to 16 MB; the release's 4 MB
+header is fine. No IMU or panels are emulated:
 the firmware runs its demo drive and the SPI writes go nowhere.
 
   python3 tools/qemu_boot_check.py --qemu /path/qemu-system-xtensa \\

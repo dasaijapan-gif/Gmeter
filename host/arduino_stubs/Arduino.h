@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstring>
 #include <cstdio>
+#include <cstdarg>
 #include <cmath>
 #include <string>
 
@@ -65,22 +66,40 @@ inline unsigned long micros() { return 0; }
 #define highByte(w) ((uint8_t)((w) >> 8))
 #define bit(b) (1UL << (b))
 
+// Like the real core, every print goes through write(), so a Print subclass
+// (e.g. a buffer) sees exactly what the firmware sends. HardwareSerial below
+// writes to stdout.
 class Print {
  public:
+  virtual ~Print() = default;
   virtual size_t write(uint8_t) { return 1; }
-  size_t print(const char* s) { return std::printf("%s", s); }
-  size_t print(int v) { return std::printf("%d", v); }
-  size_t print(unsigned v) { return std::printf("%u", v); }
-  size_t print(long v) { return std::printf("%ld", v); }
-  size_t print(unsigned long v) { return std::printf("%lu", v); }
-  size_t print(float v, int d = 2) { return std::printf("%.*f", d, v); }
-  size_t print(char c) { return std::printf("%c", c); }
-  size_t println() { return std::printf("\n"); }
+  virtual size_t write(const uint8_t* b, size_t n) {
+    size_t k = 0;
+    while (k < n && write(b[k])) ++k;
+    return k;
+  }
+  size_t write(const char* s) { return write(reinterpret_cast<const uint8_t*>(s), std::strlen(s)); }
+  size_t print(const char* s) { return write(s); }
+  size_t print(int v) { return printf("%d", v); }
+  size_t print(unsigned v) { return printf("%u", v); }
+  size_t print(long v) { return printf("%ld", v); }
+  size_t print(unsigned long v) { return printf("%lu", v); }
+  size_t print(float v, int d = 2) { return printf("%.*f", d, static_cast<double>(v)); }
+  size_t print(char c) { return write(static_cast<uint8_t>(c)); }
+  size_t println() { return write("\r\n"); }
   template <typename T> size_t println(T v) { size_t n = print(v); return n + println(); }
   size_t println(float v, int d) { size_t n = print(v, d); return n + println(); }
   size_t printf(const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 };
-inline size_t Print::printf(const char*, ...) { return 0; }
+inline size_t Print::printf(const char* fmt, ...) {
+  char b[512];
+  va_list ap;
+  va_start(ap, fmt);
+  const int n = std::vsnprintf(b, sizeof(b), fmt, ap);
+  va_end(ap);
+  if (n <= 0) return 0;
+  return write(reinterpret_cast<const uint8_t*>(b), static_cast<size_t>(n) < sizeof(b) ? static_cast<size_t>(n) : sizeof(b) - 1);
+}
 
 class Stream : public Print {
  public:
@@ -91,6 +110,8 @@ class Stream : public Print {
 
 class HardwareSerial : public Stream {
  public:
+  size_t write(uint8_t c) override { return std::fputc(c, stdout) == EOF ? 0 : 1; }
+  using Print::write;
   void begin(unsigned long) {}
   void setDebugOutput(bool) {}
   size_t setTxBufferSize(size_t n) { return n; }

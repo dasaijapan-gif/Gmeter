@@ -20,11 +20,11 @@ gmeter/
 
 | File | Lines | What it does |
 | --- | ---: | --- |
-| `main.cpp` | 647 | Starts everything. Three FreeRTOS tasks: IMU sampling (core 0), rendering (core 1) and SPI display output (core 0), with a triple-buffered frame hand-off. Also calibration, demo/serial g sources, the BOOT button and the `App` object behind the serial commands. |
+| `main.cpp` | 653 | Starts everything. Three FreeRTOS tasks: IMU sampling (core 0), rendering (core 1) and SPI display output (core 0), with a triple-buffered frame hand-off. Also calibration, demo/serial g sources, the BOOT button and the `App` object behind the serial commands. |
 | `board_config.hpp` | 67 | Pin map for the classic ESP32 and the ESP32-S3, panel model, SPI speed. Edit this to change wiring. |
 | `display_ssd1309.hpp/.cpp` | 61 / 245 | Driver for eight SSD1309 panels on one SPI bus with separate chip selects: init sequence, frame transfer, contrast ramp, soft and hard refresh, test pattern. |
-| `imu_mpu6050.hpp/.cpp` | 50 / 122 | Register-level MPU-6050 driver: ±4 g, 44 Hz low-pass, 200 Hz; recovers a stuck I2C bus; accepts common clone chips. |
-| `serial_cli.hpp/.cpp` | 66 / 275 | The serial command line (115200 baud): `help`, `status`, `mode`, `set`, `cal`, `test`, `save` and the rest. |
+| `imu_mpu6050.hpp/.cpp` | 51 / 125 | Register-level MPU-6050 driver: ±4 g, 44 Hz low-pass, 200 Hz; recovers a stuck I2C bus; accepts common clone chips. |
+| `serial_cli.hpp/.cpp` | 70 / 306 | The serial command line (115200 baud): `help`, `status`, `mode`, `set`, `cal`, `test`, `save` and the rest. |
 | `storage.hpp/.cpp` | 32 / 127 | Saves settings and calibration in the ESP32's NVS flash. |
 | `user_animation.hpp` | (optional) | Artwork exported from Gmeter Studio. If present, it replaces the built-in demo animation. |
 
@@ -69,7 +69,7 @@ library manifest.
 
 | Path | What it does |
 | --- | --- |
-| `host/CMakeLists.txt` | Builds the core, the unit tests, the simulator, the firmware pin test and a compile check of `src/` against Arduino stand-ins. |
+| `host/CMakeLists.txt` | Builds the core, the unit tests, the simulator and the firmware pin test; `ninja firmware_hostcheck` also compile-checks all of `src/` against the Arduino stand-ins. |
 | `host/sim_main.cpp` | Simulator: feeds recorded drives through a simulated sensor and the real effects; prints or records frames. |
 | `host/arduino_stubs/` | Minimal Arduino and ESP32 headers so `src/` can be compile-checked on a PC. They mirror the real core's macros, and `SPI.h` mirrors how the core claims pins in `SPI.begin()`. |
 | `host/viewer/index.html` | Replay viewer for recorded frames. |

@@ -33,7 +33,7 @@ HudEffect::HudEffect() {
   params_.add("ball_r", &ballR_, 1.5f, 8.0f, "ball radius px");
   params_.add("title_z", &titleZ_, 0.0f, static_cast<float>(kD - 1), "panel for the state kanji (0 = front)");
   params_.add("trail_s", &trailS_, 0.0f, 3.0f, "trail length seconds");
-  params_.add("title", &title_, 0.0f, 1.0f, "big state kanji on the back panel");
+  params_.add("title", &title_, 0.0f, 1.0f, "big state kanji (on the panel set by title_z)");
   params_.add("axes", &axes_, 0.0f, 1.0f, "axis lines and rulers");
   params_.add("frame", &frame_, 0.0f, 1.0f, "border, readouts and status");
   params_.add("enter_g", &enterG_, 0.05f, 1.5f, "g that changes the state word");

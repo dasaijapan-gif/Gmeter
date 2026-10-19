@@ -29,6 +29,30 @@ bool parseInt(const char* s, int& out) {
   out = static_cast<int>(v);
   return true;
 }
+// Collects output in a fixed buffer; anything past the end is dropped and noted.
+class BufferPrint : public Print {
+ public:
+  BufferPrint(char* buf, size_t cap) : buf_(buf), cap_(cap) {}
+  size_t write(uint8_t c) override {
+    if (len_ >= cap_) { overflowed_ = true; return 0; }
+    buf_[len_++] = static_cast<char>(c);
+    return 1;
+  }
+  size_t write(const uint8_t* data, size_t n) override {
+    size_t i = 0;
+    while (i < n && write(data[i])) ++i;
+    return i;
+  }
+  size_t length() const { return len_; }
+  bool overflowed() const { return overflowed_; }
+
+ private:
+  char* buf_;
+  size_t cap_;
+  size_t len_ = 0;
+  bool overflowed_ = false;
+};
+
 // Commands that touch the Engine or an Effect run under the engine lock.
 bool needsEngine(const char* cmd) {
   static const char* kCmds[] = {"list", "mode", "get", "set", "cycle", "readout", "anim"};
@@ -100,7 +124,7 @@ void SerialCli::help(Print& out) {
   out.println("  anim <state|auto>      pin the animation clip: idle accelerate brake left right bump");
   out.println("  test [n|off]           light panel n with its index (no arg or off: back to normal)");
   out.println("  reinit [minutes]       hard reset the panels now, or set the periodic refresh (0 = off)");
-  out.println("  save                   persist mode, contrast ramp, readout, invert, filter, cycle, refresh, axis, calibration");
+  out.println("  save                   persist mode, contrast ramp, readout, invert, zero, filter, cycle, refresh, axis, calibration");
   out.println("  reboot");
 }
 
@@ -125,10 +149,17 @@ void SerialCli::execute(char* line, Print& out) {
     size_t n = 0;
     while (p[n] && p[n] != ' ' && p[n] != '\t' && n + 1 < sizeof(word)) { word[n] = p[n]; ++n; }
   }
-  const bool lock = needsEngine(word);
-  if (lock) app_.lockEngine();
-  run(line, out);
-  if (lock) app_.unlockEngine();
+  if (!needsEngine(word)) {
+    run(line, out);
+    return;
+  }
+  // Format the reply under the lock, send it after.
+  BufferPrint reply(reply_, sizeof(reply_));
+  app_.lockEngine();
+  run(line, reply);
+  app_.unlockEngine();
+  out.write(reinterpret_cast<const uint8_t*>(reply_), reply.length());
+  if (reply.overflowed()) out.println("(reply truncated)");
 }
 
 void SerialCli::run(char* line, Print& out) {

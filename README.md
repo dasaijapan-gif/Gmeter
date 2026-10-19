@@ -108,7 +108,7 @@ CLI is on the connector labelled UART; the native USB connector only flashes.
 
 The platform is pinned to `espressif32 @ 7.1.3` (Arduino-ESP32 2.0.17, GCC
 8.4.0). All three environments build with it without warnings; the classic
-ESP32 build uses about 87 KB of the 124 KB static DRAM segment and 370 KB of
+ESP32 build uses about 89 KB of the 124 KB static DRAM segment and 370 KB of
 flash. Both chips boot in Espressif's QEMU and run every effect with no IMU
 attached (`tools/qemu_boot_check.py` repeats that check). Panel and IMU
 behaviour still has to be confirmed on real hardware.

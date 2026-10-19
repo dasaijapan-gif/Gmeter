@@ -55,6 +55,10 @@ class SerialCli {
 
  private:
   AppControl& app_;
+  // Replies to commands that hold the engine lock are formatted here and sent
+  // after the lock is released, so the UART (about 11.5 kB/s) never stalls
+  // the render task. The longest reply (`get` on the hud effect) is ~1.1 KB.
+  char reply_[2048];
   char buf_[96];
   size_t len_ = 0;
   bool lastCr_ = false;

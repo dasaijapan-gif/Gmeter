@@ -113,7 +113,8 @@ which blanks the stack for about 0.12 s.
 
 Default: MPU-6050 on a GY-521 module at I2C address 0x68 (0x69 with AD0 high).
 The part is end-of-life at TDK and modules are often clone dies; the driver
-checks WHO_AM_I (0x68 genuine; 0x98 and 0x72 clones are accepted with a
+checks WHO_AM_I (0x68 genuine; 0x98 and the 6500-family IDs 0x70, 0x71, 0x72
+and 0x73 are accepted with a
 warning). Clone dies are 6500-family parts whose accelerometer low-pass sits
 in ACCEL_CONFIG2, so the driver sets it there too, and uses their own
 temperature formula. `status` shows the raw vector and |a|, which should be

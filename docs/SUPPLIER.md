@@ -63,26 +63,36 @@ ESP32-S3), add the `_full.bin` file at `0x0`, tick it, then click START.
 If flashing does not start, hold the board's BOOT button, press EN/RST once,
 then release BOOT.
 
+If the board ran other firmware before, erase it once before the first flash:
+**Erase Flash** in the browser tool, **ERASE** in the Flash Download Tool, or
+`esptool.py --chip esp32 --port COM5 erase_flash` (`--chip esp32s3` for the
+S3; esptool 5: `erase-flash`). Otherwise old data left in the core-dump area
+makes the board print a harmless line such as
+`E (...) esp_core_dump_flash: Incorrect size of core dump image` at every
+boot.
+
 **Saved settings.** Writing a `_full.bin` also clears the saved settings and
 calibration, because the image covers the settings area at 0x9000. After every
 full flash, repeat the checks and calibration in section 5 and type `save`.
 
 To update a unit that is already set up and keep its settings, write only
-`firmware.bin` at `0x10000` (same address on both chips), for example:
+`firmware.bin` at `0x10000` (same address on both chips):
 
 ```sh
+# Classic ESP32
 esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32_128x56/firmware.bin
+
+# ESP32-S3
+esptool.py --chip esp32s3 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32s3_128x56/firmware.bin
 ```
 
 Do this only if `partitions.bin` has the same SHA-256 in the old and the new
-package (see `firmware/SHA256SUMS.txt`). Otherwise use the `_full.bin`. To wipe
-a board completely first: `esptool.py --chip esp32 --port COM5 erase_flash`
-(esptool 5: `esptool --chip esp32 --port COM5 erase-flash`).
+package (see `firmware/SHA256SUMS.txt`). Otherwise use the `_full.bin`.
 
 ## 3. First test: board only (no panels, no sensor)
 
-Open a serial monitor at **115200 baud**. Any line ending works. Press
-EN/RST. After a few lines from the chip's boot ROM (`ets` or `ESP-ROM`,
+Open a serial monitor at **115200 baud**, set to send a line ending (CR, LF
+or both; not "No line ending"). Press EN/RST. After a few lines from the chip's boot ROM (`ets` or `ESP-ROM`,
 `rst:`, `load:`, `entry`), you should see:
 
 ```
@@ -183,8 +193,10 @@ More detail is in `docs/HARDWARE.md`.
    4. Type `save`. Always do this last.
 
    `source/gmeter/README.md` explains the calibration in more detail.
-6. `save` keeps the mode, the contrast ramp, readout, invert, filter, auto
-   cycle, panel refresh, forward axis and calibration after power-off.
+6. `save` keeps the effect on screen, the contrast ramp, readout, invert,
+   auto-zero (`zero on|off`), filter, auto cycle, panel refresh, forward axis
+   and calibration after power-off. Effect parameters changed with `set` are
+   not saved.
 
 ## 6. Building from source (optional)
 
@@ -211,7 +223,7 @@ copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
 | Check | Result |
 | --- | --- |
 | Builds with the pinned toolchain (all three variants) | Pass, no compiler warnings |
-| Memory, classic ESP32 | 87 KB of the 124 KB static RAM segment, 370 KB of 1.3 MB app flash |
+| Memory, classic ESP32 | 89 KB of the 124 KB static RAM segment, 370 KB of 1.3 MB app flash |
 | Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached | Pass: no crash, no reset, about 60 fps, no memory leak |
 | Pin set-up: every panel line is an output after start-up, no pin used twice or reserved | Pass (PC test against the Arduino core's pin handling, and a pin trace in the emulator) |
 | Core library unit tests on a PC (288 checks, 128x56 and 128x64) | Pass |
@@ -223,10 +235,12 @@ copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
 | --- | --- |
 | No serial output | Baud rate 115200; on the S3 use the UART connector; press EN/RST. |
 | The board restarts over and over and prints `assert failed` | The flash chip is smaller than the image expects, or it is octal flash. Use the file for your board in section 1, or build from source for that board. |
-| `imu: not found` with the sensor connected | SDA/SCL wires, 5 V on the GY-521, address 0x68 (AD0 to GND). |
+| `imu: not found (WHO_AM_I 0x00)` with the sensor connected | SDA/SCL wires, 5 V on the GY-521, address 0x68 (AD0 to GND). |
+| `imu: not found (WHO_AM_I 0xNN)`, NN not 00 | The wiring works, but the sensor chip is not a supported type (supported: 0x68 MPU-6050, 0x70 MPU-6500, 0x71 MPU-9250, 0x72, 0x73 MPU-9255, 0x98). Report the value. |
 | A panel stays dark | Its CS wire, its 3.3 V and ground, and the shared RES wire. Try `test n` for that panel. |
 | All panels dark | SCK, MOSI, D/C and RES wiring; 3.3 V supply current. Try `reinit`. |
 | Picture is noisy or shifts | Shorter SPI wires, series resistors, or a lower SPI speed (section 6). |
 | Rear panels too dim | `ramp 60 255`; check that all panels face the same way. |
 | Settings lost after flashing | Expected after a `_full.bin`: calibrate again and `save` (section 2). |
+| `E (...) esp_core_dump_flash: ...` at every boot | Harmless leftover from earlier firmware; erase the board once (section 2). |
 | Board resets in the car | Power supply too weak or noisy: use a proper buck converter and short, thick ground wires. |
