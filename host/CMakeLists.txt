@@ -59,4 +59,19 @@ if(GM_FW_SOURCES)
   target_compile_definitions(firmware_hostcheck PRIVATE GM_HOST_STUB=1 ARDUINO=10819 ESP32=1)
   target_compile_options(firmware_hostcheck PRIVATE -Wall -Wextra)
   set_target_properties(firmware_hostcheck PROPERTIES EXCLUDE_FROM_ALL ON)
+
+  # Firmware pin test: runs PanelStack::begin() against the stubs, whose
+  # SPI.begin mirrors the real core's pin handling, for both pin maps.
+  foreach(chip classic s3)
+    add_executable(firmware_pins_${chip} ${GM_ROOT}/tests/test_firmware_pins.cpp
+                   ${GM_ROOT}/src/display_ssd1309.cpp ${CMAKE_CURRENT_SOURCE_DIR}/arduino_stubs/stubs.cpp)
+    target_include_directories(firmware_pins_${chip} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/arduino_stubs ${GM_ROOT}/src)
+    target_link_libraries(firmware_pins_${chip} PRIVATE gmeter_core)
+    target_compile_definitions(firmware_pins_${chip} PRIVATE GM_HOST_STUB=1 ARDUINO=10819 ESP32=1)
+    if(chip STREQUAL "s3")
+      target_compile_definitions(firmware_pins_${chip} PRIVATE GM_BOARD_ESP32_S3=1)
+    endif()
+    target_compile_options(firmware_pins_${chip} PRIVATE -Wall -Wextra)
+    add_test(NAME firmware_pins_${chip} COMMAND firmware_pins_${chip})
+  endforeach()
 endif()

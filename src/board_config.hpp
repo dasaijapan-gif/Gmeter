@@ -1,14 +1,17 @@
 // Pin map and panel model. Edit this file (or override the GM_* macros from
 // platformio.ini) to match your wiring.
 //
-// Wiring summary (classic ESP32-WROOM):
+// Wiring summary (classic ESP32: WROOM-32 or WROVER DevKit):
 //   SPI bus (shared by all 8 panels): SCK GPIO18, MOSI GPIO23, D/C GPIO19, RES GPIO13
 //   Chip selects, layer 0 (nearest the driver) .. layer 7 (nearest the windshield):
-//     GPIO 5, 17, 16, 4, 27, 26, 25, 33
+//     GPIO 5, 32, 14, 4, 27, 26, 25, 33
 //   IMU (MPU-6050 / GY-521): SDA GPIO21, SCL GPIO22, VCC 5 V (module LDO + pull-ups to 3.3 V)
 //   Mode button: GPIO0 (the BOOT button on most dev boards), active low
-// Avoid GPIO6-11 (flash), 34-39 (input only), 12 (MTDI strapping), 1/3 (UART0).
-// On WROVER modules GPIO16/17 belong to the PSRAM: use 32 and 14 instead.
+// Avoid GPIO6-11 (flash), 34-39 (input only), 12 (MTDI strapping), 1/3 (UART0),
+// and 16/17 (PSRAM on WROVER modules, so one image runs on WROOM and WROVER).
+// GPIO5 and GPIO14 may toggle during boot; the panels are hardware-reset after.
+// D/C sits on the SPI bus's default MISO pin (19 / S3: 13): display_ssd1309.cpp
+// reclaims it as an output after SPI.begin(), which would otherwise make it an input.
 #pragma once
 
 #include <cstdint>
@@ -52,7 +55,7 @@ constexpr int kSpiSck = 18;   // VSPI IO_MUX pins
 constexpr int kSpiMosi = 23;
 constexpr int kOledDc = 19;
 constexpr int kOledReset = 13;
-constexpr int kOledCs[8] = {5, 17, 16, 4, 27, 26, 25, 33};
+constexpr int kOledCs[8] = {5, 32, 14, 4, 27, 26, 25, 33};
 constexpr int kI2cSda = 21;
 constexpr int kI2cScl = 22;
 constexpr int kButton = 0;

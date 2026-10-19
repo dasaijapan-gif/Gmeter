@@ -563,6 +563,9 @@ void pollButton() {
 
 void setup() {
   buildObjects();
+  // A transmit buffer so long replies (get, list, status) do not block the
+  // CLI, and with it the engine lock, until the UART has sent every byte.
+  Serial.setTxBufferSize(1024);
   Serial.begin(115200);
   delay(200);
   bootUs = esp_timer_get_time();

@@ -100,7 +100,7 @@ void SerialCli::help(Print& out) {
   out.println("  anim <state|auto>      pin the animation clip: idle accelerate brake left right bump");
   out.println("  test [n|off]           light panel n with its index (no arg or off: back to normal)");
   out.println("  reinit [minutes]       hard reset the panels now, or set the periodic refresh (0 = off)");
-  out.println("  save                   persist mode, display, filter, axis and calibration");
+  out.println("  save                   persist mode, contrast ramp, readout, invert, filter, cycle, refresh, axis, calibration");
   out.println("  reboot");
 }
 

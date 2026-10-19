@@ -76,6 +76,7 @@ cd host && mkdir -p build && cd build
 cmake -G Ninja -DGM_PANEL_H=56 .. && ninja
 ninja firmware_hostcheck                         # compile-check src/ against Arduino stubs
 ./gmeter_tests                                   # 200+ checks on the core
+./firmware_pins_classic && ./firmware_pins_s3    # firmware pin set-up for both pin maps
 ./gmeter_sim --effect slosh --scenario corner --ascii    # terminal preview
 ./gmeter_sim --effect all --scenario drive --out frames.bin
 python3 ../../tools/make_viewer.py frames.bin -o gmeter_viewer.html   # open in a browser

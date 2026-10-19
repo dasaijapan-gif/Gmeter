@@ -52,13 +52,21 @@ Consequences for a stack of eight:
 | MOSI | 23 | VSPI IO_MUX pin; shared |
 | D/C | 19 | shared |
 | RES | 13 | shared; 10 k pull-up to 3.3 V |
-| CS layer 0..7 | 5, 17, 16, 4, 27, 26, 25, 33 | layer 0 is nearest the driver |
+| CS layer 0..7 | 5, 32, 14, 4, 27, 26, 25, 33 | layer 0 is nearest the driver |
 | SDA / SCL | 21 / 22 | MPU-6050 (GY-521) |
 | Button | 0 | BOOT button, active low |
 
-Avoid GPIO 6-11 (flash), 34-39 (input only), 12 (MTDI strapping), 1/3 (UART).
-GPIO 5 is a strapping pin but is pulled up at boot, which is fine for an
-active-low CS. On WROVER modules GPIO 16/17 belong to the PSRAM: use 32 and 14.
+Avoid GPIO 6-11 (flash), 34-39 (input only), 12 (MTDI strapping), 1/3 (UART)
+and 16/17, which belong to the PSRAM on WROVER modules; the map above runs
+unchanged on WROOM-32 and WROVER boards. GPIO 5 is a strapping pin but is
+pulled up at boot, which is fine for an active-low CS; GPIO 5 and 14 may
+toggle while the chip boots, and the firmware hardware-resets every panel
+before using them.
+
+D/C (GPIO 19, or 13 on the S3) is also the SPI bus's default MISO pin. The
+Arduino core claims that pin as an input during `SPI.begin()` even when no
+MISO is requested, so the driver sets D/C back to an output straight after;
+`tests/test_firmware_pins.cpp` checks this.
 ESP32-S3 pins are in `src/board_config.hpp` (SPI2 IO_MUX: SCK 12, MOSI 11).
 On the ESP32-S3-DevKitC-1 the serial CLI is on the connector labelled UART;
 the native USB connector only flashes (add `-DARDUINO_USB_CDC_ON_BOOT=1` to the

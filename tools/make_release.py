@@ -150,7 +150,12 @@ def main():
             f.write("# Either write the single image at 0x0:\n")
             f.write("esptool.py --chip %s --baud 460800 write_flash 0x0 %s\n\n" % (chip, full))
             f.write("# or the separate parts at their offsets:\n")
-            f.write("esptool.py --chip %s --baud 460800 write_flash %s\n" % (chip, " ".join(args)))
+            f.write("esptool.py --chip %s --baud 460800 write_flash %s\n\n" % (chip, " ".join(args)))
+            f.write("# Writing either of the above clears the saved settings and calibration.\n")
+            f.write("# To update a unit and keep them, write only the app (only if partitions.bin\n")
+            f.write("# is unchanged from the version on the board; compare SHA256SUMS.txt):\n")
+            f.write("esptool.py --chip %s --baud 460800 write_flash %s firmware.bin\n" % (
+                chip, meta["extra"]["application_offset"]))
         u = usage.get(env, {})
         info.append("%-16s %-16s chip %-8s RAM %s  Flash %s" % (
             env, label, chip,

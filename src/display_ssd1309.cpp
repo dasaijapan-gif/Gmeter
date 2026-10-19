@@ -70,6 +70,13 @@ void PanelStack::begin() {
 #endif
   spi_ = &spiBus;
   spi_->begin(board::kSpiSck, -1, board::kSpiMosi, -1);
+  // Arduino-ESP32 2.x attaches the bus's default MISO pin even when -1 is
+  // passed (VSPI: GPIO19, S3 FSPI: GPIO13) and switches it to INPUT. Both are
+  // our D/C pin, so claim it back as an output or no panel ever sees a valid
+  // command/data line. The leftover MISO input routing is harmless: the bus is
+  // write-only. tests/test_firmware_pins.cpp checks this against the stubs.
+  pinMode(board::kOledDc, OUTPUT);
+  digitalWrite(board::kOledDc, LOW);
   setContrastRamp(0x50, 0xFF);
   reinit();
 }

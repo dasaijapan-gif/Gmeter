@@ -24,7 +24,14 @@
 typedef bool boolean;
 typedef uint8_t byte;
 
-inline void pinMode(int, int) {}
+// Records the last pinMode per GPIO so host tests can check how the firmware,
+// and the core's own pin handling mirrored in SPI.h, leave each pin.
+namespace stub {
+inline int pinModeOf[64] = {};  // 0 = never set, otherwise mode + 1
+}
+inline void pinMode(int pin, int mode) {
+  if (pin >= 0 && pin < 64) stub::pinModeOf[pin] = mode + 1;
+}
 inline void digitalWrite(int, int) {}
 inline int digitalRead(int) { return 1; }
 inline void delay(unsigned long) {}
@@ -86,6 +93,7 @@ class HardwareSerial : public Stream {
  public:
   void begin(unsigned long) {}
   void setDebugOutput(bool) {}
+  size_t setTxBufferSize(size_t n) { return n; }
 };
 extern HardwareSerial Serial;
 
