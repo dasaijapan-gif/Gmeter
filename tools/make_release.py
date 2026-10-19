@@ -99,7 +99,10 @@ def main():
     src_parent = os.path.join(out, "source")
     os.makedirs(src_parent)
     with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as t:
-        t.extractall(src_parent)
+        if hasattr(tarfile, "data_filter"):
+            t.extractall(src_parent, filter="data")
+        else:
+            t.extractall(src_parent)
     project = os.path.join(src_parent, "gmeter")
 
     # 2. Build every environment from that source.
@@ -173,12 +176,33 @@ def main():
     if a.studio:
         os.makedirs(os.path.join(out, "studio"))
         shutil.copy(a.studio, os.path.join(out, "studio", "gmeter_studio.html"))
-    toolchain = os.path.basename(os.path.dirname(os.path.dirname(meta_all[a.envs[0]].get("cc_path", ""))))
+    toolchain = []
+    for env in a.envs:
+        cc = meta_all[env].get("cc_path", "")
+        try:
+            first = subprocess.run([cc, "--version"], stdout=subprocess.PIPE, text=True).stdout.splitlines()[0]
+        except (OSError, IndexError):
+            first = os.path.basename(cc)
+        if first not in toolchain:
+            toolchain.append(first)
+    framework = ""
+    fw_pkg = os.path.join(os.path.dirname(os.path.dirname(meta_all[a.envs[0]]["extra"]["flash_images"][-1]["path"])),
+                          "..", "package.json")
+    try:
+        with open(os.path.normpath(fw_pkg)) as f:
+            framework = json.load(f).get("version", "")
+    except (OSError, ValueError):
+        pass
     with open(os.path.join(out, "BUILD_INFO.txt"), "w") as f:
         f.write("Gmeter firmware package\n")
         f.write("commit     %s\n" % commit)
         f.write("built      %s UTC\n" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M"))
-        f.write("toolchain  %s (see platformio.ini for the pinned platform)\n\n" % toolchain)
+        f.write("platform   see platformio.ini (pinned)\n")
+        if framework:
+            f.write("framework  framework-arduinoespressif32 %s\n" % framework)
+        for line in toolchain:
+            f.write("compiler   %s\n" % line)
+        f.write("\n")
         f.write("\n".join(info) + "\n")
 
     if not a.no_zip:
