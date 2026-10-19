@@ -27,14 +27,15 @@ class AppControl {
   virtual bool setForwardAxis(const char* axis) = 0;              // +x -x +y -y +z -z
   virtual bool saveState() = 0;
   virtual bool clearState() = 0;
-  virtual void setFilterHz(float hz) = 0;
-  virtual void setContrast(int panel, int value) = 0;             // panel -1 = all
-  virtual void setContrastRamp(int front, int back) = 0;
-  virtual void setAutoCycle(float seconds) = 0;                   // (engine)
+  // Setters that clamp their input return the value actually applied.
+  virtual float setFilterHz(float hz) = 0;
+  virtual int setContrast(int panel, int value) = 0;              // panel -1 = all
+  virtual void setContrastRamp(int front, int back) = 0;         // each clamped to 0..255
+  virtual float setAutoCycle(float seconds) = 0;                  // (engine)
   virtual void setReadout(bool on) = 0;                           // (engine)
   virtual void setInvert(bool on) = 0;
   virtual void setAutoZero(bool on) = 0;
-  virtual void testPattern(int panel) = 0;
+  virtual int testPattern(int panel) = 0;                         // panel < 0 = off; returns the panel shown or -1
   virtual void reinitPanels() = 0;                                // hard reset now
   virtual void setRefreshMinutes(int minutes) = 0;                // periodic soft refresh, 0 = off
   virtual bool pinAnimState(const char* name) = 0;                // (engine) idle|accelerate|brake|left|right|bump|auto

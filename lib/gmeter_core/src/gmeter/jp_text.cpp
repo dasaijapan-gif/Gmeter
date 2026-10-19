@@ -40,16 +40,19 @@ int glyphAdvance(const JpFont& font, uint32_t cp, const JpGlyph** out) {
 }
 
 void drawAscii(VoxelFrame& f, const JpFont& font, int z, int x, int y, char c, float intensity) {
-  const char s[2] = {c, '\0'};
+  const int top = y + (font.height - 5) / 2;
   if (intensity < 0.0f) {
-    VoxelFrame tmp;  // knock-out for ASCII: render to a scratch frame, then clear
-    tmp.text(0, x, y + (font.height - 5) / 2, s);
-    for (int yy = 0; yy < 5; ++yy)
-      for (int xx = 0; xx < 3; ++xx)
-        if (tmp.get(x + xx, y + (font.height - 5) / 2 + yy, 0)) f.reset(x + xx, y + (font.height - 5) / 2 + yy, z);
+    // Knock-out (reverse video): clear the glyph's pixels directly. (A scratch
+    // VoxelFrame here would put 7 KB on the stack and overflow the ESP32's
+    // render task.)
+    const uint16_t g = VoxelFrame::glyph3x5(c);
+    for (int row = 0; row < 5; ++row)
+      for (int col = 0; col < 3; ++col)
+        if ((g >> (12 - 3 * row)) & (4u >> col)) f.reset(x + col, top + row, z);
     return;
   }
-  f.text(z, x, y + (font.height - 5) / 2, s);
+  const char s[2] = {c, '\0'};
+  f.text(z, x, top, s);
 }
 }  // namespace
 

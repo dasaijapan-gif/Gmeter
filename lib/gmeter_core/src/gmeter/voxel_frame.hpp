@@ -78,6 +78,8 @@ class VoxelFrame {
 
   // Tiny 3x5 font for HUD text; returns advance in pixels.
   int text(int z, int x, int y, const char* s);
+  // The 3x5 glyph for `c`: 5 rows of 3 bits, row 0 in bits 14..12, MSB = left.
+  static uint16_t glyph3x5(char c);
   // Clears a box through every layer (e.g. behind HUD text so it stays legible).
   void clearBox(int x0, int y0, int x1, int y1);
 

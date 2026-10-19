@@ -196,6 +196,8 @@ uint16_t glyphFor(char c) {
 }
 }  // namespace
 
+uint16_t VoxelFrame::glyph3x5(char c) { return glyphFor(c); }
+
 int VoxelFrame::text(int z, int x, int y, const char* s) {
   int cursor = x;
   for (; *s; ++s) {

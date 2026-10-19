@@ -144,8 +144,9 @@ the width and layer limits. Tests pass at 128x56 and 128x64.
 
 ## Next steps
 
-1. First on-target build and panel bring-up (`test 0`..`test 7` to map chip
-   selects; `ramp` to balance brightness through the stack).
+1. Panel bring-up on real hardware (`test 0`..`test 7` to map chip selects;
+   `ramp` to balance brightness through the stack). The firmware already
+   builds with the real ESP32 toolchain and boots in Espressif's QEMU.
 2. Measure real transmittance and panel spacing; set `GM_LAYER_PITCH_PX` and
    the default contrast ramp accordingly.
 3. Move the SPI transfer to the ESP-IDF DMA queue to free core 0.

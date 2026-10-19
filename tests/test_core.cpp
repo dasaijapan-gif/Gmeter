@@ -645,6 +645,29 @@ TEST(anim_states_sharing_the_idle_clip_do_not_restart_it) {
   CHECK(a.currentFrame() >= before);
 }
 
+TEST(jp_ascii_knockout_clears_exactly_the_glyph) {
+  // Reverse video over ASCII: the knock-out must clear the same pixels the
+  // 3x5 font sets, without a scratch frame on the stack.
+  VoxelFrame lit, ref;
+  for (int y = 0; y < kH; ++y)
+    for (int x = 0; x < 40; ++x) lit.set(x, y, 2);
+  const int x0 = 3, y0 = 4;
+  drawJp(lit, kJpSmall, 2, x0, y0, "A7%", 1, -1.0f);
+  // Where text() draws the same string (each ASCII advance is 4 + spacing 1).
+  const int top = y0 + (kJpSmall.height - 5) / 2;
+  const char* chars = "A7%";
+  for (int i = 0; i < 3; ++i) { const char one[2] = {chars[i], '\0'}; ref.text(2, x0 + i * 5, top, one); }
+  int mismatches = 0, cleared = 0;
+  for (int y = 0; y < kH; ++y)
+    for (int x = 0; x < 40; ++x) {
+      const bool shouldClear = ref.get(x, y, 2);
+      cleared += shouldClear;
+      if (lit.get(x, y, 2) == shouldClear) ++mismatches;
+    }
+  CHECK(cleared > 10);
+  CHECK(mismatches == 0);
+}
+
 // ---- review regressions --------------------------------------------------------------------
 TEST(calibration_matches_a_physical_right_handed_sensor) {
   // A GY-521 lying flat: chip +Z up, chip +Y toward the windshield, so chip +X

@@ -18,6 +18,8 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <new>
+#include <utility>
 
 #include "board_config.hpp"
 #include "display_ssd1309.hpp"
@@ -40,20 +42,68 @@ using namespace gm;
 namespace {
 
 // ---- hardware & core objects ------------------------------------------------------------
-PanelStack display;
-Mpu6050 imu;
-GForceEstimator estimator;
-Engine engine;
-GBallEffect ballEffect;
-SloshEffect sloshEffect;
-ParticleEffect particleEffect;
-SmokeEffect smokeEffect;
-TunnelEffect tunnelEffect;
-SpriteEffect spriteEffect(demoSprite());
-AnimationEffect animEffect(GM_USER_ANIMATION);
-HudEffect hudEffect;
-AtFieldEffect atFieldEffect;
-SyncEffect syncEffect;
+// These are built at the top of setup(), not during static initialisation.
+// Their constructors do floating-point work, and on the ESP32-S3 (Arduino core
+// 2.0.x) the FPU is only enabled once FreeRTOS runs: a float instruction in a
+// global constructor panics with "Coprocessor exception" before setup() starts.
+// Each lives in raw static storage; the names below are references to it.
+template <typename T>
+class Deferred {
+ public:
+  template <typename... Args>
+  void build(Args&&... args) { new (storage_) T(std::forward<Args>(args)...); }
+  T& operator*() { return *reinterpret_cast<T*>(storage_); }
+
+ private:
+  alignas(T) unsigned char storage_[sizeof(T)];
+};
+
+Deferred<PanelStack> displayBox;
+Deferred<Mpu6050> imuBox;
+Deferred<GForceEstimator> estimatorBox;
+Deferred<Engine> engineBox;
+Deferred<GBallEffect> ballBox;
+Deferred<SloshEffect> sloshBox;
+Deferred<ParticleEffect> particleBox;
+Deferred<SmokeEffect> smokeBox;
+Deferred<TunnelEffect> tunnelBox;
+Deferred<SpriteEffect> spriteBox;
+Deferred<AnimationEffect> animBox;
+Deferred<HudEffect> hudBox;
+Deferred<AtFieldEffect> atFieldBox;
+Deferred<SyncEffect> syncBox;
+
+PanelStack& display = *displayBox;
+Mpu6050& imu = *imuBox;
+GForceEstimator& estimator = *estimatorBox;
+Engine& engine = *engineBox;
+GBallEffect& ballEffect = *ballBox;
+SloshEffect& sloshEffect = *sloshBox;
+ParticleEffect& particleEffect = *particleBox;
+SmokeEffect& smokeEffect = *smokeBox;
+TunnelEffect& tunnelEffect = *tunnelBox;
+SpriteEffect& spriteEffect = *spriteBox;
+AnimationEffect& animEffect = *animBox;
+HudEffect& hudEffect = *hudBox;
+AtFieldEffect& atFieldEffect = *atFieldBox;
+SyncEffect& syncEffect = *syncBox;
+
+void buildObjects() {
+  displayBox.build();
+  imuBox.build();
+  estimatorBox.build();
+  engineBox.build();
+  ballBox.build();
+  sloshBox.build();
+  particleBox.build();
+  smokeBox.build();
+  tunnelBox.build();
+  spriteBox.build(demoSprite());
+  animBox.build(GM_USER_ANIMATION);
+  hudBox.build();
+  atFieldBox.build();
+  syncBox.build();
+}
 
 Settings settings;
 Calibration calibration;
@@ -88,7 +138,9 @@ volatile bool imuEvent = false;  // imuTask -> loop(): print imuEventText
 const char* imuEventText = "";
 
 // ---- frame hand-off: triple buffer ---------------------------------------------------------------
-VoxelFrame frames[3];
+// Allocated in setup() on the heap: the ESP32's static DRAM segment is only
+// about 124 KB, while the heap can also use the DRAM above it.
+VoxelFrame* frames = nullptr;
 int frameReady = -1, frameDisplaying = -1;
 SemaphoreHandle_t frameSem;
 volatile bool wantReinit = false;   // hard reset (CLI)
@@ -430,22 +482,28 @@ class App : public AppControl {
     return storage::save(settings, c);
   }
   bool clearState() override { return storage::clear(); }
-  void setFilterHz(float hz) override {
+  float setFilterHz(float hz) override {
     settings.filterHz = clampf(hz, 0.5f, 30.0f);
     Lock l(estMtx);
     estimator.setFilter(settings.filterHz, static_cast<float>(board::kImuSampleHz));
+    return settings.filterHz;
   }
-  void setContrast(int panel, int value) override {
+  int setContrast(int panel, int value) override {
     const uint8_t v = static_cast<uint8_t>(clampi(value, 0, 255));
     if (panel < 0) { settings.contrastFront = settings.contrastBack = v; display.setContrastRamp(v, v); }
     else display.setContrast(panel, v);
+    return v;
   }
   void setContrastRamp(int front, int back) override {
     settings.contrastFront = static_cast<uint8_t>(clampi(front, 0, 255));
     settings.contrastBack = static_cast<uint8_t>(clampi(back, 0, 255));
     display.setContrastRamp(settings.contrastFront, settings.contrastBack);
   }
-  void setAutoCycle(float s) override { settings.autoCycleS = clampf(s, 0.0f, 3600.0f); ::engine.setAutoCycle(settings.autoCycleS); }
+  float setAutoCycle(float s) override {
+    settings.autoCycleS = clampf(s, 0.0f, 3600.0f);
+    ::engine.setAutoCycle(settings.autoCycleS);
+    return settings.autoCycleS;
+  }
   void setReadout(bool on) override { settings.readout = on; ::engine.setReadout(on); }
   void setInvert(bool on) override { settings.invert = on; display.setInverted(on); }
   void setAutoZero(bool on) override {
@@ -453,7 +511,10 @@ class App : public AppControl {
     Lock l(estMtx);
     estimator.setAutoZero(on);
   }
-  void testPattern(int panel) override { testPanel = panel < 0 ? -2 : clampi(panel, 0, PanelStack::kPanels - 1); }
+  int testPattern(int panel) override {
+    testPanel = panel < 0 ? -2 : clampi(panel, 0, PanelStack::kPanels - 1);
+    return panel < 0 ? -1 : testPanel;
+  }
   void reinitPanels() override { wantReinit = true; }
   void setRefreshMinutes(int minutes) override { settings.reinitMinutes = static_cast<uint8_t>(clampi(minutes, 0, 255)); }
   bool pinAnimState(const char* name) override {
@@ -470,7 +531,7 @@ class App : public AppControl {
 };
 
 App app;
-SerialCli cli(app);
+SerialCli serialCli(app);
 
 // ---- button -----------------------------------------------------------------------------------------------------
 void pollButton() {
@@ -501,6 +562,7 @@ void pollButton() {
 }  // namespace
 
 void setup() {
+  buildObjects();
   Serial.begin(115200);
   delay(200);
   bootUs = esp_timer_get_time();
@@ -511,6 +573,11 @@ void setup() {
   engineMtx = xSemaphoreCreateMutex();
   estMtx = xSemaphoreCreateMutex();
   frameSem = xSemaphoreCreateBinary();
+  frames = new (std::nothrow) VoxelFrame[3];
+  if (!frames) {
+    Serial.println("fatal: not enough memory for the frame buffers");
+    for (;;) delay(1000);
+  }
 
   bool migrated = false;
   const bool restored = storage::load(settings, calibration, &migrated);
@@ -556,7 +623,7 @@ void setup() {
 }
 
 void loop() {
-  cli.poll(Serial);
+  serialCli.poll(Serial);
   pollButton();
 
   static uint32_t lastRefreshMs = millis();

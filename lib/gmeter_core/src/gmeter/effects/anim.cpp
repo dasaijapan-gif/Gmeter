@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 namespace gm {
@@ -218,7 +219,10 @@ void AnimationEffect::render(VoxelFrame& f) {
 namespace {
 constexpr int kDW = 32, kDH = 24, kDD = 3, kDF = 32;
 constexpr int kDRow = (kDW + 7) / 8;
-uint8_t gDemo[kDF * kDD * kDH * kDRow];
+constexpr size_t kDemoBytes = static_cast<size_t>(kDF) * kDD * kDH * kDRow;
+// Built on first use on the heap: 9 KB that the ESP32's static DRAM segment
+// cannot spare, and never allocated when a user animation replaces the demo.
+uint8_t* gDemo = nullptr;
 
 void dset(int f, int s, int x, int y) {
   if (x < 0 || x >= kDW || y < 0 || y >= kDH) return;
@@ -255,7 +259,7 @@ void dchevron(int f, int s, int tx, int ty, int dx, int dy, int size) {
 }
 
 void buildDemo() {
-  std::memset(gDemo, 0, sizeof(gDemo));
+  std::memset(gDemo, 0, kDemoBytes);
   const float cx = (kDW - 1) * 0.5f, cy = (kDH - 1) * 0.5f;
   // Idle 0..7: a breathing shell (smaller rings on the outer slices).
   for (int f = 0; f < 8; ++f) {
@@ -307,6 +311,8 @@ const AnimationAsset& demoAnimation() {
   static AnimationAsset asset;
   static bool built = false;
   if (!built) {
+    if (!gDemo) gDemo = static_cast<uint8_t*>(std::malloc(kDemoBytes));
+    if (!gDemo) return asset;  // out of memory: an empty (invalid) asset, retried next call
     buildDemo();
     asset.name = "demo";
     asset.width = kDW;

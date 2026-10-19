@@ -31,7 +31,32 @@ inline void delay(unsigned long) {}
 inline void delayMicroseconds(unsigned) {}
 inline unsigned long millis() { return 0; }
 inline unsigned long micros() { return 0; }
-inline long constrain(long v, long lo, long hi) { return v < lo ? lo : (v > hi ? hi : v); }
+// The real ESP32 core (cores/esp32/Arduino.h) defines these as macros, so any
+// identifier with the same name (a variable called `cli`, a constant called
+// `PI`) breaks the on-target build. Mirror them here so the host check fails too.
+#define PI 3.1415926535897932384626433832795
+#define HALF_PI 1.5707963267948966192313216916398
+#define TWO_PI 6.283185307179586476925286766559
+#define DEG_TO_RAD 0.017453292519943295769236907684886
+#define RAD_TO_DEG 57.295779513082320876798154814105
+#define EULER 2.718281828459045235360287471352
+#define SERIAL 0x0
+#define DISPLAY 0x1
+#define LSBFIRST 0
+#define DEFAULT 1
+#define _min(a, b) ((a) < (b) ? (a) : (b))
+#define _max(a, b) ((a) > (b) ? (a) : (b))
+#define constrain(amt, low, high) ((amt) < (low) ? (low) : ((amt) > (high) ? (high) : (amt)))
+#define radians(deg) ((deg) * DEG_TO_RAD)
+#define degrees(rad) ((rad) * RAD_TO_DEG)
+#define sq(x) ((x) * (x))
+#define sei()
+#define cli()
+#define interrupts() sei()
+#define noInterrupts() cli()
+#define lowByte(w) ((uint8_t)((w) & 0xff))
+#define highByte(w) ((uint8_t)((w) >> 8))
+#define bit(b) (1UL << (b))
 
 class Print {
  public:

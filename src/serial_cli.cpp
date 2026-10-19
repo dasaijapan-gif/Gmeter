@@ -98,7 +98,7 @@ void SerialCli::help(Print& out) {
   out.println("  readout on|off         numeric g overlay");
   out.println("  invert on|off          inverted pixels");
   out.println("  anim <state|auto>      pin the animation clip: idle accelerate brake left right bump");
-  out.println("  test [n]               light panel n with its index (no arg: back to normal)");
+  out.println("  test [n|off]           light panel n with its index (no arg or off: back to normal)");
   out.println("  reinit [minutes]       hard reset the panels now, or set the periodic refresh (0 = off)");
   out.println("  save                   persist mode, display, filter, axis and calibration");
   out.println("  reboot");
@@ -175,6 +175,7 @@ void SerialCli::run(char* line, Print& out) {
   }
   if (!strcmp(cmd, "src")) {
     if (!a1 || !app_.setSource(a1, a2)) out.println("usage: src imu | src serial | src demo [scenario]");
+    else out.printf("source: %s%s%s\n", a1, a2 ? " " : "", a2 ? a2 : "");
     return;
   }
   if (!strcmp(cmd, "g")) {
@@ -196,41 +197,68 @@ void SerialCli::run(char* line, Print& out) {
     } else out.println("usage: cal fwd <axis> | rest | brake | clear");
     return;
   }
-  if (!strcmp(cmd, "zero")) { bool on; if (parseOnOff(a1, on)) app_.setAutoZero(on); else out.println("usage: zero on|off"); return; }
+  if (!strcmp(cmd, "zero")) {
+    bool on;
+    if (parseOnOff(a1, on)) { app_.setAutoZero(on); out.printf("auto zero: %s\n", on ? "on" : "off"); }
+    else out.println("usage: zero on|off");
+    return;
+  }
   if (!strcmp(cmd, "filter")) {
     float hz;
-    if (parseFloat(a1, hz)) app_.setFilterHz(hz); else out.println("usage: filter <hz>");
+    if (parseFloat(a1, hz)) out.printf("filter: %.1f Hz\n", static_cast<double>(app_.setFilterHz(hz)));
+    else out.println("usage: filter <hz>");
     return;
   }
   if (!strcmp(cmd, "contrast")) {
     int v;
     if (!a1 || !parseInt(a2, v)) { out.println("usage: contrast <n|all> <0-255>"); return; }
     int panel = -1;
-    if (strcmp(a1, "all") && !parseInt(a1, panel)) { out.println("usage: contrast <n|all> <0-255>"); return; }
-    app_.setContrast(panel, v);
+    if (strcmp(a1, "all") && (!parseInt(a1, panel) || panel < 0 || panel >= gm::kD)) { out.println("usage: contrast <n|all> <0-255>"); return; }
+    const int applied = app_.setContrast(panel, v);
+    if (panel < 0) out.printf("contrast: all panels %d\n", applied);
+    else out.printf("contrast: panel %d = %d\n", panel, applied);
     return;
   }
   if (!strcmp(cmd, "ramp")) {
     int f, b;
     if (!parseInt(a1, f) || !parseInt(a2, b)) { out.println("usage: ramp <front> <back>"); return; }
+    f = f < 0 ? 0 : (f > 255 ? 255 : f);
+    b = b < 0 ? 0 : (b > 255 ? 255 : b);
     app_.setContrastRamp(f, b);
+    out.printf("contrast ramp: front %d, back %d\n", f, b);
     return;
   }
   if (!strcmp(cmd, "cycle")) {
     float s;
-    if (parseFloat(a1, s)) app_.setAutoCycle(s); else out.println("usage: cycle <seconds>");
+    if (!parseFloat(a1, s)) { out.println("usage: cycle <seconds>"); return; }
+    const float applied = app_.setAutoCycle(s);
+    if (applied > 0.0f) out.printf("auto cycle: every %.0f s\n", static_cast<double>(applied));
+    else out.println("auto cycle: off");
     return;
   }
-  if (!strcmp(cmd, "readout")) { bool on; if (parseOnOff(a1, on)) app_.setReadout(on); else out.println("usage: readout on|off"); return; }
-  if (!strcmp(cmd, "invert")) { bool on; if (parseOnOff(a1, on)) app_.setInvert(on); else out.println("usage: invert on|off"); return; }
+  if (!strcmp(cmd, "readout")) {
+    bool on;
+    if (parseOnOff(a1, on)) { app_.setReadout(on); out.printf("readout: %s\n", on ? "on" : "off"); }
+    else out.println("usage: readout on|off");
+    return;
+  }
+  if (!strcmp(cmd, "invert")) {
+    bool on;
+    if (parseOnOff(a1, on)) { app_.setInvert(on); out.printf("invert: %s\n", on ? "on" : "off"); }
+    else out.println("usage: invert on|off");
+    return;
+  }
   if (!strcmp(cmd, "anim")) {
     if (!app_.pinAnimState(a1)) out.println("usage: anim idle|accelerate|brake|left|right|bump|auto");
+    else out.printf("anim: %s\n", (!a1 || !strcmp(a1, "auto")) ? "follows g-force" : a1);
     return;
   }
   if (!strcmp(cmd, "test")) {
     int n = -1;
-    if (a1 && !parseInt(a1, n)) { out.println("usage: test [panel]"); return; }
-    app_.testPattern(n);
+    if (a1 && strcmp(a1, "off") && !parseInt(a1, n)) { out.println("usage: test [panel|off]"); return; }
+    const int shown = app_.testPattern(n);
+    if (shown < 0) out.println("test pattern: off");
+    else out.printf("test pattern: panel %d (type test to go back)\n", shown);
     return;
   }
   if (!strcmp(cmd, "reinit")) {

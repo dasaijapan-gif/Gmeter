@@ -105,6 +105,13 @@ SSD1309 modules). Pins live in `src/board_config.hpp`; panel geometry and
 model are `-D` flags in `platformio.ini`. On the ESP32-S3-DevKitC-1 the serial
 CLI is on the connector labelled UART; the native USB connector only flashes.
 
+The platform is pinned to `espressif32 @ 7.1.3` (Arduino-ESP32 2.0.17, GCC
+8.4.0). All three environments build with it without warnings; the classic
+ESP32 build uses about 87 KB of the 124 KB static DRAM segment and 370 KB of
+flash. Both chips boot in Espressif's QEMU and run every effect with no IMU
+attached (`tools/qemu_boot_check.py` repeats that check). Panel and IMU
+behaviour still has to be confirmed on real hardware.
+
 First power-up with an IMU connected:
 
 1. Tell the firmware which sensor axis points at the windshield:
@@ -134,7 +141,7 @@ checked on the bench. `tools/serial_gforce.py /dev/ttyUSB0 --scenario slalom`
 pushes synthetic g over USB; `src serial` + `g 0.3 0 -0.5` does it by hand.
 
 Serial commands worth knowing: `mode slosh`, `get`, `set damping 0.3`,
-`contrast all 128`, `ramp 60 255`, `test 3`, `status`, `cycle 20`,
+`contrast all 128`, `ramp 60 255`, `test 3` (then `test off`), `status`, `cycle 20`,
 `anim brake` (pin an animation clip on the bench; `anim auto` releases it),
 `reinit` (hard-reset the panels) and `reinit 10` (soft refresh every 10 min).
 The CLI echoes what you type, accepts backspace and any line ending.

@@ -2,6 +2,9 @@
 
 #include <esp_timer.h>
 
+#include <memory>
+#include <new>
+
 #include "board_config.hpp"
 
 namespace {
@@ -172,9 +175,15 @@ void PanelStack::writeFrame(const gm::VoxelFrame& frame) {
 }
 
 void PanelStack::clear() {
-  static gm::VoxelFrame blank;
-  blank.clear();
-  writeFrame(blank);
+  // Stream one blank row per page instead of keeping a whole blank frame
+  // (7 KB of static DRAM) around.
+  static const uint8_t kZeros[128] = {};
+  spi_->beginTransaction(SPISettings(GM_SPI_HZ, MSBFIRST, SPI_MODE0));
+  for (int p = 0; p < kPanels; ++p) {
+    setWindow(p, static_cast<uint8_t>(kPages - 1));
+    for (int page = 0; page < kPages; ++page) data(p, kZeros, sizeof(kZeros));
+  }
+  spi_->endTransaction();
 }
 
 void PanelStack::setContrast(int panel, uint8_t value) {
@@ -208,7 +217,11 @@ void PanelStack::setDisplayOn(bool on) {
 }
 
 void PanelStack::testPattern(int panel) {
-  static gm::VoxelFrame f;
+  // Diagnostic only: borrow a frame from the heap rather than holding 7 KB of
+  // static DRAM for the life of the firmware.
+  std::unique_ptr<gm::VoxelFrame> frame(new (std::nothrow) gm::VoxelFrame());
+  if (!frame) return;
+  gm::VoxelFrame& f = *frame;
   f.clear();
   if (panel >= 0 && panel < kPanels) {
     const int layer = GM_PANELS_REVERSED ? (kPanels - 1 - panel) : panel;
