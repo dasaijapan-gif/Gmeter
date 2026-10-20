@@ -2,7 +2,7 @@
 //
 // The display is a stack of GM_LAYERS transparent monochrome OLED panels,
 // each GM_PANEL_W x GM_PANEL_H pixels, viewed from the front (the driver's
-// seat). Override any of these from platformio.ini / CMake with -D flags.
+// seat). Override any of these with -D flags (the ESP-IDF firmware's C core has its own copy, gm_config.h).
 #pragma once
 
 #include <cstdint>

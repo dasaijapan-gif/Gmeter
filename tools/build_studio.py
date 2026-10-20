@@ -68,7 +68,7 @@ def main():
 
     defines = [
         "GM_PANEL_W=128", f"GM_PANEL_H={args.panel_h}", f"GM_LAYERS={args.layers}",
-        # Same smoke grid as the ESP32 builds (platformio.ini), so tuning carries over.
+        # Same smoke grid as the ESP32 firmware (idf/components/gmeter_core/CMakeLists.txt), so tuning carries over.
         f"GM_LAYER_PITCH_PX={args.pitch}f", "GM_SMOKE_NX=16", "GM_SMOKE_NY=8",
     ]
     with tempfile.TemporaryDirectory() as tmp:

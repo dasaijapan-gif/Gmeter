@@ -29,21 +29,21 @@ gmeter/
 | `sdkconfig.defaults`, `sdkconfig.defaults.esp32s3` | 34 / 5 | Project settings: 4 MB flash, partition table, 240 MHz, 1 ms tick, console UART0 at 115200, quiet ESP-IDF logs. |
 | `configs/hud.defaults`, `configs/panel_128x64.defaults` | 5 / 5 | Overlays for the HUD edition and for generic SSD1309 128x64 panels. |
 | `partitions.csv` | 5 | Flash layout: settings (NVS) at 0x9000, the app at 0x10000. |
-| `README.md` | 176 | Building, flashing, the six variants, menuconfig options, calibration. |
+| `README.md` | 184 | Building, flashing, the six variants, menuconfig options, calibration. |
 
-### Application: `idf/main/` (2408 lines)
+### Application: `idf/main/` (2422 lines)
 
 | File | Lines | What it does |
 | --- | ---: | --- |
-| `app_main.c` | 768 | Starts everything. Three FreeRTOS tasks: IMU sampling (core 0), rendering (core 1) and SPI display output (core 0), with a triple-buffered frame hand-off. Also calibration, demo/serial g sources, the HUD edition start-up and its `DEMO` / `SERIAL` / `NO SENSOR` tag, the BOOT button and the functions behind the serial commands. |
-| `Kconfig.projbuild` | 118 | The **Gmeter** menu in `idf.py menuconfig`: edition, panel type and size, SPI clock, upside-down panels, chip-select order, frame rate. |
+| `app_main.c` | 773 | Starts everything. Three FreeRTOS tasks: IMU sampling (core 0), rendering (core 1) and SPI display output (core 0), with a triple-buffered frame hand-off. Also calibration, demo/serial g sources, the HUD edition start-up and its `DEMO` / `SERIAL` / `NO SENSOR` tag, the BOOT button and the functions behind the serial commands. |
+| `Kconfig.projbuild` | 122 | The **Gmeter** menu in `idf.py menuconfig`: edition, panel type and size, SPI clock, upside-down panels, chip-select order, frame rate. |
 | `board_config.h` | 65 | Pin map for the classic ESP32 and the ESP32-S3. Edit this to change wiring. |
 | `display_ssd1309.h/.c` | 76 / 310 | Driver for eight SSD1309 panels on one SPI bus (ESP-IDF `spi_master`) with separate chip selects: init sequence, frame transfer, contrast ramp, soft and hard refresh, test pattern. |
 | `imu_mpu6050.h/.c` | 60 / 207 | Register-level MPU-6050 driver on the ESP-IDF I2C master driver: ±4 g, 44 Hz low-pass, 200 Hz; recovers a stuck I2C bus; accepts common clone chips. |
 | `serial_cli.h/.c` | 80 / 434 | The serial command line (115200 baud): `help`, `status`, `mode`, `set`, `cal`, `test`, `save` and the rest. The HUD edition refuses `mode`, `cycle` and `anim`. |
-| `console_io.h/.c` | 51 / 143 | Serial port input and output (UART console, or USB Serial/JTAG when chosen in menuconfig). |
+| `console_io.h/.c` | 53 / 150 | Serial port input and output (UART console, or USB Serial/JTAG when chosen in menuconfig). |
 | `storage.h/.c` | 48 / 166 | Saves settings and calibration in the ESP32's NVS flash. |
-| `CMakeLists.txt` | 17 | The `main` component. |
+| `CMakeLists.txt` | 27 | The `main` component. |
 | `user_animation.h` | (optional) | Artwork exported from Gmeter Studio. If present, it replaces the built-in demo animation. |
 
 ### Core: `idf/components/gmeter_core/` (3870 lines of C, 1586 of headers)

@@ -20,7 +20,7 @@
 // neighbouring layers.
 //
 // Assets are plain aggregates so Gmeter Studio (host/web) can export them as
-// a C++ header; see src/user_animation.hpp.
+// a header for the firmware and the simulator; see idf/main/user_animation.h.
 #pragma once
 
 #include "../effect.hpp"

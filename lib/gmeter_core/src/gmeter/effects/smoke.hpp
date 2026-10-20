@@ -6,7 +6,7 @@
 // Grid resolution is a compile-time choice: GM_SMOKE_NX x GM_SMOKE_NY cells
 // per layer and one cell per layer in depth. NX must divide the panel width
 // and NY the panel height. The default is 4x4-pixel cells (32x14 at 128x56,
-// 32x16 at 128x64); the ESP32 builds use 16x8 (platformio.ini) to stay within
+// 32x16 at 128x64); the ESP32 firmware uses 16x8 (idf/components/gmeter_core) to stay within
 // the time and memory budget. wind/buoyancy/emit_r are in cell units, so
 // tune on the same grid the device uses (Gmeter Studio builds 16x8).
 // Buffers are heap-allocated only while active.

@@ -1,4 +1,3 @@
-.pio/
 build/
 host/build*/
 *.o
