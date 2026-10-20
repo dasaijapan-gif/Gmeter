@@ -115,8 +115,12 @@ ESP32 build uses about 89 KB of the 124 KB static DRAM segment and 372 KB of
 flash. Both chips boot in Espressif's QEMU and run every effect with no IMU
 attached (`tools/qemu_boot_check.py` repeats that check), and the HUD builds
 boot straight into `hud` and stay there (the same tool with
-`--script tools/qemu_hud_check.txt`). Panel and IMU behaviour still has to be
-confirmed on real hardware.
+`--script tools/qemu_hud_check.txt`). About 1 emulated ESP32 boot in 10 stops
+in the framework's own start-up code before Gmeter runs (the second core reads
+a table from flash while the first has the flash cache off), then restarts and
+runs normally; it shows up with older images too and looks like a timing effect
+of the emulator. Panel and IMU behaviour still has to be confirmed on real
+hardware.
 
 First power-up with an IMU connected:
 

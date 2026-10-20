@@ -295,7 +295,8 @@ wires), change `-DGM_SPI_HZ=10000000` to `-DGM_SPI_HZ=8000000` in
 | --- | --- |
 | Builds with the pinned toolchain (all three HUD variants) | Pass, no compiler warnings |
 | Memory, classic ESP32 | 89 KB of the 124 KB static RAM segment, 372 KB of 1.3 MB app flash |
-| Boots straight into the HUD in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; `mode`, `cycle` and `anim` refused | Pass: no crash, no reset, about 60 fps |
+| Boots straight into the HUD in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; `mode`, `cycle` and `anim` refused | Pass: no crash or reset once running, about 60 fps |
+| Start-up in the emulator | About 1 boot in 10 on the classic ESP32 emulator (with this and earlier Gmeter images alike) stops with `Guru Meditation ... Cache disabled but cached memory region accessed` inside the ESP32 framework's own start-up code, before Gmeter runs; the chip restarts itself and then runs normally. It looks like a timing effect of the emulator, which runs the two cores in turns. If a real board ever prints this right after power-on, please report it. |
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
 | The one-pixel move keeps the whole border on the glass; the warning blink still works after 8 simulated days | Pass (PC unit tests) |
 | Pin set-up: every panel line is an output after start-up, no pin used twice or reserved | Pass (PC test against the Arduino core's pin handling, and a pin trace in the emulator) |

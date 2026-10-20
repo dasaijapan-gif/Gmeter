@@ -230,7 +230,8 @@ copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
 | --- | --- |
 | Builds with the pinned toolchain (all three variants) | Pass, no compiler warnings |
 | Memory, classic ESP32 | 89 KB of the 124 KB static RAM segment, 372 KB of 1.3 MB app flash |
-| Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached | Pass: no crash, no reset, about 60 fps, no memory leak |
+| Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached | Pass: no crash or reset once running, about 60 fps, no memory leak |
+| Start-up in the emulator | About 1 boot in 10 on the classic ESP32 emulator (with this and earlier Gmeter images alike) stops with `Guru Meditation ... Cache disabled but cached memory region accessed` inside the ESP32 framework's own start-up code, before Gmeter runs; the chip restarts itself and then runs normally. It looks like a timing effect of the emulator, which runs the two cores in turns. If a real board ever prints this right after power-on, please report it. |
 | Pin set-up: every panel line is an output after start-up, no pin used twice or reserved | Pass (PC test against the Arduino core's pin handling, and a pin trace in the emulator) |
 | Core library unit tests on a PC (381 checks, 128x56 and 128x64) | Pass |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 5. |
