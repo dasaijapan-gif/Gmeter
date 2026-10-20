@@ -53,6 +53,8 @@ void Engine::step(const GForce& g, float dt) {
   if (!cur) { out_.clear(); return; }
 
   cur->update(ctx_);
+  int dx = 0, dy = 0;  // burn-in offset, applied to the whole frame at the end
+  cur->burnInOffset(dx, dy);
   if (outgoing_ >= 0) {
     Effect* old = effects_[outgoing_];
     old->update(ctx_);
@@ -60,6 +62,10 @@ void Engine::step(const GForce& g, float dt) {
     scratchA_.clear();
     scratchB_.clear();
     old->render(scratchA_);
+    // Keep the outgoing effect at its own offset through the dissolve.
+    int odx = 0, ody = 0;
+    old->burnInOffset(odx, ody);
+    if (odx != dx || ody != dy) scratchA_.shift(odx - dx, ody - dy);
     cur->render(scratchB_);
     out_.crossfade(scratchA_, scratchB_, crossfadeT_);
     if (crossfadeT_ >= 1.0f) {
@@ -92,8 +98,6 @@ void Engine::step(const GForce& g, float dt) {
     out_.text(0, x0, VoxelFrame::H - 6, statusLabel_);
   }
   // Last, so the overlays move with the picture.
-  int dx = 0, dy = 0;
-  cur->burnInOffset(dx, dy);
   if (dx || dy) out_.shift(dx, dy);
 }
 

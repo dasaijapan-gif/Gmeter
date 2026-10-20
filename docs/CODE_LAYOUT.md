@@ -83,7 +83,7 @@ library manifest.
 | `host/arduino_stubs/` | Minimal Arduino and ESP32 headers so `src/` can be compile-checked on a PC. They mirror the real core's macros, and `SPI.h` mirrors how the core claims pins in `SPI.begin()`. |
 | `host/viewer/index.html` | Replay viewer for recorded frames. |
 | `host/web/studio.html`, `host/web/wasm_api.cpp` | Gmeter Studio: the core compiled to WebAssembly, a 3D view of the stack, a drive simulator and an animation editor. |
-| `tests/test_core.cpp` | Unit tests for the core (381 checks). |
+| `tests/test_core.cpp` | Unit tests for the core (394 checks). |
 | `tests/test_firmware_pins.cpp` | Runs the panel driver's start-up against the stubs and checks every panel line ends up an output, no GPIO is used twice and no reserved pin is used (classic ESP32 and ESP32-S3 maps). |
 | `tests/fixtures/studio_export.hpp` | A real Gmeter Studio export that the tests compile and play. |
 | `tools/build_studio.py` | Compiles the core to WebAssembly and bundles Gmeter Studio. |

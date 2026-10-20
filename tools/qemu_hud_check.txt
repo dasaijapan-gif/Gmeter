@@ -18,3 +18,5 @@ sleep 10
 status
 expect 5 mode hud
 expect 5 cycle 0 s
+save
+expect 5 saved

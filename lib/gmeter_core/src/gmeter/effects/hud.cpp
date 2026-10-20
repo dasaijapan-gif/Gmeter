@@ -152,11 +152,11 @@ void HudEffect::drawFrame(VoxelFrame& f, float horiz) const {
   x += drawJp(f, kJpSmall, 0, x, 4, "縦G");
   f.text(0, x + 3, 9, buf);
   // Status column (vertical writing) on the right: 正常, or 警告 blinking.
-  // It ends on row H-9, clear of the bottom 7 rows where the engine puts its
-  // DEMO / NO SENSOR tag.
+  // It ends on row H-11, a row above the hazard stripes and clear of the
+  // bottom 7 rows where the engine puts its DEMO / NO SENSOR tag.
   const bool warn = horiz >= warnG_;
   const int colX = W - 6 - kJpSmall.glyphs[0].width;
-  const int colY = std::min(21, H - 9 - 2 * kJpSmall.height);  // 2 glyphs + 1 px gap
+  const int colY = std::min(21, H - 11 - 2 * kJpSmall.height);  // 2 glyphs + 1 px gap
   if (!warn) drawJpVertical(f, kJpSmall, 0, colX, colY, "正常");
   else if (std::fmod(time_, 0.5f) < 0.3f) drawJpVertical(f, kJpSmall, 0, colX, colY, "警告");
   // Bottom band: hazard stripes when over warn_g.

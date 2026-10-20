@@ -102,7 +102,8 @@ calibration, because the image covers the settings area at 0x9000. After every
 full flash, repeat the checks and calibration in section 6 and type `save`.
 
 To update a unit that is already set up and keep its settings, write only
-`firmware.bin` at `0x10000` (same address on both chips):
+`firmware.bin` at `0x10000` (same address on both chips), from the same folder
+as the `_full.bin` for that unit:
 
 ```sh
 # Classic ESP32
@@ -110,6 +111,9 @@ esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/e
 
 # ESP32-S3
 esptool.py --chip esp32s3 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32s3_128x56_hud/firmware.bin
+
+# Classic ESP32 with 128x64 panels
+esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32_128x64_hud/firmware.bin
 ```
 
 Do this only if `partitions.bin` has the same SHA-256 in the old and the new
@@ -206,13 +210,15 @@ More detail is in `docs/HARDWARE.md`.
    the raw reading; at rest its size should be close to 1 g.
 
    Before calibration the firmware does not know how the sensor is mounted.
-   Unless the module stands with the Y arrow printed on it pointing straight
-   up, the HUD shows about 1 g while the board is still: `横G` or `縦G` near
-   ±1.00, `警告` with hazard stripes, the ball at an edge and a large word
-   such as `加速` or `制動`. This is expected. At this stage only check the
-   size in `status`. For a bench test of the display, lay the module flat,
-   type `cal fwd +y` and then `cal rest`: the ball moves to the centre and
-   follows when you tilt the board. Calibrate again in the car (step 5).
+   Unless the sensor module stands upright with the Y arrow printed on it
+   pointing straight up, the HUD does not show rest while the sensor is
+   still. Typically `横G` or `縦G` reads near ±1.00, `警告` blinks with hazard
+   stripes, the ball sits at an edge and a large word such as `加速`, `制動`,
+   `右旋回` or `危険` is shown, sometimes flashing between two of them. This
+   is expected. At this stage only check the size in `status`. For a bench
+   test of the display, lay the sensor module flat, type `cal fwd +y` and then
+   `cal rest`: the ball moves to the centre and follows when you tilt the
+   sensor module. Calibrate again in the car (step 5).
 5. **Calibration (in the car).**
    1. `cal fwd +y`: tell the firmware which sensor axis points to the
       windshield (`+x`, `-x`, `+y`, `-y`, `+z` or `-z`; `+y` is an example).
@@ -300,7 +306,7 @@ wires), change `-DGM_SPI_HZ=10000000` to `-DGM_SPI_HZ=8000000` in
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
 | The one-pixel move keeps the whole border on the glass; the warning blink still works after 8 simulated days | Pass (PC unit tests) |
 | Pin set-up: every panel line is an output after start-up, no pin used twice or reserved | Pass (PC test against the Arduino core's pin handling, and a pin trace in the emulator) |
-| Core library unit tests on a PC (381 checks, 128x56 and 128x64) | Pass |
+| Core library unit tests on a PC (394 checks, 128x56 and 128x64) | Pass |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 6. |
 
 ## 10. Troubleshooting
@@ -317,7 +323,7 @@ wires), change `-DGM_SPI_HZ=10000000` to `-DGM_SPI_HZ=8000000` in
 | A panel stays dark | Its CS wire, its 3.3 V and ground, and the shared RES wire. Try `test n` for that panel. |
 | All panels dark | SCK, MOSI, D/C and RES wiring; 3.3 V supply current. Try `reinit`. |
 | The whole picture moves by one pixel every 2 minutes | Intentional: it protects the OLEDs (section 1). `set orbit_min 0` stops it until the next power-off. |
-| Before calibration: `警告`, a large `加速` or `制動` and the ball at an edge while the board is still | Expected: the firmware does not know the sensor's mounting yet (section 6, steps 4 and 5). |
+| Before calibration: `警告`, a large `加速`, `制動`, `旋回` or `危険` (sometimes flashing) and the ball at an edge while the sensor is still | Expected: the firmware does not know the sensor's mounting yet (section 6, steps 4 and 5). |
 | Picture is noisy or jumps | Shorter SPI wires, series resistors, or a lower SPI speed (section 8). |
 | Rear panels too dim | `ramp 60 255`; check that all panels face the same way. |
 | Settings lost after flashing | Expected after a `_full.bin`: calibrate again and `save` (section 3). |

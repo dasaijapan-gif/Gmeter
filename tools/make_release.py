@@ -69,6 +69,19 @@ def define(meta, name, default=None):
     return default
 
 
+def label_of(meta):
+    chip = chip_of(meta)
+    label = "%s_%sx%s" % (chip, define(meta, "GM_PANEL_W", "128"), define(meta, "GM_PANEL_H", "64"))
+    fixed = define(meta, "GM_FIXED_EFFECT")
+    return label + "_" + fixed if fixed else label
+
+
+def committed(path):
+    # Git's tree lookup is exact: no build products, drive paths or case variants.
+    return subprocess.run(["git", "cat-file", "-e", "HEAD:" + path], cwd=ROOT,
+                          stderr=subprocess.DEVNULL).returncode == 0
+
+
 def sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -90,8 +103,13 @@ def main():
     a = ap.parse_args()
 
     out = os.path.abspath(a.out)
+    guide = posixpath.normpath(a.guide.replace("\\", "/")) if a.guide else None
+    if guide and not committed(guide):
+        raise SystemExit("guide %s is not in the committed source (HEAD)" % a.guide)
     if os.path.exists(out):
         shutil.rmtree(out)
+    if os.path.exists(out + ".zip"):
+        os.remove(out + ".zip")
     os.makedirs(out)
     esptool = a.esptool.split() if a.esptool else [sys.executable, "-m", "esptool"]
 
@@ -112,7 +130,31 @@ def main():
             t.extractall(src_parent)
     project = os.path.join(src_parent, "gmeter")
 
-    # 2. Build every environment from that source.
+    # 2. Check the guide against the envs before the build.
+    meta_raw = run([a.pio, "project", "metadata", "--json-output"] + sum((["-e", e] for e in a.envs), []),
+                   cwd=project, capture=True)
+    meta_all = json.loads(meta_raw[meta_raw.index("{"):])
+    labels = {e: label_of(meta_all[e]) for e in a.envs}
+    if len(set(labels.values())) != len(labels):
+        raise SystemExit("two envs give the same firmware folder: %s" % labels)
+    # The guide must match the edition: standard envs, or one single effect.
+    editions = {define(meta_all[e], "GM_FIXED_EFFECT") for e in a.envs}
+    if not guide:
+        if len(editions) != 1:
+            raise SystemExit("the envs mix editions (%s); build them separately or pass --guide" %
+                             ", ".join(sorted(x or "standard" for x in editions)))
+        fixed = editions.pop()
+        guide = "docs/SUPPLIER_%s.md" % fixed.upper() if fixed else "docs/SUPPLIER.md"
+        if not committed(guide):
+            raise SystemExit("no guide %s for this edition; pass --guide" % guide)
+    # Every firmware folder the guide names must be built.
+    with open(os.path.join(project, guide), encoding="utf-8") as f:
+        named = sorted(set(re.findall(r"firmware/([A-Za-z0-9_]+)/", f.read())))
+    absent = [n for n in named if n not in labels.values()]
+    if absent:
+        raise SystemExit("%s names firmware folders these envs do not make: %s" % (guide, ", ".join(absent)))
+
+    # 3. Build every environment from that source.
     build_log = run([a.pio, "run"] + sum((["-e", e] for e in a.envs), []), cwd=project, capture=True)
     usage = {}
     current = None
@@ -123,35 +165,15 @@ def main():
         m = re.match(r"(RAM|Flash):.*used (\d+) bytes from (\d+) bytes", line)
         if m and current:
             usage.setdefault(current, {})[m.group(1)] = (int(m.group(2)), int(m.group(3)))
-    meta_raw = run([a.pio, "project", "metadata", "--json-output"] + sum((["-e", e] for e in a.envs), []),
-                   cwd=project, capture=True)
-    meta_all = json.loads(meta_raw[meta_raw.index("{"):])
 
-    # The guide must match the edition: standard envs, or one single effect.
-    editions = {define(meta_all[e], "GM_FIXED_EFFECT") for e in a.envs}
-    if a.guide:
-        guide = posixpath.normpath(a.guide.replace("\\", "/"))
-    elif len(editions) == 1:
-        fixed = editions.pop()
-        guide = "docs/SUPPLIER_%s.md" % fixed.upper() if fixed else "docs/SUPPLIER.md"
-    else:
-        raise SystemExit("the envs mix editions (%s); build them separately or pass --guide" %
-                         ", ".join(sorted(x or "standard" for x in editions)))
-    if guide.startswith("../") or posixpath.isabs(guide) or not os.path.isfile(os.path.join(project, guide)):
-        raise SystemExit("guide %s is not in the committed source (HEAD)" % guide)
-
-    # 3. Firmware folders.
+    # 4. Firmware folders.
     fw_root = os.path.join(out, "firmware")
     os.makedirs(fw_root)
     info = []
     for env in a.envs:
         meta = meta_all[env]
         chip = chip_of(meta)
-        w, h = define(meta, "GM_PANEL_W", "128"), define(meta, "GM_PANEL_H", "64")
-        label = "%s_%sx%s" % (chip, w, h)
-        fixed = define(meta, "GM_FIXED_EFFECT")
-        if fixed:
-            label += "_" + fixed
+        label = labels[env]
         dest = os.path.join(fw_root, label)
         os.makedirs(dest)
         parts = []
@@ -194,17 +216,10 @@ def main():
                 path = os.path.join(dirpath, name)
                 f.write("%s  %s\n" % (sha256(path), os.path.relpath(path, fw_root)))
 
-    # Every firmware folder the guide names must be in the package.
-    with open(os.path.join(project, guide), encoding="utf-8") as f:
-        named = sorted(set(re.findall(r"firmware/([A-Za-z0-9_]+)/", f.read())))
-    absent = [n for n in named if not os.path.isdir(os.path.join(fw_root, n))]
-    if absent:
-        raise SystemExit("%s names firmware folders this build does not make: %s" % (guide, ", ".join(absent)))
-
     # Leave the shipped source clean.
     shutil.rmtree(os.path.join(project, ".pio"), ignore_errors=True)
 
-    # 4. Docs, guide, Studio, build info.
+    # 5. Docs, guide, Studio, build info.
     docs = os.path.join(out, "docs")
     os.makedirs(docs)
     for name in sorted(os.listdir(os.path.join(project, "docs"))):

@@ -798,6 +798,77 @@ TEST(engine_status_label_marks_non_live_data) {
   CHECK(inBox == 0);
 }
 
+TEST(engine_burn_in_offset_moves_overlays_and_only_the_hud) {
+  GForce g;
+  g.proper = GForce::kRestProper();
+  auto lit = [](const VoxelFrame& f, int x, int y) { return x < kW && y < kH && f.get(x, y, 0); };
+  // The mode name (first 1.5 s) and the readout move with the HUD's offset.
+  HudEffect hud;
+  TunnelEffect tunnel;
+  Engine e;
+  e.addEffect(&tunnel);
+  e.addEffect(&hud);
+  e.setReadout(true);
+  hud.setOrbitStep(2);  // offset (1, 1)
+  e.setEffect(1, false);
+  e.step(g, 1.0f / 60.0f);
+  VoxelFrame ref;
+  ref.text(0, 1, 1, "HUD");
+  ref.text(0, 1, kH - 6, "0.00G");
+  int want = 0, match = 0;
+  for (int y = 0; y < kH; ++y)
+    for (int x = 0; x < kW; ++x)
+      if (ref.get(x, y, 0)) { ++want; match += lit(e.frame(), x + 1, y + 1); }
+  CHECK(want > 20 && match == want);
+  // Crossfading away from the HUD keeps its picture at its own offset: the
+  // border's left edge stays on column 1, not 0.
+  e.setEffect(0, true);
+  e.step(g, 1.0f / 60.0f);
+  int col0 = 0, col1 = 0;
+  for (int y = 12; y < kH - 12; ++y) { col0 += lit(e.frame(), 0, y); col1 += lit(e.frame(), 1, y); }
+  CHECK(col1 > (kH - 24) / 2 && col0 < col1 / 4);
+  // Every other effect leaves the picture where it is.
+  GBallEffect ball;
+  SloshEffect slosh;
+  ParticleEffect particles;
+  SmokeEffect smoke;
+  SpriteEffect sprite(demoSprite());
+  AnimationEffect anim(demoAnimation());
+  AtFieldEffect atfield;
+  SyncEffect sync;
+  const Effect* others[] = {&ball, &slosh, &particles, &smoke, &tunnel, &sprite, &anim, &atfield, &sync};
+  for (const Effect* o : others) {
+    int dx = 7, dy = 7;
+    o->burnInOffset(dx, dy);
+    CHECK(dx == 0 && dy == 0);
+  }
+}
+
+TEST(hud_warning_column_clears_the_hazard_stripes) {
+  // 警告 blinks in the status column while hazard stripes scroll below it; one
+  // empty row must separate them (on 56-row panels they used to touch).
+  HudEffect hud;
+  hud.activate();
+  hud.params().set("warn_g", 0.1f);
+  EffectContext ctx;
+  ctx.dt = 1.0f / 60.0f;
+  ctx.g.proper = GForce::kRestProper() + Vec3{0.5f, 0, 0};
+  const int colX = kW - 6 - kJpSmall.glyphs[0].width;
+  int glyphFrames = 0, gapLit = 0;
+  for (int i = 0; i < 90; ++i) {
+    hud.update(ctx);
+    VoxelFrame f;
+    hud.render(f);
+    int column = 0;
+    for (int y = 0; y < kH - 10; ++y)
+      for (int x = colX; x < colX + kJpSmall.glyphs[0].width; ++x) column += f.get(x, y, 0);
+    if (column > 40) ++glyphFrames;
+    for (int x = colX; x < colX + kJpSmall.glyphs[0].width; ++x) gapLit += f.get(x, kH - 10, 0);
+  }
+  CHECK(glyphFrames > 20);
+  CHECK(gapLit == 0);
+}
+
 // ---- review regressions --------------------------------------------------------------------
 TEST(calibration_matches_a_physical_right_handed_sensor) {
   // A GY-521 lying flat: chip +Z up, chip +Y toward the windshield, so chip +X

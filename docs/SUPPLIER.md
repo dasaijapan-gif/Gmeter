@@ -90,6 +90,9 @@ esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/e
 
 # ESP32-S3
 esptool.py --chip esp32s3 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32s3_128x56/firmware.bin
+
+# Classic ESP32 with 128x64 panels
+esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32_128x64/firmware.bin
 ```
 
 Do this only if `partitions.bin` has the same SHA-256 in the old and the new
@@ -177,7 +180,9 @@ More detail is in `docs/HARDWARE.md`.
    kept by `save`. `contrast 3 200` changes one panel for testing only: it is
    not saved, and the next `ramp` overwrites it.
 3. **Effects.** `list` shows them. `mode hud`, `mode atfield`, `mode sync`,
-   `mode slosh`, `mode smoke` and so on switch between them. `cycle 10` shows
+   `mode slosh`, `mode smoke` and so on switch between them (`hud` moves the
+   whole picture by one pixel every 2 minutes on purpose, against OLED
+   burn-in). `cycle 10` shows
    each for 10 seconds (`cycle 0` stops). A short press of the BOOT button also
    switches to the next effect. Holding BOOT for more than 2 seconds starts a
    rest calibration (like `cal rest`), so only do that with the car parked
@@ -233,7 +238,7 @@ copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
 | Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached | Pass: no crash or reset once running, about 60 fps, no memory leak |
 | Start-up in the emulator | About 1 boot in 10 on the classic ESP32 emulator (with this and earlier Gmeter images alike) stops with `Guru Meditation ... Cache disabled but cached memory region accessed` inside the ESP32 framework's own start-up code, before Gmeter runs; the chip restarts itself and then runs normally. It looks like a timing effect of the emulator, which runs the two cores in turns. If a real board ever prints this right after power-on, please report it. |
 | Pin set-up: every panel line is an output after start-up, no pin used twice or reserved | Pass (PC test against the Arduino core's pin handling, and a pin trace in the emulator) |
-| Core library unit tests on a PC (381 checks, 128x56 and 128x64) | Pass |
+| Core library unit tests on a PC (394 checks, 128x56 and 128x64) | Pass |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 5. |
 
 ## 8. Troubleshooting
@@ -246,7 +251,8 @@ copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
 | `imu: not found (WHO_AM_I 0xNN)`, NN not 00 | The wiring works, but the sensor chip is not a supported type (supported: 0x68 MPU-6050, 0x70 MPU-6500, 0x71 MPU-9250, 0x72, 0x73 MPU-9255, 0x98). Report the value. |
 | A panel stays dark | Its CS wire, its 3.3 V and ground, and the shared RES wire. Try `test n` for that panel. |
 | All panels dark | SCK, MOSI, D/C and RES wiring; 3.3 V supply current. Try `reinit`. |
-| Picture is noisy or shifts | Shorter SPI wires, series resistors, or a lower SPI speed (section 6). |
+| Picture is noisy or jumps | Shorter SPI wires, series resistors, or a lower SPI speed (section 6). |
+| With `hud`, the whole picture moves by one pixel every 2 minutes | Intentional, against OLED burn-in. `set orbit_min 0` stops it until the next power-off. |
 | Rear panels too dim | `ramp 60 255`; check that all panels face the same way. |
 | Settings lost after flashing | Expected after a `_full.bin`: calibrate again and `save` (section 2). |
 | `E (...) esp_core_dump_flash: ...` at every boot | Harmless leftover from earlier firmware; erase the board once (section 2). |
