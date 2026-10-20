@@ -30,13 +30,16 @@ module.
 Consequences for a stack of eight:
 
 - The firmware default geometry is **128 x 56 x 8**, seven GDDRAM pages per layer.
-  Switch to `esp32dev-128x64` for ordinary SSD1309 modules.
+  For ordinary SSD1309 modules choose the generic 128x64 panel type in
+  `idf.py menuconfig` (Gmeter > Panels), or build with
+  `idf/configs/panel_128x64.defaults`.
 - The rearmost layer is seen through seven panes. At 50-70 % transmittance per
   pane that is roughly 1-8 % of its luminance. The driver applies a contrast
   ramp (`ramp <front> <back>`, default 0x50..0xFF) and effects are designed to
   be front-weighted; expect depth to read as "fog", not uniform brightness.
 - Keep every panel in the same orientation (polarizer axes parallel). A panel
-  mounted upside down can be corrected in software with `GM_PANEL_FLIP_MASK`,
+  mounted upside down can be corrected in software (menuconfig: Gmeter >
+  Panels > Panels mounted upside down, a bit mask),
   but test one first: crossed polarizers darken everything behind them.
 - Each glass surface reflects about 4 %, so expect faint ghost images;
   minimise gaps and view near-normal.
@@ -64,17 +67,18 @@ toggle while the chip boots, and the firmware hardware-resets every panel
 before using them.
 
 D/C (GPIO 19, or 13 on the S3) is also the SPI bus's default MISO pin. The
-Arduino core claims that pin as an input during `SPI.begin()` even when no
-MISO is requested, so the driver sets D/C back to an output straight after;
-`tests/test_firmware_pins.cpp` checks this.
-ESP32-S3 pins are in `src/board_config.hpp` (SPI2 IO_MUX: SCK 12, MOSI 11).
-On the ESP32-S3-DevKitC-1 the serial CLI is on the connector labelled UART;
-the native USB connector only flashes (add `-DARDUINO_USB_CDC_ON_BOOT=1` to the
-`esp32-s3` build flags to move the CLI to native USB).
+ESP-IDF driver sets the bus up without a MISO pin, so D/C stays a plain
+output (the driver configures it as one anyway).
+All pins are in `idf/main/board_config.h`; the ESP32-S3 uses the SPI2 IO_MUX
+pins (SCK 12, MOSI 11). On the ESP32-S3-DevKitC-1 the serial CLI is on the
+connector labelled UART; the native USB connector only flashes (in
+menuconfig, Component config > ESP System Settings > Channel for console
+output > USB Serial/JTAG Controller moves the CLI to native USB).
 
 Eight loads on SCK/MOSI are about 100 pF. Keep the bus short with ground
 returns, and if wiring exceeds ~10 cm add 22-33 ohm series resistors at the
-ESP32 end or drop `GM_SPI_HZ` to 8 MHz.
+ESP32 end or drop the SPI clock to 8 MHz (menuconfig: Gmeter > Panels > SPI
+clock).
 
 Chip selects are plain GPIOs toggled around each transfer; the ESP32 hardware
 only has three CS lines per SPI host, so the driver does not use them.
@@ -83,10 +87,11 @@ only has three CS lines per SPI host, so the driver does not use them.
 
 Per panel per frame: 6 command bytes (column 0-127, pages 0-6) then 896 data
 bytes. Eight panels at 10 MHz: 5.8 ms (~170 fps ceiling); at 8 MHz 7.2 ms.
-The Arduino SPI call blocks the CPU for that time, so the transfer runs on
-core 0 while core 1 renders the next frame. A later upgrade is the ESP-IDF
-`spi_master` queue with DMA buffers (one device with `spics_io_num = -1` and
-CS/DC toggled in the pre/post callbacks), which frees that core time.
+The driver sends each panel with polled ESP-IDF `spi_master` transactions
+from DMA-capable buffers, with chip-select and D/C as plain GPIOs; polling
+keeps the display task busy for that time, so it runs on core 0 while core 1
+renders the next frame. Queued, interrupt-driven transactions would free that
+core time.
 
 The bus is write-only. A panel scrambled by ignition noise cannot report it,
 so the firmware re-sends the window command every frame and does a soft
@@ -122,7 +127,7 @@ temperature formula. `status` shows the raw vector and |a|, which should be
 (it reset into sleep), is marked lost after 10 bad samples; the display then
 shows 0 g and the firmware re-initialises the bus and sensor every second.
 
-Configuration used (`src/imu_mpu6050.cpp`): reset, PLL clock from the X gyro,
+Configuration used (`idf/main/imu_mpu6050.c`): reset, PLL clock from the X gyro,
 all axes on, DLPF 44 Hz, 200 Hz output, +/-4 g (vertical bumps exceed 2 g and
 clipping inside the DLPF biases the output), gyro +/-250 dps. Burst read of
 accelerometer and temperature from 0x3B.

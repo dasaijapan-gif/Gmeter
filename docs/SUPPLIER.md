@@ -8,16 +8,16 @@ corners and bumps.
 This is the standard edition, with ten effects to choose from. For a unit that
 should only ever show the NERV-style `hud` screen there is a HUD edition. It
 is a separate package with its own firmware files and guide; it can also be
-built from `source/gmeter` with the `esp32dev-hud`, `esp32-s3-hud` or
-`esp32dev-128x64-hud` environment (see `source/gmeter/docs/SUPPLIER_HUD.md`).
+built from `source/gmeter` by choosing the HUD edition in menuconfig (see
+section 3 of `source/gmeter/README.md`).
 
 This package contains:
 
 | Folder | What it is |
 | --- | --- |
 | `firmware/` | Ready-to-flash files. You do not need to compile anything. |
-| `source/gmeter/` | The complete source code (a PlatformIO project), if you want to build it yourself. |
-| `docs/` | Hardware notes, effect descriptions, code layout and licences. |
+| `source/gmeter/` | The complete source code of the firmware: an ESP-IDF project written in C (`.c` and `.h` files), if you want to build it yourself. |
+| `docs/` | Hardware notes, effect descriptions and licences. |
 | `studio/` | Gmeter Studio: open `gmeter_studio.html` in Chrome or Edge to see the animations in 3D on a PC. The 3D view needs an internet connection; offline it shows a flat preview. |
 
 ## 1. Which file to flash
@@ -69,34 +69,29 @@ ESP32-S3), add the `_full.bin` file at `0x0`, tick it, then click START.
 If flashing does not start, hold the board's BOOT button, press EN/RST once,
 then release BOOT.
 
-If the board ran other firmware before, erase it once before the first flash:
-**Erase Flash** in the browser tool, **ERASE** in the Flash Download Tool, or
-`esptool.py --chip esp32 --port COM5 erase_flash` (`--chip esp32s3` for the
-S3; esptool 5: `erase-flash`). Otherwise old data left in the core-dump area
-makes the board print a harmless line such as
-`E (...) esp_core_dump_flash: Incorrect size of core dump image` at every
-boot.
-
 **Saved settings.** Writing a `_full.bin` also clears the saved settings and
 calibration, because the image covers the settings area at 0x9000. After every
 full flash, repeat the checks and calibration in section 5 and type `save`.
 
 To update a unit that is already set up and keep its settings, write only
-`firmware.bin` at `0x10000` (same address on both chips):
+`gmeter.bin` at `0x10000` (same address on both chips), from the same folder
+as the `_full.bin` for that unit:
 
 ```sh
 # Classic ESP32
-esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32_128x56/firmware.bin
+esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32_128x56/gmeter.bin
 
 # ESP32-S3
-esptool.py --chip esp32s3 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32s3_128x56/firmware.bin
+esptool.py --chip esp32s3 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32s3_128x56/gmeter.bin
 
 # Classic ESP32 with 128x64 panels
-esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32_128x64/firmware.bin
+esptool.py --chip esp32 --port COM5 --baud 460800 write_flash 0x10000 firmware/esp32_128x64/gmeter.bin
 ```
 
-Do this only if `partitions.bin` has the same SHA-256 in the old and the new
-package (see `firmware/SHA256SUMS.txt`). Otherwise use the `_full.bin`.
+Do this only if `partition-table.bin` has the same SHA-256 in the old and the
+new package (see `firmware/SHA256SUMS.txt`). Otherwise use the `_full.bin`.
+Units that ran an earlier Gmeter firmware built with PlatformIO/Arduino need
+one `_full.bin` flash first: the flash layout has changed.
 
 ## 3. First test: board only (no panels, no sensor)
 
@@ -118,10 +113,16 @@ Without a sensor the firmware plays a recorded demo drive, so the animations
 keep moving. Type `status`. The `render` line should show about 60 fps. Type
 `help` to list every command.
 
+On a board with more than 4 MB of flash, ESP-IDF adds one harmless line
+before these: `W (...) spi_flash: Detected size(...) larger than the size in
+the binary image header(4096k). Using the size in the binary image header.`
+
 On the ESP32-S3-DevKitC-1 the serial monitor is on the USB connector labelled
 **UART**. The other USB connector (native USB) is only used for flashing. If
 your S3 board has only a native USB connector, build from source (section 6)
-with `-DARDUINO_USB_CDC_ON_BOOT=1` added to the `esp32-s3` build flags.
+with the console moved to that port: in `idf.py menuconfig`, **Component
+config > ESP System Settings > Channel for console output > USB Serial/JTAG
+Controller**.
 
 ## 4. Wiring
 
@@ -211,34 +212,32 @@ More detail is in `docs/HARDWARE.md`.
 
 ## 6. Building from source (optional)
 
-1. Install Visual Studio Code and its **PlatformIO IDE** extension (or the
-   PlatformIO command line, `pip install platformio`).
-2. Open the folder `source/gmeter`. PlatformIO reads `platformio.ini`.
-3. Pick the environment: `esp32dev` (classic ESP32, 128x56 panels, default),
-   `esp32-s3`, or `esp32dev-128x64`.
-4. Click **Upload** (or run `pio run -e esp32dev -t upload`). The first build
-   downloads the ESP32 toolchain, which takes a few minutes.
+The source is a standard ESP-IDF project in C. `source/gmeter/README.md`
+describes it in full; in short:
 
-The platform is pinned to `espressif32 @ 7.1.3` (Arduino-ESP32 core 2.0.17,
-GCC 8.4.0). This is the exact toolchain the files in `firmware/` were built
-with. The Arduino IDE is not set up for this project; use PlatformIO.
+1. Install ESP-IDF v5.2 or newer with Espressif's *Get Started* guide (the
+   files in `firmware/` were built with ESP-IDF v5.5.6; see `BUILD_INFO.txt`).
+2. Open an ESP-IDF terminal in `source/gmeter`.
+3. `idf.py set-target esp32` (or `esp32s3`), then `idf.py menuconfig` if you
+   want to change an option under **Gmeter**: panel type (WiseChip 128x56 or
+   SSD1309 128x64), SPI clock, panels mounted upside down, chip-select order,
+   frame rate, or the edition.
+4. `idf.py build`, then `idf.py -p COM5 flash monitor`.
 
-Pins are in `source/gmeter/src/board_config.hpp`. Panel size, panel type and
-SPI speed are `-D` flags in `platformio.ini`. To lower the SPI speed (for long
-wires), change `-DGM_SPI_HZ=10000000` to `-DGM_SPI_HZ=8000000` in
-`platformio.ini` and rebuild. To add custom artwork, draw it in Gmeter Studio,
-copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
+Pins are in `source/gmeter/main/board_config.h`. To lower the SPI speed for
+long wires, set **Gmeter > Panels > SPI clock** to 8000000 in menuconfig and
+rebuild. To add custom artwork, draw it in Gmeter Studio, copy the C header it
+makes, save it as `source/gmeter/main/user_animation.h` and rebuild.
 
 ## 7. What has been tested
 
 | Check | Result |
 | --- | --- |
-| Builds with the pinned toolchain (all three variants) | Pass, no compiler warnings |
-| Memory, classic ESP32 | 89 KB of the 124 KB static RAM segment, 372 KB of 1.3 MB app flash |
-| Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached | Pass: no crash or reset once running, about 60 fps, no memory leak |
-| Start-up in the emulator | About 1 boot in 10 on the classic ESP32 emulator (with this and earlier Gmeter images alike) stops with `Guru Meditation ... Cache disabled but cached memory region accessed` inside the ESP32 framework's own start-up code, before Gmeter runs; the chip restarts itself and then runs normally. It looks like a timing effect of the emulator, which runs the two cores in turns. If a real board ever prints this right after power-on, please report it. |
-| Pin set-up: every panel line is an output after start-up, no pin used twice or reserved | Pass (PC test against the Arduino core's pin handling, and a pin trace in the emulator) |
-| Core library unit tests on a PC (394 checks, 128x56 and 128x64) | Pass |
+| Builds with ESP-IDF v5.5.6 (all three variants) | Pass, no compiler warnings |
+| Memory, classic ESP32 | 81 KB of the 181 KB static RAM, 326 KB of the 2 MB app partition |
+| Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; every command of section 5 | Pass: no crash or reset once running, about 60 fps |
+| Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
+| The effects and g-force maths compute exactly what the PC tools (Gmeter Studio, simulator) compute | Pass: 153 tests on a PC, about 19 million checks per panel size, bit-identical at 128x56 and 128x64 |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 5. |
 
 ## 8. Troubleshooting
@@ -246,7 +245,7 @@ copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
 | Problem | What to check |
 | --- | --- |
 | No serial output | Baud rate 115200; on the S3 use the UART connector; press EN/RST. |
-| The board restarts over and over and prints `assert failed` | The flash chip is smaller than the image expects, or it is octal flash. Use the file for your board in section 1, or build from source for that board. |
+| The board restarts over and over right after power-on | The flash chip is smaller than 4 MB, or it is octal flash. Use the file for your board in section 1, or build from source for that board. |
 | `imu: not found (WHO_AM_I 0x00)` with the sensor connected | SDA/SCL wires, 5 V on the GY-521, address 0x68 (AD0 to GND). |
 | `imu: not found (WHO_AM_I 0xNN)`, NN not 00 | The wiring works, but the sensor chip is not a supported type (supported: 0x68 MPU-6050, 0x70 MPU-6500, 0x71 MPU-9250, 0x72, 0x73 MPU-9255, 0x98). Report the value. |
 | A panel stays dark | Its CS wire, its 3.3 V and ground, and the shared RES wire. Try `test n` for that panel. |
@@ -255,5 +254,4 @@ copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
 | With `hud`, the whole picture moves by one pixel every 2 minutes | Intentional, against OLED burn-in. `set orbit_min 0` stops it until the next power-off. |
 | Rear panels too dim | `ramp 60 255`; check that all panels face the same way. |
 | Settings lost after flashing | Expected after a `_full.bin`: calibrate again and `save` (section 2). |
-| `E (...) esp_core_dump_flash: ...` at every boot | Harmless leftover from earlier firmware; erase the board once (section 2). |
 | Board resets in the car | Power supply too weak or noisy: use a proper buck converter and short, thick ground wires. |

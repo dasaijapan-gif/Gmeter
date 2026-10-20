@@ -139,3 +139,38 @@ imu: not found (WHO_AM_I 0x00); showing demo scenario 'drive' and retrying. Type
 
 The HUD edition adds `single-effect build: always shows hud` before the
 `imu:` line.
+
+## 8. First use with a sensor: calibration
+
+The firmware has to learn how the MPU-6050 is mounted. Until then a sensor
+that is not standing exactly upright with its Y arrow up shows about 1 g
+while it is still (a value near 1.00, the ball at an edge, warnings): that is
+expected.
+
+1. Tell the firmware which sensor axis points at the windshield:
+   `cal fwd <+x|-x|+y|-y|+z|-z>`. The default `+z` only fits a board standing
+   upright with its Z axis forward. A GY-521 lying flat has +Z up, so use the
+   in-plane axis that faces forward (for example `cal fwd +y`).
+2. Park on level ground and type `cal rest` (hold still for 2 s). If the
+   forward hint points up or down, the rest capture still sets "up" but
+   reports that forward is unknown; step 3 is then required.
+3. Recommended: drive straight, type `cal brake` and brake firmly for 1.5 s.
+   This measures forward directly and removes any yaw in the mount. Run it
+   again after any new `cal rest`.
+4. `save`.
+
+`save` stores the effect on screen (standard edition), the contrast ramp,
+readout, invert, forward axis, auto-zero, filter, auto-cycle, panel refresh
+interval and the calibration. `set` changes to effect parameters are RAM-only
+and revert on reboot; to keep tuned values, change the effect's defaults in
+its `gm_<name>_init` function (`components/gmeter_core/src/effects/`).
+
+If the sensor drops out (loose connector, brownout), the display relaxes to
+0 g and the firmware retries every second; `status` shows the state. A sensor
+that appears after boot is picked up automatically. Without a sensor the
+firmware plays a recorded demo drive so the panels can be checked on the
+bench; `src serial` followed by `g 0.3 0 -0.5` sets the g-force by hand.
+
+Holding the BOOT button for two seconds also starts a rest calibration (like
+`cal rest`), so only do that with the car parked level. A short press steps
+to the next effect (standard edition only).

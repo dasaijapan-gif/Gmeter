@@ -24,11 +24,11 @@ the car.
 
 | Path | What it is |
 | --- | --- |
-| `lib/gmeter_core/` | Hardware-agnostic C++17 core: voxel frame, g-force conventions, IMU estimator, effects, engine, scripted scenarios. Shared by firmware and simulator. |
-| `src/` | ESP32 firmware (PlatformIO + Arduino): SSD1309 panel-stack driver, MPU-6050 driver, dual-core render/transfer tasks, serial CLI, NVS storage. |
-| `host/` | Native build: unit tests, the scenario-driven simulator that records frames, the browser viewer, Arduino stub headers for compile-checking the firmware on a PC. |
+| `idf/` | **The ESP32 firmware**: an ESP-IDF v5 project in C. `idf/main/` holds the application (SSD1309 panel-stack driver, MPU-6050 driver, dual-core render/transfer tasks, serial CLI, NVS storage, menuconfig options); `idf/components/gmeter_core/` the hardware-agnostic core (voxel frame, g-force conventions, IMU estimator, effects, engine, scripted scenarios); `idf/host_test/` the tests that compare that C core with the C++ core. |
+| `lib/gmeter_core/` | The same core in C++17, used by Gmeter Studio and the PC simulator. |
+| `host/` | Native build: C++ unit tests, the scenario-driven simulator that records frames, the browser viewer. |
 | `host/web/` | **Gmeter Studio**: a single-page tool with a 3D model of the panel stack, a pixel-art animation editor and a drivable g-force simulator, running the core compiled to WebAssembly. |
-| `tools/` | `build_studio.py` (build Gmeter Studio), `make_viewer.py` (bundle a recording into the replay viewer), `img2sprite.py` (PNG/GIF to sprite header), `serial_gforce.py` (drive the display from a laptop), `qemu_boot_check.py` (boot a firmware image in Espressif's emulator), `make_release.py` (build every board and assemble the supplier package). |
+| `tools/` | `build_studio.py` (build Gmeter Studio), `make_viewer.py` (bundle a recording into the replay viewer), `img2sprite.py` (PNG/GIF to sprite header), `make_glyphs.py` (Japanese glyph bitmaps, C and C++), `serial_gforce.py` (drive the display from a laptop), `qemu_boot_check.py` with `qemu_std_check.txt` / `qemu_hud_check.txt` (boot a firmware image in Espressif's emulator), `make_release.py` (build every board and assemble the supplier package). |
 | `docs/` | [SUPPLIER.md](docs/SUPPLIER.md) flashing, wiring and bring-up for whoever builds the hardware ([SUPPLIER_HUD.md](docs/SUPPLIER_HUD.md) for the HUD edition), [CODE_LAYOUT.md](docs/CODE_LAYOUT.md) what every file does, [HARDWARE.md](docs/HARDWARE.md) wiring and panel facts, [ARCHITECTURE.md](docs/ARCHITECTURE.md) data flow and conventions, [EFFECTS.md](docs/EFFECTS.md) physics and tuning of each effect, [THIRD_PARTY.md](docs/THIRD_PARTY.md) font licence for the Japanese glyphs. |
 
 ## Gmeter Studio: design animations and watch them in 3D
@@ -54,12 +54,14 @@ Open `gmeter_studio.html` in a browser. It has three parts:
   fill, move, mirror, onion skin) or import PNG/GIF. Use up to eight depth
   slices for volumetric artwork. Assign frame ranges to the car states (idle,
   accelerate, brake, corner left/right, bump) and tune how the artwork moves
-  with g. **Copy C++ header** produces `src/user_animation.hpp`; rebuild the
-  firmware and the `anim` effect plays your artwork on the car.
+  with g. **Copy C header** produces `main/user_animation.h` for the firmware
+  (`idf/main/` in the repository); rebuild the firmware and the `anim` effect
+  plays your artwork on the car.
 
-Every effect in the viewport is the firmware's own C++ code (built with the
-same 16 x 8 smoke grid as the ESP32), so tuning done in the Studio carries
-over: the Effect tab prints the matching serial commands. The output is a
+Every effect in the viewport is the C++ core (built with the same 16 x 8 smoke
+grid as the ESP32), which the firmware's C core matches bit for bit, so tuning
+done in the Studio carries over: the Effect tab prints the matching serial
+commands. The output is a
 standalone page; `--bare` leaves out the document skeleton for hosts that add
 their own.
 
@@ -74,13 +76,19 @@ does without the braking capture.
 ```sh
 cd host && mkdir -p build && cd build
 cmake -G Ninja -DGM_PANEL_H=56 .. && ninja
-ninja firmware_hostcheck                         # compile-check src/ against Arduino stubs
-./gmeter_tests                                   # 200+ checks on the core
-./firmware_pins_classic && ./firmware_pins_s3    # firmware pin set-up for both pin maps
+./gmeter_tests                                   # unit tests of the C++ core
 ./gmeter_sim --effect slosh --scenario corner --ascii    # terminal preview
 ./gmeter_sim --effect all --scenario drive --out frames.bin
 python3 ../../tools/make_viewer.py frames.bin -o gmeter_viewer.html   # open in a browser
 ./gmeter_sim --bench                              # per-effect cost on the host
+```
+
+The firmware's C core has its own host tests, which compare it with the C++
+core frame by frame:
+
+```sh
+cmake -S idf/host_test -B build_c56 -G Ninja -DGM_PANEL_H=56 -DGM_SMOKE_NX=16 -DGM_SMOKE_NY=8
+cmake --build build_c56 && ./build_c56/gm_c_tests     # add -DGM_SANITIZE=ON for ASan/UBSan
 ```
 
 The viewer replays the recording as the glass stack (drag to shift your
@@ -96,59 +104,40 @@ frame, axis lines, a ball that follows the g-vector line, state kanji),
 
 ## Firmware
 
+The ESP32 firmware is an ESP-IDF v5 project written in C, in `idf/`
+(ESP-IDF v5.2 or newer; built and tested with v5.5.6). From an ESP-IDF shell:
+
 ```sh
-pio run -e esp32dev -t upload      # classic ESP32, 128x56 transparent panels
-pio device monitor                 # 115200 baud, type `help`
+cd idf
+idf.py set-target esp32            # or esp32s3
+idf.py menuconfig                  # optional: Gmeter > edition, panel type, SPI clock, ...
+idf.py build
+idf.py -p /dev/ttyUSB0 flash monitor   # 115200 baud, type `help`
 ```
 
-Environments: `esp32dev` (default), `esp32-s3`, `esp32dev-128x64` (generic
-SSD1309 modules). Each has a HUD edition, `esp32dev-hud`, `esp32-s3-hud` and
-`esp32dev-128x64-hud`, built with `-DGM_FIXED_EFFECT=hud`: it always shows
-the `hud` effect and nothing else, for a unit that should run the NERV-style
-screen continuously. Pins live in `src/board_config.hpp`; panel geometry and
-model are `-D` flags in `platformio.ini`. On the ESP32-S3-DevKitC-1 the serial
-CLI is on the connector labelled UART; the native USB connector only flashes.
+`idf/README.md` has the details: the six release variants (ESP32 and ESP32-S3,
+WiseChip 128x56 or generic SSD1309 128x64, standard or HUD edition, combined
+from `sdkconfig.defaults` and the overlays in `idf/configs/`), the menuconfig
+options, flash addresses, custom artwork and the calibration steps. The HUD
+edition always shows the `hud` effect and nothing else, for a unit that should
+run the NERV-style screen continuously. Pins live in `idf/main/board_config.h`.
+On the ESP32-S3-DevKitC-1 the serial CLI is on the connector labelled UART.
 
-The platform is pinned to `espressif32 @ 7.1.3` (Arduino-ESP32 2.0.17, GCC
-8.4.0). All six environments build with it without warnings; the classic
-ESP32 build uses about 89 KB of the 124 KB static DRAM segment and 372 KB of
-flash. Both chips boot in Espressif's QEMU and run every effect with no IMU
-attached (`tools/qemu_boot_check.py` repeats that check), and the HUD builds
-boot straight into `hud` and stay there (the same tool with
-`--script tools/qemu_hud_check.txt`). About 1 emulated ESP32 boot in 10 stops
-in the framework's own start-up code before Gmeter runs (the second core reads
-a table from flash while the first has the flash cache off), then restarts and
-runs normally; it shows up with older images too and looks like a timing effect
-of the emulator. Panel and IMU behaviour still has to be confirmed on real
-hardware.
+All six variants build without compiler warnings; the classic ESP32 build uses
+about 81 KB of its 181 KB of static RAM and 326 KB of the 2 MB app partition.
+Both chips boot in Espressif's QEMU and run every effect with no IMU attached
+(`tools/qemu_boot_check.py --script tools/qemu_std_check.txt`), and the HUD
+builds boot straight into `hud` and stay there (`tools/qemu_hud_check.txt`).
+The C core in `idf/components/gmeter_core` is a statement-by-statement port of
+the C++ core in `lib/gmeter_core`, which Gmeter Studio and the simulator use;
+`idf/host_test` runs both on the same input and checks that every frame and
+number is bit-identical (153 tests, about 19 million checks per panel size).
+Panel and IMU behaviour still has to be confirmed on real hardware.
 
-First power-up with an IMU connected:
-
-1. Tell the firmware which sensor axis points at the windshield:
-   `cal fwd <+x|-x|+y|-y|+z|-z>`. The default `+z` only fits a board standing
-   upright with its Z axis forward. A GY-521 lying flat has +Z up, so use the
-   in-plane axis that faces forward (for example `cal fwd +y`).
-2. Park on level ground and type `cal rest` (hold still for 2 s). If the
-   forward hint points up or down, the rest capture still sets "up" but
-   reports that forward is unknown; step 3 then is required.
-3. Recommended: drive straight, type `cal brake` and brake firmly for 1.5 s.
-   This measures forward directly and removes any yaw in the mount. Run it
-   again after any new `cal rest`.
-4. `save`.
-
-`save` stores the mode, contrast ramp, readout, invert, forward axis,
-auto-zero, filter, auto-cycle, panel refresh interval and the calibration.
-`set` changes to effect parameters are RAM-only and revert on reboot; to keep
-tuned values, change the effect's defaults in its source (or export them from
-the Studio's serial commands and apply after boot).
-
-If the IMU drops out (loose connector, brownout), the display relaxes to 0 g
-and the firmware retries every second; `status` shows the state. An IMU that
-appears after boot is picked up automatically.
-
-Without an IMU the firmware boots into a demo drive so the panels can be
-checked on the bench. `tools/serial_gforce.py /dev/ttyUSB0 --scenario slalom`
-pushes synthetic g over USB; `src serial` + `g 0.3 0 -0.5` does it by hand.
+`tools/make_release.py` builds the three variants of an edition from the
+committed source and assembles the supplier package (`--edition hud` for the
+HUD edition); the supplier guides are `docs/SUPPLIER.md` and
+`docs/SUPPLIER_HUD.md`.
 
 Serial commands worth knowing: `mode slosh`, `get`, `set damping 0.3`,
 `contrast all 128`, `ramp 60 255`, `test 3` (then `test off`), `status`, `cycle 20`,
@@ -156,7 +145,8 @@ Serial commands worth knowing: `mode slosh`, `get`, `set damping 0.3`,
 `reinit` (hard-reset the panels) and `reinit 10` (soft refresh every 10 min).
 The CLI echoes what you type, accepts backspace and any line ending.
 The BOOT button steps through effects; holding it two seconds starts a rest
-calibration.
+calibration. `tools/serial_gforce.py /dev/ttyUSB0 --scenario slalom` pushes
+synthetic g over USB; `src serial` + `g 0.3 0 -0.5` does it by hand.
 
 ## Conventions in one paragraph
 
@@ -166,8 +156,9 @@ the right-handed sensor. The accelerometer
 measures *proper acceleration*: at rest (0, +1, 0) g. Everything simulated
 feels the body force **minus** that vector, so braking throws the liquid, the
 ball and the smoke toward the windshield (higher layer index) and a right turn
-throws them left. `gm::GForce` in `lib/gmeter_core/src/gmeter/gforce.hpp` is
-the single source of truth; `docs/ARCHITECTURE.md` has the derivation.
+throws them left. `gm_gforce_t` in `idf/components/gmeter_core/include/gm_gforce.h`
+(and `gm::GForce` in the C++ core) define it; `docs/ARCHITECTURE.md` has the
+derivation.
 
 ## Status
 
@@ -182,14 +173,15 @@ the single source of truth; `docs/ARCHITECTURE.md` has the derivation.
   engine and an IMU dropout that froze the display) are fixed, with
   regression tests where they are testable on a PC. A calibration saved by
   firmware before that fix is corrected automatically on boot.
-- Firmware: compiles against host stubs; the ESP32 toolchain could not be run
-  in the environment where this was written, so the first on-target build and
-  the panel init sequence still need a real board. Register values, timing
+- Firmware: ESP-IDF v5 in C; builds for every variant, runs in Espressif's
+  emulator, and its core matches the C++ core bit for bit. The panel init
+  sequence and the sensor still need a real board. Register values, timing
   and init sequences come from the SSD1309, WiseChip and MPU-6050 datasheets
   (see `docs/HARDWARE.md` for sources and the open questions list).
 - Next steps are listed at the end of `docs/ARCHITECTURE.md`.
 
 MIT licensed, except the Japanese glyph bitmaps in
+`idf/components/gmeter_core/src/gm_jp_glyphs.c` and
 `lib/gmeter_core/src/gmeter/jp_glyphs.cpp`, which are derived from Noto Serif JP
 and Noto Sans JP under the SIL Open Font License 1.1 (see
 `docs/THIRD_PARTY.md`).

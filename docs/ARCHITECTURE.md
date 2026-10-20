@@ -9,6 +9,13 @@
                        auto re-zero (opt.)
 ```
 
+The core exists twice, with the same behaviour bit for bit: in C for the
+firmware (`idf/components/gmeter_core`, names such as `gm_estimator_t`,
+`gm_engine_t`, `gm_frame_t`, `gm_effect_t`) and in C++ for the PC tools
+(`lib/gmeter_core`, `GForceEstimator`, `Engine`, `VoxelFrame`, `Effect`, the
+names used below). `idf/host_test` runs both on the same input and compares
+every frame and number, so a change to one must be made to the other.
+
 The same chain runs in the browser: `host/web/wasm_api.cpp` exposes the
 engine, effects, scenarios, sensor model and animation loader as a small C API,
 `tools/build_studio.py` compiles it to WebAssembly (Zig's clang with libc++
@@ -26,8 +33,9 @@ calibration code are exercised exactly as on the car.
 layer 0 is the panel nearest the driver, layer 7 nearest the windshield. Like
 screen coordinates with depth, this frame is left-handed: right = forward x up
 (up x forward points left). The accelerometer is right-handed, so the
-sensor-to-car matrix has determinant -1; `storage::load` converts calibrations
-saved by firmware that got this wrong.
+sensor-to-car matrix has determinant -1; the firmware's settings loader
+(`idf/main/storage.c`) converts calibrations saved by firmware that got this
+wrong.
 
 **Voxel frame**: x = column 0..127 (left to right), y = row 0..H-1 (top to
 bottom, screen convention), z = layer 0..7. `VoxelFrame::worldToVoxel` maps a
@@ -80,6 +88,8 @@ dithered `crossfade` used for mode transitions.
 
 `Effect` has `update(ctx)` (physics; may substep) and `render(frame)`;
 `activate()/deactivate()` let heavy effects own their buffers only while shown.
+In C an effect is a struct starting with `gm_effect_t` whose vtable holds the
+same functions.
 Every tunable is registered in a `ParamTable` so the serial CLI (`get`, `set`),
 the simulator (`--param`) and a future web page can tune it by name.
 `docs/EFFECTS.md` describes each effect and its parameters.
@@ -92,34 +102,37 @@ at the front layer's bottom right: `DEMO`, `SERIAL`, or `NO SENSOR` when the
 IMU stops answering. Last of all it moves the whole frame by the effect's
 `burnInOffset()` (the HUD's anti-burn-in orbit; zero for the other effects).
 
-A single-effect build (`-DGM_FIXED_EFFECT=hud`, the `*-hud` environments)
-boots into that effect whatever was saved, turns auto-cycle off, and refuses
+The HUD edition (menuconfig: Gmeter > Edition, or `idf/configs/hud.defaults`)
+boots into `hud` whatever was saved, turns auto-cycle off, and refuses
 `mode`, `cycle` and `anim`; a short press of the BOOT button only prints a
-note.
+note, and `save` leaves the effect and auto-cycle stored by the standard
+edition alone.
 
 ## Firmware tasks
 
 | Task | Core | Rate | Job |
 | --- | --- | --- | --- |
-| `imuTask` | 0 | 200 Hz | read sensor, estimator update, publish `GForce`; calibration captures |
-| `renderTask` | 1 | 60 fps target | `engine.step()`, copy frame into a free buffer |
-| `displayTask` | 0 | on frame ready | SPI transfer (~6 ms blocking), periodic re-init, test patterns |
-| `loop()` | 1 | idle | serial CLI, mode button, housekeeping |
+| `imu` | 0 | 200 Hz | read sensor, estimator update, publish the g-force; calibration captures |
+| `render` | 1 | 60 fps target | `gm_engine_step`, copy the frame into a free buffer |
+| `display` | 0 | on frame ready | SPI transfer (~6 ms, polled), periodic re-init, test patterns |
+| main task (`app_main`) | 1 | idle | serial CLI, mode button, housekeeping |
+
+The tasks are in `idf/main/app_main.c`.
 
 Frames are triple-buffered: the renderer writes to the buffer that is neither
 displaying nor queued; if the display falls behind, the newest frame wins and
 `status` counts the drop. The g vector, source and buffer indices are shared
-under a spinlock (`gMux`). The Engine and its effects are guarded by a FreeRTOS
+under a spinlock. The engine and its effects are guarded by a FreeRTOS
 mutex: `renderTask` holds it while stepping, and the CLI and mode button hold
 it while they change modes or parameters, so a mode switch can never race a
 step (smoke allocates and frees its buffers on activate/deactivate). The
 estimator has its own mutex between `imuTask` and the CLI. Floats are never
 touched in an ISR.
 
-Memory (128x56x8): about 96 KB of static RAM. Three engine frames, three
-transfer buffers and two display-driver scratch frames (clear and test
-pattern) at 7 KB each; slosh ~11.5 KB and particles ~23 KB as static objects;
-the other effects ~4 KB together. Smoke needs 57.6 KB of heap only while active
+Memory (128x56x8, classic ESP32): about 81 KB of static RAM, mostly the
+engine's three frames at 7 KB each, slosh ~11.5 KB and particles ~23 KB; the
+three transfer buffers and the display driver's scratch frames come from
+DMA-capable heap at start-up. Smoke needs 57.6 KB of heap only while active
 (16x8x8 grid on classic ESP32). On an S3, 32x8x8 (~109 KB) is the next grid
 that tiles a 128x56 panel; it doubles the solver cost, so measure the step time
 first. At 128x64 the frames are 8 KB each and particles ~25 KB.
@@ -146,19 +159,23 @@ ESP32; measure on target with `status` (step and SPI microseconds).
 | `GM_LAYERS` | 1..8 in the firmware (one chip-select pin per layer) | `-DGM_LAYERS=` |
 | `GM_LAYER_PITCH_PX` | panel spacing in mm / 0.274 | `-DGM_LAYER_PITCH_PX=` |
 | `GM_SMOKE_NX`, `GM_SMOKE_NY` | NX divides the width, NY the height; default 4x4-px cells, ESP32 builds use 16 x 8 | `-DGM_SMOKE_NX=` / `-DGM_SMOKE_NY=` |
-| `GM_PANEL_MODEL`, `GM_SPI_HZ`, `GM_TARGET_FPS`, `GM_PANEL_FLIP_MASK`, `GM_PANELS_REVERSED` | firmware only | n/a |
+| Panel model, SPI clock, frame rate, flip mask, panel order | firmware only | n/a |
 
-Set the firmware values in `platformio.ini`. `board_config.hpp` static-asserts
-the width and layer limits. Tests pass at 128x56 and 128x64.
+In the firmware these come from menuconfig (Gmeter): `CONFIG_GMETER_PANEL_W`
+and `CONFIG_GMETER_PANEL_H` set the geometry through `gm_config.h`, and the
+smoke grid is fixed at 16 x 8 in `idf/components/gmeter_core/CMakeLists.txt`.
+`idf/main/board_config.h` checks the width and layer limits. Tests pass at
+128x56 and 128x64.
 
 ## Next steps
 
 1. Panel bring-up on real hardware (`test 0`..`test 7` to map chip selects;
    `ramp` to balance brightness through the stack). The firmware already
-   builds with the real ESP32 toolchain and boots in Espressif's QEMU.
+   builds with ESP-IDF and boots in Espressif's QEMU.
 2. Measure real transmittance and panel spacing; set `GM_LAYER_PITCH_PX` and
    the default contrast ramp accordingly.
-3. Move the SPI transfer to the ESP-IDF DMA queue to free core 0.
+3. Queue the SPI transfers (interrupt-driven) instead of polling, to free
+   core 0.
 4. A Wi-Fi tuning page (the `ParamTable` already exposes everything by name).
 5. More effects: a wireframe box that shears with g, a "needle" through the
    depth. Authored animations already go through Gmeter Studio.
