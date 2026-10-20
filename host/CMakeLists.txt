@@ -37,8 +37,8 @@ target_compile_options(gmeter_core PRIVATE -Wall -Wextra -Wshadow -Wdouble-promo
 # prints ASCII previews / timing benchmarks.
 add_executable(gmeter_sim sim_main.cpp)
 target_link_libraries(gmeter_sim PRIVATE gmeter_core)
-# Picks up src/user_animation.hpp (exported from Gmeter Studio) when present.
-target_include_directories(gmeter_sim PRIVATE ${GM_ROOT}/src)
+# Picks up idf/main/user_animation.h (exported from Gmeter Studio) when present.
+target_include_directories(gmeter_sim PRIVATE ${GM_ROOT}/idf/main)
 target_compile_options(gmeter_sim PRIVATE -Wall -Wextra)
 
 # Unit tests (self-contained harness, no external framework).

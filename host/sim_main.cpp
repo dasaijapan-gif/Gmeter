@@ -21,8 +21,9 @@
 
 #include "gmeter/gmeter.hpp"
 
-#if __has_include("user_animation.hpp")
-#include "user_animation.hpp"
+// Artwork exported from Gmeter Studio into the firmware (idf/main/user_animation.h).
+#if __has_include("user_animation.h")
+#include "user_animation.h"
 #define GM_USER_ANIMATION kUserAnimation
 #else
 #define GM_USER_ANIMATION gm::demoAnimation()
