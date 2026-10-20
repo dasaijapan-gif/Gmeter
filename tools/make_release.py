@@ -85,19 +85,19 @@ def sha256(path):
     return h.hexdigest()
 
 
-def memory_use(idf, project, build):
-    """Static DRAM and flash use from `idf.py size`, as text for BUILD_INFO."""
+def memory_use(build):
+    """Static RAM and flash use (from ESP-IDF's size report), as text for BUILD_INFO."""
     try:
-        out = subprocess.run([idf, "-C", project, "-B", build, "size", "--format", "json2"], stdout=subprocess.PIPE,
-                             stderr=subprocess.DEVNULL, text=True).stdout
-        data = json.loads(out[out.index("{"):])
+        out = subprocess.run([sys.executable, "-m", "esp_idf_size", "--format", "json2",
+                              os.path.join(build, "gmeter.map")], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             text=True).stdout
         parts = []
-        for name, mem in sorted(data.get("memory_types", {}).items()):
-            if isinstance(mem, dict) and "used" in mem:
-                total = mem.get("size") or 0
-                parts.append("%s %d%s" % (name, mem["used"], "/%d" % total if total else ""))
-        return ", ".join(parts) or "?"
-    except (OSError, ValueError, KeyError):
+        for mem in json.loads(out)["layout"]:
+            if mem["name"] in ("DRAM", "DIRAM", "IRAM", "Flash Code", "Flash Data") and mem["used"]:
+                parts.append("%s %d%s" % (mem["name"], mem["used"], "/%d" % mem["total"] if mem["total"] else ""))
+        app = os.path.getsize(os.path.join(build, "gmeter.bin"))
+        return ", ".join(parts + ["gmeter.bin %d" % app])
+    except (OSError, ValueError, KeyError, TypeError):
         return "?"
 
 
@@ -215,7 +215,7 @@ def main():
                 f.write("# partition-table.bin is unchanged from the version on the board; compare\n")
                 f.write("# SHA256SUMS.txt):\n")
                 f.write("esptool --chip %s --baud 460800 write-flash %s %s\n" % (chip, app_off, app_name))
-            info.append("%-20s %-8s %s" % (label, chip, memory_use(a.idf, project, build)))
+            info.append("%-20s %-8s %s" % (label, chip, memory_use(build)))
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
