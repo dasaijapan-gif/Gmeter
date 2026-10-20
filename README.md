@@ -29,7 +29,7 @@ the car.
 | `host/` | Native build: unit tests, the scenario-driven simulator that records frames, the browser viewer, Arduino stub headers for compile-checking the firmware on a PC. |
 | `host/web/` | **Gmeter Studio**: a single-page tool with a 3D model of the panel stack, a pixel-art animation editor and a drivable g-force simulator, running the core compiled to WebAssembly. |
 | `tools/` | `build_studio.py` (build Gmeter Studio), `make_viewer.py` (bundle a recording into the replay viewer), `img2sprite.py` (PNG/GIF to sprite header), `serial_gforce.py` (drive the display from a laptop), `qemu_boot_check.py` (boot a firmware image in Espressif's emulator), `make_release.py` (build every board and assemble the supplier package). |
-| `docs/` | [SUPPLIER.md](docs/SUPPLIER.md) flashing, wiring and bring-up for whoever builds the hardware, [CODE_LAYOUT.md](docs/CODE_LAYOUT.md) what every file does, [HARDWARE.md](docs/HARDWARE.md) wiring and panel facts, [ARCHITECTURE.md](docs/ARCHITECTURE.md) data flow and conventions, [EFFECTS.md](docs/EFFECTS.md) physics and tuning of each effect, [THIRD_PARTY.md](docs/THIRD_PARTY.md) font licence for the Japanese glyphs. |
+| `docs/` | [SUPPLIER.md](docs/SUPPLIER.md) flashing, wiring and bring-up for whoever builds the hardware ([SUPPLIER_HUD.md](docs/SUPPLIER_HUD.md) for the HUD edition), [CODE_LAYOUT.md](docs/CODE_LAYOUT.md) what every file does, [HARDWARE.md](docs/HARDWARE.md) wiring and panel facts, [ARCHITECTURE.md](docs/ARCHITECTURE.md) data flow and conventions, [EFFECTS.md](docs/EFFECTS.md) physics and tuning of each effect, [THIRD_PARTY.md](docs/THIRD_PARTY.md) font licence for the Japanese glyphs. |
 
 ## Gmeter Studio: design animations and watch them in 3D
 
@@ -102,16 +102,20 @@ pio device monitor                 # 115200 baud, type `help`
 ```
 
 Environments: `esp32dev` (default), `esp32-s3`, `esp32dev-128x64` (generic
-SSD1309 modules). Pins live in `src/board_config.hpp`; panel geometry and
+SSD1309 modules). Each has a HUD edition, `esp32dev-hud`, `esp32-s3-hud` and
+`esp32dev-128x64-hud`, built with `-DGM_FIXED_EFFECT=hud`: it always shows
+the `hud` effect and nothing else, for a unit that should run the NERV-style
+screen continuously. Pins live in `src/board_config.hpp`; panel geometry and
 model are `-D` flags in `platformio.ini`. On the ESP32-S3-DevKitC-1 the serial
 CLI is on the connector labelled UART; the native USB connector only flashes.
 
 The platform is pinned to `espressif32 @ 7.1.3` (Arduino-ESP32 2.0.17, GCC
-8.4.0). All three environments build with it without warnings; the classic
-ESP32 build uses about 89 KB of the 124 KB static DRAM segment and 370 KB of
+8.4.0). All six environments build with it without warnings; the classic
+ESP32 build uses about 89 KB of the 124 KB static DRAM segment and 372 KB of
 flash. Both chips boot in Espressif's QEMU and run every effect with no IMU
-attached (`tools/qemu_boot_check.py` repeats that check). Panel and IMU
-behaviour still has to be confirmed on real hardware.
+attached, and the HUD builds boot straight into `hud` and stay there
+(`tools/qemu_boot_check.py` repeats that check). Panel and IMU behaviour still
+has to be confirmed on real hardware.
 
 First power-up with an IMU connected:
 

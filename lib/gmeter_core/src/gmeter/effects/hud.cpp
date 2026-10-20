@@ -9,6 +9,10 @@
 namespace gm {
 
 namespace {
+// Anti burn-in orbit: right, down, left, up around a 2 x 2 pixel square.
+constexpr int kOrbitX[4] = {0, 1, 1, 0};
+constexpr int kOrbitY[4] = {0, 0, 1, 1};
+
 // Rectangle with 45-degree chamfered corners.
 void chamferRect(VoxelFrame& f, int z, int x0, int y0, int x1, int y1, int c) {
   f.hline(z, x0 + c, x1 - c, y0);
@@ -39,6 +43,7 @@ HudEffect::HudEffect() {
   params_.add("enter_g", &enterG_, 0.05f, 1.5f, "g that changes the state word");
   params_.add("hold_s", &holdS_, 0.0f, 3.0f, "minimum seconds per state word");
   params_.add("bump_g", &bumpG_, 0.05f, 2.0f, "vertical spike that shows 衝撃");
+  params_.add("orbit_min", &orbitMin_, 0.0f, 30.0f, "minutes between 1-px shifts against burn-in (0 = off)");
   reset();
 }
 
@@ -53,7 +58,12 @@ void HudEffect::reset() {
   danger_ = false;
   trailHead_ = trailCount_ = 0;
   trailTimer_ = 0.0f;
+  orbitTimer_ = 0.0f;
+  orbitStep_ = 0;
 }
+
+int HudEffect::orbitX() const { return kOrbitX[orbitStep_ & 3]; }
+int HudEffect::orbitY() const { return kOrbitY[orbitStep_ & 3]; }
 
 Vec3 HudEffect::travel() const {
   const Vec3 he = VoxelFrame::halfExtent();
@@ -74,7 +84,19 @@ const char* HudEffect::titleText() const {
 
 void HudEffect::update(const EffectContext& ctx) {
   g_ = ctx.g;
+  // Blink clock: wrapped so it keeps full float precision after days on.
   time_ += ctx.dt;
+  if (time_ >= 60.0f) time_ -= 60.0f;
+  if (orbitMin_ > 0.0f) {
+    orbitTimer_ += ctx.dt;
+    if (orbitTimer_ >= orbitMin_ * 60.0f) {
+      orbitTimer_ = 0.0f;
+      orbitStep_ = (orbitStep_ + 1) & 3;
+    }
+  } else {
+    orbitTimer_ = 0.0f;
+    orbitStep_ = 0;
+  }
   titleAge_ += ctx.dt;
   bumpAge_ += ctx.dt;
   tracker_.enterG = enterG_;
@@ -111,7 +133,9 @@ void HudEffect::update(const EffectContext& ctx) {
 
 void HudEffect::drawFrame(VoxelFrame& f, float horiz) const {
   const int W = kW, H = kH;
-  chamferRect(f, 0, 0, 0, W - 1, H - 1, 6);
+  // One pixel of margin on the right and bottom keeps the border on the glass
+  // while the burn-in orbit moves everything right or down by a pixel.
+  chamferRect(f, 0, 0, 0, W - 2, H - 2, 6);
   // Corner brackets just inside the frame.
   f.hline(0, 3, 9, 3);   f.vline(0, 3, 3, 7);
   f.hline(0, W - 10, W - 4, 3);   f.vline(0, W - 4, 3, 7);
@@ -244,6 +268,7 @@ void HudEffect::render(VoxelFrame& f) {
     drawFrame(f, horiz);
     if (bumpAge_ < 0.3f) chamferRect(f, 1, 2, 2, kW - 3, kH - 3, 6);  // impact flash
   }
+  if (orbitX() || orbitY()) f.shift(orbitX(), orbitY());
 }
 
 }  // namespace gm

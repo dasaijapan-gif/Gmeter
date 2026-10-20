@@ -39,6 +39,18 @@
 
 using namespace gm;
 
+// Single-effect build (the HUD edition): -DGM_FIXED_EFFECT=hud in platformio.ini.
+// The firmware then always shows that effect: it ignores the saved mode and
+// auto-cycle, and the BOOT button and the mode/cycle/anim commands no longer
+// switch away from it.
+#ifdef GM_FIXED_EFFECT
+#define GM_STR_(x) #x
+#define GM_STR(x) GM_STR_(x)
+static const char* const kFixedEffect = GM_STR(GM_FIXED_EFFECT);
+#else
+static const char* const kFixedEffect = nullptr;
+#endif
+
 namespace {
 
 // ---- hardware & core objects ------------------------------------------------------------
@@ -126,6 +138,7 @@ Vec3 serialDynamicG;         // injected over serial (lat, vert, lon)
 enum class Source : uint8_t { Imu, Serial, Demo };
 Source source = Source::Demo;
 bool demoBecauseNoImu = false;  // switch to the IMU automatically when it shows up
+bool imuLive = false;           // the IMU is delivering samples (false after it is lost)
 const Scenario* demoScenario = &Scenario::preset(Scenario::presetCount() - 1);  // "drive"
 
 enum class CalState : uint8_t { Idle, Rest, Brake, Done, Failed };
@@ -153,14 +166,18 @@ uint32_t stepUs = 0, transferUs = 0, droppedFrames = 0;
 int64_t bootUs = 0;
 
 // ---- helpers -------------------------------------------------------------------------------------------
-GForce currentG(int64_t usSinceBoot) {
+// `label` (optional) receives the tag shown on the panels while the g is not
+// live sensor data: DEMO, SERIAL or NO SENSOR; nullptr when it is live.
+GForce currentG(int64_t usSinceBoot, const char** label = nullptr) {
   GForce g;
   portENTER_CRITICAL(&gMux);
   const Source src = source;
+  const bool live = imuLive;
   const GForce fromImu = imuG;
   const Vec3 injected = serialDynamicG;
   const Scenario* sc = demoScenario;
   portEXIT_CRITICAL(&gMux);
+  if (label) *label = src == Source::Imu ? (live ? nullptr : "NO SENSOR") : (src == Source::Serial ? "SERIAL" : "DEMO");
   switch (src) {
     case Source::Imu: g = fromImu; break;
     case Source::Serial: g.proper = GForce::kRestProper() + injected; break;
@@ -190,8 +207,9 @@ void applySettings() {
   }
 }
 
-void publishImu(const GForce& g, const Vec3& raw, float temp) {
+void publishImu(const GForce& g, const Vec3& raw, float temp, bool live = true) {
   portENTER_CRITICAL(&gMux);
+  imuLive = live;
   imuG = g;
   imuRaw = raw;
   imuTempC = temp;
@@ -209,7 +227,7 @@ void imuTask(void*) {
     if (!imu.present()) {
       if (wasPresent) {
         // Lost: show a neutral g instead of freezing on the last value.
-        publishImu(GForce{}, Vec3{}, 0.0f);
+        publishImu(GForce{}, Vec3{}, 0.0f, false);
         imuEventText = "imu: lost contact; showing 0 g and retrying every second";
         imuEvent = true;
         wasPresent = false;
@@ -282,7 +300,8 @@ void renderTask(void*) {
     const float dt = static_cast<float>(now - lastUs) * 1e-6f;
     lastUs = now;
 
-    const GForce g = currentG(now - bootUs);
+    const char* label = nullptr;
+    const GForce g = currentG(now - bootUs, &label);
 
     // Pick a buffer that is neither being displayed nor already queued.
     portENTER_CRITICAL(&gMux);
@@ -291,6 +310,7 @@ void renderTask(void*) {
     portEXIT_CRITICAL(&gMux);
     {
       Lock l(engineMtx);
+      engine.setStatusLabel(label);
       engine.step(g, dt);
       memcpy(frames[target].data(), engine.frame().data(), VoxelFrame::frameBytes());
     }
@@ -534,6 +554,7 @@ class App : public AppControl {
     return false;
   }
   void reboot() override { ESP.restart(); }
+  const char* fixedEffect() const override { return kFixedEffect; }
 };
 
 App app;
@@ -553,7 +574,9 @@ void pollButton() {
     if (why) Serial.printf("button: cannot start rest calibration: %s\n", why);
     else Serial.println("button: rest calibration started (hold still 2 s)");
   }
-  if (!down && wasDown && !longFired && now - downSince > 40) {
+  if (!down && wasDown && !longFired && now - downSince > 40 && kFixedEffect) {
+    Serial.printf("button: this firmware always shows %s\n", kFixedEffect);
+  } else if (!down && wasDown && !longFired && now - downSince > 40) {
     const char* name;
     {
       Lock l(engineMtx);
@@ -609,12 +632,22 @@ void setup() {
   engine.addEffect(&hudEffect);
   engine.addEffect(&atFieldEffect);
   engine.addEffect(&syncEffect);
-  engine.setEffect(settings.mode < engine.effectCount() ? settings.mode : 0, false);
+  int startEffect = settings.mode < engine.effectCount() ? settings.mode : 0;
+  if (kFixedEffect) {
+    const int i = engine.findEffect(kFixedEffect);
+    if (i >= 0) startEffect = i;
+    else Serial.printf("error: fixed effect '%s' does not exist; showing '%s'\n", kFixedEffect, engine.effect(startEffect)->name());
+    settings.autoCycleS = 0.0f;
+    Serial.printf("single-effect build: always shows %s\n", engine.effect(startEffect)->name());
+  }
+  settings.mode = static_cast<uint8_t>(startEffect);
+  engine.setEffect(startEffect, false);
   applySettings();
 
   if (imu.begin(board::kI2cSda, board::kI2cScl, board::kImuAddress)) {
     Serial.printf("imu: MPU-6050 found (WHO_AM_I 0x%02X%s)\n", imu.whoAmI(), imu.clone() ? ", clone" : "");
     source = Source::Imu;
+    imuLive = true;
     if (!calibration.valid)
       Serial.println("imu: not calibrated. Tell it which sensor axis faces the windshield (cal fwd +y, for example), "
                      "park level, then: cal rest, then save");

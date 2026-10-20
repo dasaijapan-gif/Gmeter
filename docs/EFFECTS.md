@@ -215,6 +215,14 @@ more characters.
 | `title`, `title_z` | 1, 2 | state kanji on/off, which panel |
 | `axes`, `frame` | 1, 1 | axis lines and rulers; frame, readouts and status |
 | `enter_g`, `hold_s`, `bump_g` | 0.25, 0.4 s, 0.3 | state word selection |
+| `orbit_min` | 2 min | minutes per one-pixel burn-in step (0 = off) |
+
+The HUD is meant to stay on for hours (the `-hud` firmware builds show nothing
+else), so it guards the OLEDs against burn-in: every `orbit_min` minutes the
+whole picture moves one pixel around a 2 x 2 square (right, down, left, up).
+The frame is drawn one pixel inside the glass on the right and bottom, so it
+stays fully visible at every step. Its blink clock wraps every minute, so the
+blink timing stays exact after days of uptime.
 
 ### atfield (`AtFieldEffect`)
 

@@ -8,7 +8,10 @@ firmware at their offsets), or take a release *_full.bin, and pad the file to
 4 MB for the ESP32 (--fill-flash-size 4MB or truncate -s 4M). The ESP32-S3
 emulator only accepts a 16 MB file: pad S3 images to 16 MB; the release's 4 MB
 header is fine. No IMU or panels are emulated:
-the firmware runs its demo drive and the SPI writes go nowhere.
+the firmware runs its demo drive and the SPI writes go nowhere. The ESP32-S3
+emulator does not keep NVS writes across a reboot (a bare Preferences sketch
+behaves the same), so check `save` and restore on the ESP32 machine or on a
+real S3 board.
 
   python3 tools/qemu_boot_check.py --qemu /path/qemu-system-xtensa \\
       --image esp32dev_flash.bin --machine esp32 --script commands.txt --log boot.log

@@ -6,13 +6,16 @@ match the source that ships with them (uncommitted changes are not included).
 
   python3 tools/make_release.py                      # dist/gmeter_supplier + .zip
   python3 tools/make_release.py --studio gmeter_studio.html --pio ~/.platformio/penv/bin/pio
+  python3 tools/make_release.py --envs esp32dev-hud esp32-s3-hud esp32dev-128x64-hud \
+      --guide docs/SUPPLIER_HUD.md --out dist/gmeter_hud     # HUD edition
 
 Layout of the result:
 
-  README_FIRST.md          supplier guide (docs/SUPPLIER.md)
+  README_FIRST.md          supplier guide (--guide, default docs/SUPPLIER.md)
   BUILD_INFO.txt           commit, toolchain, memory use
   firmware/<chip>_<W>x<H>/ <name>_full.bin (flash at 0x0), the separate parts,
-                           flash_args.txt
+                           flash_args.txt; single-effect builds (GM_FIXED_EFFECT)
+                           add the effect name, e.g. esp32_128x56_hud
   firmware/SHA256SUMS.txt
   source/gmeter/           the PlatformIO project (whole repository)
   docs/                    documentation and licences
@@ -27,6 +30,7 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -79,10 +83,14 @@ def main():
     ap.add_argument("--pio", default="pio", help="PlatformIO command")
     ap.add_argument("--esptool", default=None, help="esptool command (default: python -m esptool)")
     ap.add_argument("--studio", help="built Gmeter Studio page to include")
+    ap.add_argument("--guide", default="docs/SUPPLIER.md", help="guide copied to README_FIRST.md (repository path)")
     ap.add_argument("--no-zip", action="store_true")
     a = ap.parse_args()
 
     out = os.path.abspath(a.out)
+    guide = posixpath.normpath(a.guide.replace("\\", "/"))
+    if subprocess.run(["git", "cat-file", "-e", "HEAD:" + guide], cwd=ROOT).returncode:
+        raise SystemExit("guide %s is not in the committed source (HEAD)" % a.guide)
     if os.path.exists(out):
         shutil.rmtree(out)
     os.makedirs(out)
@@ -129,6 +137,9 @@ def main():
         chip = chip_of(meta)
         w, h = define(meta, "GM_PANEL_W", "128"), define(meta, "GM_PANEL_H", "64")
         label = "%s_%sx%s" % (chip, w, h)
+        fixed = define(meta, "GM_FIXED_EFFECT")
+        if fixed:
+            label += "_" + fixed
         dest = os.path.join(fw_root, label)
         os.makedirs(dest)
         parts = []
@@ -160,7 +171,7 @@ def main():
             f.write("esptool.py --chip %s --baud 460800 write_flash %s firmware.bin\n" % (
                 chip, meta["extra"]["application_offset"]))
         u = usage.get(env, {})
-        info.append("%-16s %-16s chip %-8s RAM %s  Flash %s" % (
+        info.append("%-20s %-20s chip %-8s RAM %s  Flash %s" % (
             env, label, chip,
             "%d/%d" % u["RAM"] if "RAM" in u else "?", "%d/%d" % u["Flash"] if "Flash" in u else "?"))
     with open(os.path.join(fw_root, "SHA256SUMS.txt"), "w") as f:
@@ -180,7 +191,7 @@ def main():
     for name in sorted(os.listdir(os.path.join(project, "docs"))):
         shutil.copy(os.path.join(project, "docs", name), docs)
     shutil.copy(os.path.join(project, "LICENSE"), docs)
-    shutil.copy(os.path.join(project, "docs", "SUPPLIER.md"), os.path.join(out, "README_FIRST.md"))
+    shutil.copy(os.path.join(project, guide), os.path.join(out, "README_FIRST.md"))
     if a.studio:
         os.makedirs(os.path.join(out, "studio"))
         shutil.copy(a.studio, os.path.join(out, "studio", "gmeter_studio.html"))
@@ -204,6 +215,7 @@ def main():
     with open(os.path.join(out, "BUILD_INFO.txt"), "w") as f:
         f.write("Gmeter firmware package\n")
         f.write("commit     %s\n" % commit)
+        f.write("guide      %s\n" % guide)
         f.write("built      %s UTC\n" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M"))
         f.write("platform   see platformio.ini (pinned)\n")
         if framework:

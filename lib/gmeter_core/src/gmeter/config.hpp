@@ -32,6 +32,7 @@ constexpr int kW = GM_PANEL_W;          // columns per panel (car left -> right)
 constexpr int kH = GM_PANEL_H;          // rows per panel    (car up -> down, screen convention)
 constexpr int kD = GM_LAYERS;           // layers            (viewer -> windshield)
 constexpr int kPages = kH / 8;          // SSD130x pages per panel
+static_assert(kPages <= 8, "at most 64 rows per panel (VoxelFrame::shift packs a column into 64 bits)");
 constexpr int kBytesPerLayer = kW * kPages;
 constexpr int kBytesPerFrame = kBytesPerLayer * kD;
 constexpr float kLayerPitchPx = GM_LAYER_PITCH_PX;

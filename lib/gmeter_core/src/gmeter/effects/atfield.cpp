@@ -80,6 +80,7 @@ void AtFieldEffect::spawn(const Vec3& origin, float strength) {
 
 void AtFieldEffect::update(const EffectContext& ctx) {
   time_ += ctx.dt;
+  if (time_ >= 60.0f) time_ -= 60.0f;  // blink clock only; keeps float precision after days on
   captionAge_ += ctx.dt;
   for (Ripple& r : ripples_)
     if (r.active && (r.age += ctx.dt) > life_) r.active = false;

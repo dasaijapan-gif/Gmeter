@@ -32,6 +32,9 @@ class Engine {
   void setShowModeName(bool on) { showModeName_ = on; }
   // Draws the horizontal g readout on the front layer for every effect.
   void setReadout(bool on) { readout_ = on; }
+  // Short tag drawn bottom-right on the front layer (e.g. "DEMO" while the g
+  // is not live sensor data); nullptr or "" hides it. Keep the string alive.
+  void setStatusLabel(const char* text) { statusLabel_ = text; }
 
   // Advance by dt seconds with the given (already filtered) g and render.
   void step(const GForce& g, float dt);
@@ -53,6 +56,7 @@ class Engine {
   float sinceSwitch_ = 0.0f;
   bool showModeName_ = true;
   bool readout_ = false;
+  const char* statusLabel_ = nullptr;
   EffectContext ctx_;
   VoxelFrame out_, scratchA_, scratchB_;
 };

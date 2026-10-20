@@ -82,6 +82,10 @@ class VoxelFrame {
   static uint16_t glyph3x5(char c);
   // Clears a box through every layer (e.g. behind HUD text so it stays legible).
   void clearBox(int x0, int y0, int x1, int y1);
+  // Moves the whole frame (every layer) by dx columns and dy rows; pixels
+  // pushed past an edge are lost and the uncovered strip is cleared. Used for
+  // the HUD's anti burn-in orbit, so it works on bytes, not pixel by pixel.
+  void shift(int dx, int dy);
 
   // ---- world <-> voxel mapping ------------------------------------------------
   // World frame = car frame in pixel units, origin at the volume centre:

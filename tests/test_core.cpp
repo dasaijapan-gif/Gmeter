@@ -668,6 +668,104 @@ TEST(jp_ascii_knockout_clears_exactly_the_glyph) {
   CHECK(mismatches == 0);
 }
 
+TEST(voxel_frame_shift_moves_every_layer) {
+  VoxelFrame a;
+  a.set(0, 0, 0); a.set(10, 7, 3); a.set(kW - 1, kH - 1, kD - 1); a.set(5, 8, 1); a.set(64, 31, 2);
+  for (int dy = -9; dy <= 9; dy += 3)
+    for (int dx = -2; dx <= 2; ++dx) {
+      VoxelFrame b = a;
+      b.shift(dx, dy);
+      int bad = 0;
+      for (int z = 0; z < kD; ++z)
+        for (int y = 0; y < kH; ++y)
+          for (int x = 0; x < kW; ++x)
+            if (b.get(x, y, z) != a.get(x - dx, y - dy, z)) ++bad;
+      CHECK(bad == 0);
+    }
+  VoxelFrame c = a;
+  c.shift(kW, 0);
+  CHECK(c.countLit() == 0);
+}
+
+TEST(hud_orbits_one_pixel_and_keeps_the_frame_on_the_glass) {
+  HudEffect hud;
+  hud.activate();
+  hud.params().set("orbit_min", 0.05f);  // 3 s per step for the test
+  EffectContext ctx; ctx.dt = 1.0f / 60.0f;
+  ctx.g.proper = GForce::kRestProper();
+  auto runFor = [&](float secs) { for (int i = 0; i < static_cast<int>(secs * 60.0f + 0.5f); ++i) hud.update(ctx); };
+  const int seq[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+  for (int step = 0; step < 8; ++step) {
+    CHECK(hud.orbitX() == seq[step & 3][0] && hud.orbitY() == seq[step & 3][1]);
+    VoxelFrame f;
+    hud.render(f);
+    // The border's top edge (front panel) sits on row orbitY and its left edge
+    // on column orbitX; the right and bottom edges are still on the glass.
+    CHECK(f.get(kW / 2, hud.orbitY(), 0));
+    CHECK(f.get(hud.orbitX(), kH / 2, 0));
+    CHECK(f.get(kW - 2 + hud.orbitX(), kH / 2, 0));
+    CHECK(f.get(kW / 2, kH - 2 + hud.orbitY(), 0));
+    runFor(3.05f);
+  }
+  hud.params().set("orbit_min", 0.0f);
+  runFor(0.1f);
+  CHECK(hud.orbitX() == 0 && hud.orbitY() == 0);
+  // Eight days switched on (1 s steps): the warning blink still toggles,
+  // because its clock wraps instead of running out of float precision.
+  hud.params().set("warn_g", 0.1f);
+  ctx.g.proper = GForce::kRestProper() + Vec3{0.5f, 0, 0};
+  ctx.dt = 1.0f;
+  for (int i = 0; i < 8 * 24 * 3600; ++i) hud.update(ctx);
+  ctx.dt = 1.0f / 60.0f;
+  int onFrames = 0, offFrames = 0;
+  for (int i = 0; i < 60; ++i) {
+    hud.update(ctx);
+    VoxelFrame f;
+    hud.render(f);
+    int lit = 0;  // status-column pixels on the right
+    for (int y = 18; y < kH - 10; ++y)
+      for (int x = kW - 22; x < kW - 4; ++x) lit += f.get(x, y, 0);
+    (lit > 20 ? onFrames : offFrames)++;
+  }
+  CHECK(onFrames > 10 && offFrames > 10);
+}
+
+TEST(engine_status_label_marks_non_live_data) {
+  Engine e;
+  HudEffect hud;
+  e.addEffect(&hud);
+  GForce g;
+  g.proper = GForce::kRestProper();
+  auto boxLit = [&]() {
+    int lit = 0;
+    for (int y = kH - 7; y < kH; ++y)
+      for (int x = kW - 40; x < kW; ++x) lit += e.frame().get(x, y, 0);
+    return lit;
+  };
+  e.setStatusLabel("DEMO");
+  for (int i = 0; i < 120; ++i) e.step(g, 1.0f / 60.0f);
+  const int withDemo = boxLit();
+  VoxelFrame ref;
+  ref.text(0, kW - 2 - (4 * 4 - 1), kH - 6, "DEMO");
+  int match = 0, want = 0;
+  for (int y = kH - 7; y < kH; ++y)
+    for (int x = kW - 40; x < kW; ++x)
+      if (ref.get(x, y, 0)) { ++want; match += e.frame().get(x, y, 0); }
+  CHECK(want > 10 && match == want);
+  (void)withDemo;
+  // Without a tag the frame is exactly what an untagged engine draws.
+  Engine plain;
+  HudEffect hud2;
+  plain.addEffect(&hud2);
+  for (int i = 0; i < 121; ++i) plain.step(g, 1.0f / 60.0f);
+  e.setStatusLabel(nullptr);
+  e.step(g, 1.0f / 60.0f);
+  CHECK(std::memcmp(e.frame().data(), plain.frame().data(), VoxelFrame::frameBytes()) == 0);
+  e.setStatusLabel("NO SENSOR");
+  e.step(g, 1.0f / 60.0f);
+  CHECK(std::memcmp(e.frame().data(), plain.frame().data(), VoxelFrame::frameBytes()) != 0);
+}
+
 // ---- review regressions --------------------------------------------------------------------
 TEST(calibration_matches_a_physical_right_handed_sensor) {
   // A GY-521 lying flat: chip +Z up, chip +Y toward the windshield, so chip +X

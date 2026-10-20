@@ -14,6 +14,10 @@
 //                 (title_z moves it; rear panels are dim through the glass)
 //   front panel   a target-lock bracket tracks the ball from the brightest
 //                 layer and shrinks as the ball recedes into the stack
+//
+// Built to stay on for hours: every orbit_min minutes the whole picture moves
+// one pixel around a 2 x 2 square (right, down, left, up), so the frame and
+// labels, which never move otherwise, do not wear the same OLED pixels.
 #pragma once
 
 #include "../effect.hpp"
@@ -33,6 +37,9 @@ class HudEffect : public Effect {
   Vec3 tipPosition() const { return tip_; }
   DriveState state() const { return tracker_.state(); }
   const char* titleText() const;
+  // Current anti burn-in offset in pixels (0 or 1 on each axis).
+  int orbitX() const;
+  int orbitY() const;
 
  private:
   static constexpr int kTrail = 40;
@@ -51,12 +58,15 @@ class HudEffect : public Effect {
   float axes_ = 1.0f;        // axis lines and rulers
   float frame_ = 1.0f;       // border, readouts, status column
   float enterG_ = 0.25f, holdS_ = 0.4f, bumpG_ = 0.3f;
+  float orbitMin_ = 2.0f;    // minutes per 1-px orbit step (0 = off)
 
   GStateTracker tracker_;
   Spring3 ball_;
   Vec3 tip_;
   GForce g_;
-  float time_ = 0.0f;
+  float time_ = 0.0f;         // wraps every 60 s (blink timing only)
+  float orbitTimer_ = 0.0f;
+  int orbitStep_ = 0;
   float titleAge_ = 99.0f;
   float bumpAge_ = 99.0f;
   float hazard_ = 0.0f;

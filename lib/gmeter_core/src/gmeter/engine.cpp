@@ -85,6 +85,12 @@ void Engine::step(const GForce& g, float dt) {
     out_.clearBox(0, VoxelFrame::H - 7, 1 + 4 * static_cast<int>(std::strlen(buf)), VoxelFrame::H - 1);
     out_.text(0, 1, VoxelFrame::H - 6, buf);
   }
+  if (statusLabel_ && *statusLabel_) {
+    const int w = 4 * static_cast<int>(std::strlen(statusLabel_)) - 1;
+    const int x0 = VoxelFrame::W - 2 - w;
+    out_.clearBox(x0 - 1, VoxelFrame::H - 7, VoxelFrame::W - 1, VoxelFrame::H - 1);
+    out_.text(0, x0, VoxelFrame::H - 6, statusLabel_);
+  }
 }
 
 }  // namespace gm

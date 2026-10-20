@@ -103,6 +103,7 @@ void SerialCli::poll(Stream& io) {
 }
 
 void SerialCli::help(Print& out) {
+  if (app_.fixedEffect()) out.printf("single-effect build: always shows %s (mode, cycle and anim are disabled)\n", app_.fixedEffect());
   out.println("commands:");
   out.println("  status                 fps, timings, g, imu, heap");
   out.println("  list                   effects and demo scenarios");
@@ -178,6 +179,12 @@ void SerialCli::run(char* line, Print& out) {
     for (int i = 0; i < eng.effectCount(); ++i)
       out.printf("  %d %s%s\n", i, eng.effect(i)->name(), i == eng.currentIndex() ? "  (active)" : "");
     app_.printScenarios(out);
+    return;
+  }
+  if (app_.fixedEffect() && (!strcmp(cmd, "mode") || !strcmp(cmd, "cycle") ||
+                             (!strcmp(cmd, "anim") && strcmp(app_.fixedEffect(), "anim")))) {
+    out.printf("this firmware always shows %s (single-effect build); flash the standard image to switch effects\n",
+               app_.fixedEffect());
     return;
   }
   if (!strcmp(cmd, "mode")) {

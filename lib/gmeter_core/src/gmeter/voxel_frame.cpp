@@ -229,6 +229,36 @@ void VoxelFrame::crossfade(const VoxelFrame& a, const VoxelFrame& b, float t) {
   }
 }
 
+void VoxelFrame::shift(int dx, int dy) {
+  if (dx == 0 && dy == 0) return;
+  if (dx <= -W || dx >= W || dy <= -H || dy >= H) { clear(); return; }
+  const uint64_t mask = H >= 64 ? ~0ull : ((1ull << H) - 1ull);
+  for (int z = 0; z < D; ++z) {
+    uint8_t* L = bits_[z];
+    if (dx != 0) {
+      for (int page = 0; page < kPages; ++page) {
+        uint8_t* row = L + page * W;
+        if (dx > 0) {
+          std::memmove(row + dx, row, static_cast<size_t>(W - dx));
+          std::memset(row, 0, static_cast<size_t>(dx));
+        } else {
+          std::memmove(row, row - dx, static_cast<size_t>(W + dx));
+          std::memset(row + W + dx, 0, static_cast<size_t>(-dx));
+        }
+      }
+    }
+    if (dy != 0) {
+      for (int x = 0; x < W; ++x) {
+        uint64_t col = 0;
+        for (int page = 0; page < kPages; ++page) col |= static_cast<uint64_t>(L[page * W + x]) << (8 * page);
+        col = dy > 0 ? (col << dy) : (col >> -dy);
+        col &= mask;
+        for (int page = 0; page < kPages; ++page) L[page * W + x] = static_cast<uint8_t>(col >> (8 * page));
+      }
+    }
+  }
+}
+
 void VoxelFrame::clearBox(int x0, int y0, int x1, int y1) {
   if (x0 > x1) std::swap(x0, x1);
   if (y0 > y1) std::swap(y0, y1);

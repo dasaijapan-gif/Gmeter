@@ -40,6 +40,9 @@ class AppControl {
   virtual void setRefreshMinutes(int minutes) = 0;                // periodic soft refresh, 0 = off
   virtual bool pinAnimState(const char* name) = 0;                // (engine) idle|accelerate|brake|left|right|bump|auto
   virtual void reboot() = 0;
+  // Non-null in a single-effect build (e.g. the HUD edition): the effect that
+  // is always shown. mode, cycle and anim then explain instead of switching.
+  virtual const char* fixedEffect() const = 0;
 };
 
 class SerialCli {

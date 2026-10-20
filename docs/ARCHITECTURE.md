@@ -86,7 +86,14 @@ the simulator (`--param`) and a future web page can tune it by name.
 
 The `Engine` owns the active effect, runs a 0.4 s dithered crossfade on mode
 changes, optionally auto-cycles effects, and overlays the mode name or a
-numeric readout on the front layer.
+numeric readout on the front layer. While the picture is not live sensor data,
+the firmware also has it draw a small tag at the front layer's bottom right:
+`DEMO`, `SERIAL`, or `NO SENSOR` when the IMU stops answering.
+
+A single-effect build (`-DGM_FIXED_EFFECT=hud`, the `*-hud` environments)
+boots into that effect whatever was saved, turns auto-cycle off, and refuses
+`mode`, `cycle` and `anim`; a short press of the BOOT button only prints a
+note.
 
 ## Firmware tasks
 
