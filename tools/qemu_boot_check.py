@@ -16,9 +16,15 @@ real S3 board.
   python3 tools/qemu_boot_check.py --qemu /path/qemu-system-xtensa \\
       --image esp32dev_flash.bin --machine esp32 --script commands.txt --log boot.log
 
-Script lines: a serial command, `sleep <s>`, or `wait <s> <text>` (wait until
-the text appears). The emulator's two watchdog resets before the bootloader
-hands over are normal and are not counted.
+Script lines: a serial command, `sleep <s>`, `wait <s> <text>` (wait until the
+text appears) or `expect <s> <text>` (the same, but the check fails if it does
+not appear). Both look at the output since the last command was sent, e.g.
+
+  status
+  expect 5 mode hud
+
+The emulator's two watchdog resets before the bootloader hands over are normal
+and are not counted.
 """
 import argparse
 import subprocess
@@ -61,6 +67,8 @@ def main():
             return buf.decode("utf-8", "replace")
 
     lines = open(a.script).read().splitlines() if a.script else ["wait 30 > ", "help", "status", "list", "sleep 2"]
+    since = 0  # output length when the last command was sent
+    missing = []
     for line in lines:
         line = line.rstrip()
         if not line or line.startswith("#"):
@@ -68,12 +76,15 @@ def main():
         if line.startswith("sleep "):
             time.sleep(float(line.split()[1]))
             continue
-        if line.startswith("wait "):
-            _, secs, needle = line.split(" ", 2)
+        if line.startswith("wait ") or line.startswith("expect "):
+            kind, secs, needle = line.split(" ", 2)
             end = time.time() + float(secs)
-            while time.time() < end and needle not in text():
+            while time.time() < end and needle not in text()[since:]:
                 time.sleep(0.1)
+            if kind == "expect" and needle not in text()[since:]:
+                missing.append(needle)
             continue
+        since = len(text())
         p.stdin.write((line + "\r\n").encode())
         p.stdin.flush()
         time.sleep(0.6)
@@ -85,7 +96,9 @@ def main():
     boots = out.count(a.boot_marker)
     fatal = [k for k in FATAL if k in out]
     print("boots: %d  fatal: %s  log: %s" % (boots, ", ".join(fatal) or "none", a.log))
-    return 0 if boots == 1 and not fatal else 1
+    for needle in missing:
+        print("expected but not seen: %r" % needle)
+    return 0 if boots == 1 and not fatal and not missing else 1
 
 
 if __name__ == "__main__":

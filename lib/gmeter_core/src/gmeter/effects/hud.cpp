@@ -58,8 +58,7 @@ void HudEffect::reset() {
   danger_ = false;
   trailHead_ = trailCount_ = 0;
   trailTimer_ = 0.0f;
-  orbitTimer_ = 0.0f;
-  orbitStep_ = 0;
+  // The burn-in orbit keeps its place across re-activation.
 }
 
 int HudEffect::orbitX() const { return kOrbitX[orbitStep_ & 3]; }
@@ -153,10 +152,13 @@ void HudEffect::drawFrame(VoxelFrame& f, float horiz) const {
   x += drawJp(f, kJpSmall, 0, x, 4, "縦G");
   f.text(0, x + 3, 9, buf);
   // Status column (vertical writing) on the right: 正常, or 警告 blinking.
+  // It ends on row H-9, clear of the bottom 7 rows where the engine puts its
+  // DEMO / NO SENSOR tag.
   const bool warn = horiz >= warnG_;
   const int colX = W - 6 - kJpSmall.glyphs[0].width;
-  if (!warn) drawJpVertical(f, kJpSmall, 0, colX, 21, "正常");
-  else if (std::fmod(time_, 0.5f) < 0.3f) drawJpVertical(f, kJpSmall, 0, colX, 21, "警告");
+  const int colY = std::min(21, H - 9 - 2 * kJpSmall.height);  // 2 glyphs + 1 px gap
+  if (!warn) drawJpVertical(f, kJpSmall, 0, colX, colY, "正常");
+  else if (std::fmod(time_, 0.5f) < 0.3f) drawJpVertical(f, kJpSmall, 0, colX, colY, "警告");
   // Bottom band: hazard stripes when over warn_g.
   if (warn) {
     const int off = static_cast<int>(hazard_);
@@ -268,7 +270,6 @@ void HudEffect::render(VoxelFrame& f) {
     drawFrame(f, horiz);
     if (bumpAge_ < 0.3f) chamferRect(f, 1, 2, 2, kW - 3, kH - 3, 6);  // impact flash
   }
-  if (orbitX() || orbitY()) f.shift(orbitX(), orbitY());
 }
 
 }  // namespace gm

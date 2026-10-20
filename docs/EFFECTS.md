@@ -202,7 +202,7 @@ more characters.
 | Where | What |
 | --- | --- |
 | front panel | chamfered frame with corner brackets; 横G (lateral) and 縦G (longitudinal) readouts; a lateral ruler along the bottom and a vertical ruler on the left whose carets ride the ball; a vertical 正常 ("normal") column that turns into a blinking 警告 ("warning") with scrolling hazard stripes above `warn_g` |
-| middle panel | lateral and vertical axis lines with 0.5 g and 1 g ticks; a dotted depth axis runs through all panels with ticks on the 0.5 g / 1 g panels |
+| middle panel | lateral and vertical axis lines with ticks every 0.5 g (the vertical 1 g ticks fall off the glass at the default `vscale_g`); a dotted depth axis runs through all panels with ticks on the 0.5 g / 1 g panels |
 | through the stack | the g-vector line from the centre to the current g, and a ball that follows it to the tip, leaving a trail; small markers ride each axis line with the ball's components; a target-lock bracket on the front panel tracks the ball and shrinks as it recedes, so it stays readable when the ball is deep in the dimmer rear panels |
 | third panel (`title_z`) | the driving state in large kanji: 待機 standby, 加速 accelerating, 制動 braking, 左旋回 / 右旋回 left / right turn, 衝撃 impact, 危険 danger; it flashes in reverse video when it changes, and the idle word fades after 3 s so nothing static burns in |
 
@@ -218,11 +218,17 @@ more characters.
 | `orbit_min` | 2 min | minutes per one-pixel burn-in step (0 = off) |
 
 The HUD is meant to stay on for hours (the `-hud` firmware builds show nothing
-else), so it guards the OLEDs against burn-in: every `orbit_min` minutes the
-whole picture moves one pixel around a 2 x 2 square (right, down, left, up).
-The frame is drawn one pixel inside the glass on the right and bottom, so it
-stays fully visible at every step. Its blink clock wraps every minute, so the
-blink timing stays exact after days of uptime.
+else), so it slows OLED burn-in: every `orbit_min` minutes the whole picture
+moves one pixel around a 2 x 2 square (right, down, left, up). The effect
+reports the offset through `Effect::burnInOffset()` and the Engine applies it
+last, so its overlays (the readout and the DEMO / NO SENSOR tag) move too. The
+frame is drawn one pixel inside the glass on the right and bottom, so it stays
+fully visible at every step. This spreads the wear of 1-px lines and stroke
+edges; the inside of wider strokes still stays lit. The orbit keeps its place
+when the effect is switched away and back, and the firmware starts it at a
+random step at power-on, so short trips do not all use the same position. The
+blink clock wraps every minute, so the blink timing stays exact after days of
+uptime.
 
 ### atfield (`AtFieldEffect`)
 

@@ -689,24 +689,44 @@ TEST(voxel_frame_shift_moves_every_layer) {
 
 TEST(hud_orbits_one_pixel_and_keeps_the_frame_on_the_glass) {
   HudEffect hud;
-  hud.activate();
+  Engine e;
+  e.addEffect(&hud);
+  e.setStatusLabel("DEMO");
   hud.params().set("orbit_min", 0.05f);  // 3 s per step for the test
   EffectContext ctx; ctx.dt = 1.0f / 60.0f;
   ctx.g.proper = GForce::kRestProper();
-  auto runFor = [&](float secs) { for (int i = 0; i < static_cast<int>(secs * 60.0f + 0.5f); ++i) hud.update(ctx); };
+  auto runFor = [&](float secs) {
+    for (int i = 0; i < static_cast<int>(secs * 60.0f + 0.5f); ++i) e.step(ctx.g, 1.0f / 60.0f);
+  };
+  VoxelFrame tag;  // the DEMO tag where the engine draws it with no offset
+  tag.text(0, kW - 2 - (4 * 4 - 1), kH - 6, "DEMO");
   const int seq[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+  runFor(0.1f);
   for (int step = 0; step < 8; ++step) {
     CHECK(hud.orbitX() == seq[step & 3][0] && hud.orbitY() == seq[step & 3][1]);
-    VoxelFrame f;
-    hud.render(f);
+    const VoxelFrame& f = e.frame();
+    const int dx = hud.orbitX(), dy = hud.orbitY();
     // The border's top edge (front panel) sits on row orbitY and its left edge
     // on column orbitX; the right and bottom edges are still on the glass.
-    CHECK(f.get(kW / 2, hud.orbitY(), 0));
-    CHECK(f.get(hud.orbitX(), kH / 2, 0));
-    CHECK(f.get(kW - 2 + hud.orbitX(), kH / 2, 0));
-    CHECK(f.get(kW / 2, kH - 2 + hud.orbitY(), 0));
+    CHECK(f.get(kW / 2, dy, 0));
+    CHECK(f.get(dx, kH / 2, 0));
+    CHECK(f.get(kW - 2 + dx, kH / 2, 0));
+    CHECK(f.get(kW / 2, kH - 2 + dy, 0));
+    // The engine's tag moves with the picture.
+    int want = 0, match = 0;
+    for (int y = 0; y < kH; ++y)
+      for (int x = 0; x < kW; ++x)
+        if (tag.get(x, y, 0)) { ++want; match += (x + dx < kW && y + dy < kH && f.get(x + dx, y + dy, 0)); }
+    CHECK(want > 10 && match == want);
     runFor(3.05f);
   }
+  // Re-activation keeps the orbit's place; setOrbitStep picks it.
+  hud.params().set("orbit_min", 30.0f);
+  hud.setOrbitStep(2);
+  hud.activate();
+  CHECK(hud.orbitX() == 1 && hud.orbitY() == 1);
+  hud.setOrbitStep(7);
+  CHECK(hud.orbitX() == 0 && hud.orbitY() == 1);
   hud.params().set("orbit_min", 0.0f);
   runFor(0.1f);
   CHECK(hud.orbitX() == 0 && hud.orbitY() == 0);
@@ -764,6 +784,18 @@ TEST(engine_status_label_marks_non_live_data) {
   e.setStatusLabel("NO SENSOR");
   e.step(g, 1.0f / 60.0f);
   CHECK(std::memcmp(e.frame().data(), plain.frame().data(), VoxelFrame::frameBytes()) != 0);
+  // The HUD's status column (正常) ends above the tag's box, so the tag never
+  // cuts it: nothing in the column's x range on the row above the box or in it,
+  // apart from the ruler tick.
+  plain.step(g, 1.0f / 60.0f);
+  const int colX = kW - 6 - kJpSmall.glyphs[0].width;
+  int column = 0, inBox = 0;
+  for (int y = 0; y < kH - 8; ++y)
+    for (int x = colX; x < colX + kJpSmall.glyphs[0].width; ++x) column += plain.frame().get(x, y, 0);
+  for (int y = kH - 8; y < kH - 5; ++y)
+    for (int x = colX; x < colX + kJpSmall.glyphs[0].width; ++x) inBox += plain.frame().get(x, y, 0);
+  CHECK(column > 40);
+  CHECK(inBox == 0);
 }
 
 // ---- review regressions --------------------------------------------------------------------

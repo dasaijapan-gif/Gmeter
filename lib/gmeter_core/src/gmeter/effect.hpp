@@ -33,6 +33,9 @@ class Effect {
   virtual void update(const EffectContext& ctx) = 0;
   // Draw into a cleared frame.
   virtual void render(VoxelFrame& frame) = 0;
+  // Offset in pixels for the whole picture, against OLED burn-in. The Engine
+  // applies it after its own overlays, so everything on the glass moves.
+  virtual void burnInOffset(int& dx, int& dy) const { dx = dy = 0; }
 
   ParamTable& params() { return params_; }
   const ParamTable& params() const { return params_; }

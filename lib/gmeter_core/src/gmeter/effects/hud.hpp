@@ -4,7 +4,7 @@
 //                 lateral ruler along the bottom and a vertical ruler on the
 //                 left with carets that ride the ball's position, a vertical
 //                 正常 / 警告 status column, hazard stripes above warn_g
-//   middle panel  axis lines (lateral and vertical) with 0.5 g / 1 g ticks;
+//   middle panel  axis lines (lateral and vertical) with ticks every 0.5 g;
 //                 a dotted depth axis runs through every panel
 //   through the   a g-vector line from the centre to the current g, and a
 //   stack         ball that follows the line out to its tip with a trail;
@@ -15,9 +15,12 @@
 //   front panel   a target-lock bracket tracks the ball from the brightest
 //                 layer and shrinks as the ball recedes into the stack
 //
-// Built to stay on for hours: every orbit_min minutes the whole picture moves
-// one pixel around a 2 x 2 square (right, down, left, up), so the frame and
-// labels, which never move otherwise, do not wear the same OLED pixels.
+// Built to stay on for hours: every orbit_min minutes the whole picture,
+// engine overlays included, moves one pixel around a 2 x 2 square (right,
+// down, left, up). That spreads the wear of the frame, rulers and character
+// edges, which never move otherwise, over neighbouring OLED pixels; the
+// inside of strokes wider than 1 px still stays lit. The orbit keeps its
+// place when the effect is re-activated; setOrbitStep() picks the start.
 #pragma once
 
 #include "../effect.hpp"
@@ -40,6 +43,10 @@ class HudEffect : public Effect {
   // Current anti burn-in offset in pixels (0 or 1 on each axis).
   int orbitX() const;
   int orbitY() const;
+  void burnInOffset(int& dx, int& dy) const override { dx = orbitX(); dy = orbitY(); }
+  // Start the orbit at step 0..3 (e.g. a random one at power-on, so short
+  // trips do not always use the same position).
+  void setOrbitStep(int step) { orbitStep_ = step & 3; orbitTimer_ = 0.0f; }
 
  private:
   static constexpr int kTrail = 40;

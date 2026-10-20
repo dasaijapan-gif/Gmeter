@@ -6,8 +6,10 @@ accelerometer and draws animations that react to braking, acceleration,
 corners and bumps.
 
 This is the standard edition, with ten effects to choose from. For a unit that
-should only ever show the NERV-style `hud` screen, use the HUD edition and its
-guide, `docs/SUPPLIER_HUD.md`.
+should only ever show the NERV-style `hud` screen there is a HUD edition. It
+is a separate package with its own firmware files and guide; it can also be
+built from `source/gmeter` with the `esp32dev-hud`, `esp32-s3-hud` or
+`esp32dev-128x64-hud` environment (see `source/gmeter/docs/SUPPLIER_HUD.md`).
 
 This package contains:
 
@@ -230,7 +232,7 @@ copy the C++ header it makes, save it as `src/user_animation.hpp` and rebuild.
 | Memory, classic ESP32 | 89 KB of the 124 KB static RAM segment, 372 KB of 1.3 MB app flash |
 | Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached | Pass: no crash, no reset, about 60 fps, no memory leak |
 | Pin set-up: every panel line is an output after start-up, no pin used twice or reserved | Pass (PC test against the Arduino core's pin handling, and a pin trace in the emulator) |
-| Core library unit tests on a PC (369 checks, 128x56 and 128x64) | Pass |
+| Core library unit tests on a PC (381 checks, 128x56 and 128x64) | Pass |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 5. |
 
 ## 8. Troubleshooting

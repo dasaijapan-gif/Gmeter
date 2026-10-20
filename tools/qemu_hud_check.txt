@@ -1,0 +1,20 @@
+# qemu_boot_check.py script for the HUD edition (esp32dev-hud, esp32-s3-hud,
+# esp32dev-128x64-hud): it boots into hud, stays there and refuses to switch.
+#   python3 tools/qemu_boot_check.py --qemu <qemu-system-xtensa> --image <padded _full.bin> \
+#       --machine esp32 --script tools/qemu_hud_check.txt
+wait 30 > 
+expect 1 single-effect build: always shows hud
+status
+expect 5 mode hud
+mode atfield
+expect 5 always shows hud
+cycle 5
+expect 5 always shows hud
+anim brake
+expect 5 always shows hud
+get
+expect 5 orbit_min
+sleep 10
+status
+expect 5 mode hud
+expect 5 cycle 0 s

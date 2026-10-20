@@ -6,19 +6,20 @@ match the source that ships with them (uncommitted changes are not included).
 
   python3 tools/make_release.py                      # dist/gmeter_supplier + .zip
   python3 tools/make_release.py --studio gmeter_studio.html --pio ~/.platformio/penv/bin/pio
-  python3 tools/make_release.py --envs esp32dev-hud esp32-s3-hud esp32dev-128x64-hud \
-      --guide docs/SUPPLIER_HUD.md --out dist/gmeter_hud     # HUD edition
+  python3 tools/make_release.py --envs esp32dev-hud esp32-s3-hud esp32dev-128x64-hud \\
+      --out dist/gmeter_hud                                  # HUD edition
 
 Layout of the result:
 
-  README_FIRST.md          supplier guide (--guide, default docs/SUPPLIER.md)
+  README_FIRST.md          supplier guide: --guide, or docs/SUPPLIER.md, or for
+                           single-effect builds docs/SUPPLIER_<EFFECT>.md
   BUILD_INFO.txt           commit, toolchain, memory use
   firmware/<chip>_<W>x<H>/ <name>_full.bin (flash at 0x0), the separate parts,
                            flash_args.txt; single-effect builds (GM_FIXED_EFFECT)
                            add the effect name, e.g. esp32_128x56_hud
   firmware/SHA256SUMS.txt
   source/gmeter/           the PlatformIO project (whole repository)
-  docs/                    documentation and licences
+  docs/                    documentation and licences (only the chosen guide)
   studio/                  Gmeter Studio, if --studio is given
 
 Needs PlatformIO (`pio`) and esptool (`pip install esptool`, or the copy
@@ -83,14 +84,12 @@ def main():
     ap.add_argument("--pio", default="pio", help="PlatformIO command")
     ap.add_argument("--esptool", default=None, help="esptool command (default: python -m esptool)")
     ap.add_argument("--studio", help="built Gmeter Studio page to include")
-    ap.add_argument("--guide", default="docs/SUPPLIER.md", help="guide copied to README_FIRST.md (repository path)")
+    ap.add_argument("--guide", help="guide copied to README_FIRST.md (repository path; default: picked from the "
+                    "envs, docs/SUPPLIER.md or docs/SUPPLIER_<EFFECT>.md for single-effect builds)")
     ap.add_argument("--no-zip", action="store_true")
     a = ap.parse_args()
 
     out = os.path.abspath(a.out)
-    guide = posixpath.normpath(a.guide.replace("\\", "/"))
-    if subprocess.run(["git", "cat-file", "-e", "HEAD:" + guide], cwd=ROOT).returncode:
-        raise SystemExit("guide %s is not in the committed source (HEAD)" % a.guide)
     if os.path.exists(out):
         shutil.rmtree(out)
     os.makedirs(out)
@@ -127,6 +126,19 @@ def main():
     meta_raw = run([a.pio, "project", "metadata", "--json-output"] + sum((["-e", e] for e in a.envs), []),
                    cwd=project, capture=True)
     meta_all = json.loads(meta_raw[meta_raw.index("{"):])
+
+    # The guide must match the edition: standard envs, or one single effect.
+    editions = {define(meta_all[e], "GM_FIXED_EFFECT") for e in a.envs}
+    if a.guide:
+        guide = posixpath.normpath(a.guide.replace("\\", "/"))
+    elif len(editions) == 1:
+        fixed = editions.pop()
+        guide = "docs/SUPPLIER_%s.md" % fixed.upper() if fixed else "docs/SUPPLIER.md"
+    else:
+        raise SystemExit("the envs mix editions (%s); build them separately or pass --guide" %
+                         ", ".join(sorted(x or "standard" for x in editions)))
+    if guide.startswith("../") or posixpath.isabs(guide) or not os.path.isfile(os.path.join(project, guide)):
+        raise SystemExit("guide %s is not in the committed source (HEAD)" % guide)
 
     # 3. Firmware folders.
     fw_root = os.path.join(out, "firmware")
@@ -182,6 +194,13 @@ def main():
                 path = os.path.join(dirpath, name)
                 f.write("%s  %s\n" % (sha256(path), os.path.relpath(path, fw_root)))
 
+    # Every firmware folder the guide names must be in the package.
+    with open(os.path.join(project, guide), encoding="utf-8") as f:
+        named = sorted(set(re.findall(r"firmware/([A-Za-z0-9_]+)/", f.read())))
+    absent = [n for n in named if not os.path.isdir(os.path.join(fw_root, n))]
+    if absent:
+        raise SystemExit("%s names firmware folders this build does not make: %s" % (guide, ", ".join(absent)))
+
     # Leave the shipped source clean.
     shutil.rmtree(os.path.join(project, ".pio"), ignore_errors=True)
 
@@ -189,6 +208,9 @@ def main():
     docs = os.path.join(out, "docs")
     os.makedirs(docs)
     for name in sorted(os.listdir(os.path.join(project, "docs"))):
+        # Other editions' guides name firmware files this package does not have.
+        if name.startswith("SUPPLIER") and "docs/" + name != guide:
+            continue
         shutil.copy(os.path.join(project, "docs", name), docs)
     shutil.copy(os.path.join(project, "LICENSE"), docs)
     shutil.copy(os.path.join(project, guide), os.path.join(out, "README_FIRST.md"))

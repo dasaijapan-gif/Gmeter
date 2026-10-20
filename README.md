@@ -113,9 +113,10 @@ The platform is pinned to `espressif32 @ 7.1.3` (Arduino-ESP32 2.0.17, GCC
 8.4.0). All six environments build with it without warnings; the classic
 ESP32 build uses about 89 KB of the 124 KB static DRAM segment and 372 KB of
 flash. Both chips boot in Espressif's QEMU and run every effect with no IMU
-attached, and the HUD builds boot straight into `hud` and stay there
-(`tools/qemu_boot_check.py` repeats that check). Panel and IMU behaviour still
-has to be confirmed on real hardware.
+attached (`tools/qemu_boot_check.py` repeats that check), and the HUD builds
+boot straight into `hud` and stay there (the same tool with
+`--script tools/qemu_hud_check.txt`). Panel and IMU behaviour still has to be
+confirmed on real hardware.
 
 First power-up with an IMU connected:
 

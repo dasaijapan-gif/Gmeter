@@ -194,7 +194,7 @@ GForce currentG(int64_t usSinceBoot, const char** label = nullptr) {
 
 void applySettings() {
   engine.setReadout(settings.readout != 0);
-  engine.setAutoCycle(settings.autoCycleS);
+  engine.setAutoCycle(kFixedEffect ? 0.0f : settings.autoCycleS);
   estimator.setFilter(settings.filterHz, static_cast<float>(board::kImuSampleHz));
   estimator.setAutoZero(settings.autoZero != 0);
   if (calibration.valid) {
@@ -310,7 +310,9 @@ void renderTask(void*) {
     portEXIT_CRITICAL(&gMux);
     {
       Lock l(engineMtx);
-      engine.setStatusLabel(label);
+      // Only the single-effect (HUD) edition tags data that is not live: in the
+      // standard edition that corner holds the ball effect's peak readout.
+      engine.setStatusLabel(kFixedEffect ? label : nullptr);
       engine.step(g, dt);
       memcpy(frames[target].data(), engine.frame().data(), VoxelFrame::frameBytes());
     }
@@ -419,8 +421,8 @@ class App : public AppControl {
                  a.frames, animStateName(animEffect.state()), animEffect.currentFrame(), animEffect.mirrored() ? " (mirrored)" : "");
     }
     out.printf("contrast ramp %u..%u  cycle %.0f s  readout %s  panel refresh every %u min\n", settings.contrastFront,
-               settings.contrastBack, static_cast<double>(settings.autoCycleS), settings.readout ? "on" : "off",
-               settings.reinitMinutes);
+               settings.contrastBack, static_cast<double>(kFixedEffect ? 0.0f : settings.autoCycleS),
+               settings.readout ? "on" : "off", settings.reinitMinutes);
   }
 
   void printScenarios(Print& out) override {
@@ -496,9 +498,10 @@ class App : public AppControl {
   bool saveState() override {
     {
       // Auto-cycle changes the effect without going through setMode(): save
-      // the one on screen. (The CLI calls this without holding the lock.)
+      // the one on screen. (The CLI calls this without holding the lock.) A
+      // single-effect build keeps the stored choice for the standard firmware.
       Lock l(engineMtx);
-      settings.mode = static_cast<uint8_t>(::engine.currentIndex());
+      if (!kFixedEffect) settings.mode = static_cast<uint8_t>(::engine.currentIndex());
     }
     Calibration c;
     {
@@ -634,14 +637,19 @@ void setup() {
   engine.addEffect(&syncEffect);
   int startEffect = settings.mode < engine.effectCount() ? settings.mode : 0;
   if (kFixedEffect) {
+    // Overrides the stored effect and auto-cycle (applySettings) without
+    // changing them, so `save` here leaves the standard firmware's choice.
     const int i = engine.findEffect(kFixedEffect);
     if (i >= 0) startEffect = i;
     else Serial.printf("error: fixed effect '%s' does not exist; showing '%s'\n", kFixedEffect, engine.effect(startEffect)->name());
-    settings.autoCycleS = 0.0f;
     Serial.printf("single-effect build: always shows %s\n", engine.effect(startEffect)->name());
+  } else {
+    settings.mode = static_cast<uint8_t>(startEffect);
   }
-  settings.mode = static_cast<uint8_t>(startEffect);
   engine.setEffect(startEffect, false);
+  // Start the HUD's burn-in orbit at a random position, so short trips do not
+  // all use the same one.
+  hudEffect.setOrbitStep(static_cast<int>(esp_random() & 3));
   applySettings();
 
   if (imu.begin(board::kI2cSda, board::kI2cScl, board::kImuAddress)) {

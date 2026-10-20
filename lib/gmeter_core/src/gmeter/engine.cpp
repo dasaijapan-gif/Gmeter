@@ -91,6 +91,10 @@ void Engine::step(const GForce& g, float dt) {
     out_.clearBox(x0 - 1, VoxelFrame::H - 7, VoxelFrame::W - 1, VoxelFrame::H - 1);
     out_.text(0, x0, VoxelFrame::H - 6, statusLabel_);
   }
+  // Last, so the overlays move with the picture.
+  int dx = 0, dy = 0;
+  cur->burnInOffset(dx, dy);
+  if (dx || dy) out_.shift(dx, dy);
 }
 
 }  // namespace gm

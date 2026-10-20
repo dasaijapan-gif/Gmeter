@@ -26,15 +26,19 @@ Panel 0 is the one nearest the driver; panel 7 is nearest the windshield.
 | Where | What |
 | --- | --- |
 | Panel 0 (front) | A border with cut corners and corner brackets. `横G` (lateral g) and `縦G` (longitudinal g) with their values at the top. Rulers along the bottom and left edges, with markers that follow the ball. A status column on the right: `正常` (normal), or `警告` (warning) blinking above 0.7 g, with moving hazard stripes along the bottom. A target bracket that follows the ball and gets smaller as the ball moves deeper. |
-| Panel 3 (middle) | Lateral and vertical axis lines with marks at 0.5 g and 1 g. A dotted depth axis runs through every panel. |
+| Panel 3 (middle) | Lateral and vertical axis lines, with marks at 0.5 g and 1 g on the lateral line and at 0.5 g on the vertical line. A dotted depth axis runs through every panel. |
 | Through the stack | A line from the centre out to the current g-force, and a ball that follows it with a short trail. Braking throws the ball toward the windshield, accelerating pulls it toward the driver, and a right turn throws it to the left, like a loose object in the car. |
 | Panel 2 | The driving state in large characters: `待機` standby, `加速` accelerating, `制動` braking, `左旋回` / `右旋回` turning left / right, `衝撃` impact (a bump), `危険` danger (above 1 g). It flashes when it changes; the standby word fades after 3 seconds. |
 | Panel 0, bottom right | A small tag while the picture is **not** live sensor data: `DEMO` (no sensor found, a recorded drive is playing), `NO SENSOR` (the sensor stopped answering; the display shows 0 g), or `SERIAL` (g-force sent from a PC). With a working sensor there is no tag. |
 
 **Made to stay on.** The border and labels never move on their own, and OLED
 pixels that are always lit age faster than the rest. Every 2 minutes the whole
-picture moves by one pixel (right, down, left, up, and round again), so the
-wear is shared. This small step is intentional.
+picture, tag included, moves by one pixel (right, down, left, up, and round
+again), starting from a random one of these four positions at each power-on.
+This spreads the wear of the thin lines and of the edges of the characters
+over neighbouring pixels. The inside of the thicker character strokes still
+stays lit, so the orbit slows burn-in but cannot prevent it completely. This
+small step is intentional.
 
 ## 2. Which file to flash
 
@@ -135,7 +139,7 @@ command.
 
 On the ESP32-S3-DevKitC-1 the serial monitor is on the USB connector labelled
 **UART**. The other USB connector (native USB) is only used for flashing. If
-your S3 board has only a native USB connector, build from source (section 7)
+your S3 board has only a native USB connector, build from source (section 8)
 with `-DARDUINO_USB_CDC_ON_BOOT=1` added to the `esp32-s3` build flags.
 
 ## 5. Wiring
@@ -199,8 +203,16 @@ More detail is in `docs/HARDWARE.md`.
    not saved, and the next `ramp` overwrites it.
 4. **Sensor.** With the GY-521 connected and the board reset, the fourth line
    says `imu: MPU-6050 found` and the `DEMO` tag disappears. `status` shows
-   the raw reading; at rest its size should be close to 1 g. Tilt the board
-   gently: the ball and the `横G` / `縦G` values follow.
+   the raw reading; at rest its size should be close to 1 g.
+
+   Before calibration the firmware does not know how the sensor is mounted.
+   Unless the module stands with the Y arrow printed on it pointing straight
+   up, the HUD shows about 1 g while the board is still: `横G` or `縦G` near
+   ±1.00, `警告` with hazard stripes, the ball at an edge and a large word
+   such as `加速` or `制動`. This is expected. At this stage only check the
+   size in `status`. For a bench test of the display, lay the module flat,
+   type `cal fwd +y` and then `cal rest`: the ball moves to the centre and
+   follows when you tilt the board. Calibrate again in the car (step 5).
 5. **Calibration (in the car).**
    1. `cal fwd +y`: tell the firmware which sensor axis points to the
       windshield (`+x`, `-x`, `+y`, `-y`, `+z` or `-z`; `+y` is an example).
@@ -287,7 +299,7 @@ wires), change `-DGM_SPI_HZ=10000000` to `-DGM_SPI_HZ=8000000` in
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
 | The one-pixel move keeps the whole border on the glass; the warning blink still works after 8 simulated days | Pass (PC unit tests) |
 | Pin set-up: every panel line is an output after start-up, no pin used twice or reserved | Pass (PC test against the Arduino core's pin handling, and a pin trace in the emulator) |
-| Core library unit tests on a PC (369 checks, 128x56 and 128x64) | Pass |
+| Core library unit tests on a PC (381 checks, 128x56 and 128x64) | Pass |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 6. |
 
 ## 10. Troubleshooting
@@ -304,6 +316,7 @@ wires), change `-DGM_SPI_HZ=10000000` to `-DGM_SPI_HZ=8000000` in
 | A panel stays dark | Its CS wire, its 3.3 V and ground, and the shared RES wire. Try `test n` for that panel. |
 | All panels dark | SCK, MOSI, D/C and RES wiring; 3.3 V supply current. Try `reinit`. |
 | The whole picture moves by one pixel every 2 minutes | Intentional: it protects the OLEDs (section 1). `set orbit_min 0` stops it until the next power-off. |
+| Before calibration: `警告`, a large `加速` or `制動` and the ball at an edge while the board is still | Expected: the firmware does not know the sensor's mounting yet (section 6, steps 4 and 5). |
 | Picture is noisy or jumps | Shorter SPI wires, series resistors, or a lower SPI speed (section 8). |
 | Rear panels too dim | `ramp 60 255`; check that all panels face the same way. |
 | Settings lost after flashing | Expected after a `_full.bin`: calibrate again and `save` (section 3). |
