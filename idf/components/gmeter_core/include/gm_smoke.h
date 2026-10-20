@@ -49,8 +49,14 @@ typedef struct {
   gm_rng_t rng;
 } gm_smoke_t;
 
+// Sets the defaults and registers the tunables; allocates nothing. Activate
+// (or the first update after init or deactivate) allocates the eight grids,
+// gm_smoke_memory_bytes() in all, with malloc. If that fails the effect stays
+// unallocated: update does nothing and render draws nothing.
 void gm_smoke_init(gm_smoke_t* s);
-// Frees the grids (the effect's destructor; deactivate also frees them).
+// Frees the grids (the effect's destructor; deactivate also frees them). Safe
+// to call more than once; call it before gm_smoke_init on an effect that may
+// still hold its grids.
 void gm_smoke_deinit(gm_smoke_t* s);
 
 static inline bool gm_smoke_allocated(const gm_smoke_t* s) { return s->d != NULL; }

@@ -1,8 +1,13 @@
 # Effects
 
-All effects live in `lib/gmeter_core/src/gmeter/effects/`. Each one reads the
-filtered `GForce` from the `EffectContext`, advances its own state and draws
-into a cleared `VoxelFrame`. Units are pixels and seconds; 1 g of acceleration
+The firmware's effects are C, in `idf/components/gmeter_core/src/effects/`
+(one `gm_<name>.c` per effect, its state and tunables in
+`include/gm_<name>.h`). Gmeter Studio and the PC simulator use the original
+C++ versions in `lib/gmeter_core/src/gmeter/effects/`; the tests in
+`idf/host_test` check that both produce the same frames bit for bit. The
+class names in the headings below are the C++ names; the C struct is
+`gm_<name>_t`. Each effect reads the filtered g-force from its context,
+advances its own state and draws into a cleared voxel frame. Units are pixels and seconds; 1 g of acceleration
 is turned into pixels per second squared through a "virtual tank width"
 (`tank_m`), so a 35 mm display can slosh like a one-metre tank instead of
 buzzing at 5 Hz.
@@ -10,7 +15,9 @@ buzzing at 5 Hz.
 Tune at runtime with `set <param> <value>` over serial, `--param` in the
 simulator, or the sliders in Gmeter Studio. `get` lists the current effect's
 parameters with ranges. Values set over serial are RAM-only; `save` does not
-store them, so make lasting changes in the effect's defaults.
+store them, so make lasting changes in the effect's defaults (in its
+`gm_<name>_init` function for the firmware, and in the C++ constructor too if
+Studio and the simulator should match).
 
 ## ball (`GBallEffect`)
 
@@ -138,8 +145,10 @@ Takes any 1-bit sprite sheet and lets the g-force drive it:
 | `echo` | 1 layer | ghost copies on neighbouring layers (0-4) |
 | `inertia` | 1 | 1: thrown like a loose object; 0: follows the acceleration |
 
-Export artwork with `tools/img2sprite.py anim.gif -o src/my_sprite.hpp
---name kMySprite --width 24` and construct `SpriteEffect(kMySprite, mapping)`.
+Export artwork with `tools/img2sprite.py anim.gif -o my_sprite.hpp
+--name kMySprite --width 24` and construct `SpriteEffect(kMySprite, mapping)`
+(C++; in the firmware, fill a `gm_sprite_sheet_t` with the same width,
+height, frame count and bits and pass it to `gm_sprite_init`).
 A procedurally generated 16 x 16, 12-frame demo sprite is built in. For
 state-driven, multi-slice artwork use the `anim` effect and Gmeter Studio.
 
@@ -182,8 +191,9 @@ single-slice sprite can be ghosted onto neighbouring layers (`echo`).
 | `echo`, `mirror` | 0, 1 | depth ghosting, left/right mirroring |
 
 Assets are plain aggregates. Gmeter Studio exports them as
-`src/user_animation.hpp`, which the firmware and the simulator pick up
-automatically (`__has_include`); without it the built-in demo plays (a
+`main/user_animation.h` (in the repository `idf/main/user_animation.h`), a
+header that compiles as C for the firmware and as C++ for the simulator; both
+pick it up automatically (`__has_include`); without it the built-in demo plays (a
 breathing ring, chevrons per direction and a starburst on bumps). On the car,
 `anim brake` pins a clip and `anim auto` returns to g-force control.
 
@@ -261,12 +271,23 @@ g as a percentage of 1 g.
 
 ## Writing a new effect
 
-1. Subclass `gm::Effect`; implement `name()`, `update()`, `render()`.
-2. Register tunables in the constructor with `params_.add(...)`.
-3. Do physics in world units (`VoxelFrame::halfExtent()` gives the box) and
-   draw with `frame.sphere/point/line3` (world) or the 2D primitives (voxel).
-4. Add it to `host/sim_main.cpp` (`EffectSet`) and `src/main.cpp`
-   (`engine.addEffect`), run `gmeter_sim --effect yours --ascii`, add a test.
+In the firmware (C):
+
+1. Add `include/gm_<name>.h` with a struct whose first member is
+   `gm_effect_t base`, and `src/effects/gm_<name>.c` with a vtable
+   (`gm_effect_vtbl_t`: name, update, render, and optionally reset,
+   activate, deactivate, burn_in_offset) and a `gm_<name>_init` function
+   that sets the vtable, registers tunables with `gm_params_add` and sets
+   the defaults.
+2. Do physics in world units (`gm_half_extent()` gives the box) and draw
+   with `gm_frame_sphere/point/line3` (world) or the 2D primitives (voxel).
+3. Add a static instance to `idf/main/app_main.c` and pass `&fx.base` to
+   `gm_engine_add_effect`.
+
+To preview it in Gmeter Studio or the simulator, write the C++ version as
+well (subclass `gm::Effect` in `lib/gmeter_core`, add it to
+`host/sim_main.cpp` and `host/web/wasm_api.cpp`) and add a differential test
+in `idf/host_test` that compares the two.
 
 Rules of thumb for eight additive layers: outlines beat solid fills (eight
 filled layers wash out), keep the front layer for anything that must be read,

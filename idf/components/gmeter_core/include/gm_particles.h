@@ -1,4 +1,6 @@
 // Effect "particles": a pile of grains that slides and splashes.
+// A gm_particles_t is about 23-25 KB: keep it in static or heap memory, never
+// on a task stack.
 #pragma once
 
 #include "gm_effect.h"
@@ -16,8 +18,8 @@ extern "C" {
 typedef struct {
   gm_effect_t base;
 
-  float count;
-  float tank_width_m;
+  float count;         // active particles (the first `count` of pos/vel)
+  float tank_width_m;  // virtual tank width (m): scales gravity
   float drag;          // 1/s
   float restitution;
   float pressure;      // stiffness: acceleration = -(pressure / tank_m) * grad(max(rho - rho0, 0))
