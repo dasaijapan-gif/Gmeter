@@ -19,7 +19,8 @@ Install ESP-IDF **v5.2 or newer** (the firmware is built and tested with
 v5.5.6) by following Espressif's *Get Started* guide for your PC:
 <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/>.
 Install the tools for `esp32` and `esp32s3`. Then open an ESP-IDF terminal
-(Windows: the "ESP-IDF CMD" shortcut; Linux/macOS: run `. $IDF_PATH/export.sh`)
+(Windows: the "ESP-IDF CMD" shortcut; Linux/macOS: run `. ~/esp/esp-idf/export.sh`,
+the `export.sh` in your ESP-IDF folder)
 and change to this folder (the one with this README).
 
 ## 2. Build and flash (standard edition, 128x56 panels)
@@ -73,11 +74,15 @@ folder), then **Gmeter**:
 | Edition | Standard | Standard (all effects) or HUD edition (always `hud`) |
 | Panels > Panel type | WiseChip 128x56 | WiseChip 128x56 transparent SSD1309 (DFRobot DFR0934 and others, panel model 0), generic SSD1309 128x64 (model 1) or SSD1306 128x64 (model 2) |
 | Panels > SPI clock (Hz) | 10000000 | Panel bus speed; 10 MHz is the maximum. Try 8000000 with long wires |
-| Panels > Panels mounted upside down | 0x00 | Bit mask: bit i turns panel i's picture round (panel 0 is nearest the driver) |
+| Panels > Panels mounted upside down | 0x00 | Bit mask: bit i turns round the picture of the panel on the i-th chip-select pin (the one `test i` lights; normally panel 0 is nearest the driver) |
 | Panels > Chip selects wired windshield-first | off | The stack is wired the other way round |
 | Target frame rate | 60 | Frames per second |
 
-Save and rebuild (`idf.py build`) after a change. The values in
+Save, then rebuild with the same options:
+`idf.py -B build_x -DSDKCONFIG=build_x/sdkconfig build` (or its `flash`
+command); plain `idf.py build` uses the default `build` folder. Do not re-run
+the section 3 line for that folder: its `set-target` starts a fresh
+configuration and erases the menuconfig changes. The values in
 `sdkconfig.defaults` and the overlays only apply to a new configuration: after
 editing one of those files, delete the build folder (or its `sdkconfig`) and
 build again.
@@ -102,13 +107,16 @@ menuconfig and rebuild; the command line then works on the native USB port.
 
 The images are made for 4 MB of flash and run on any module with 4 MB or more.
 `idf.py flash` writes the three files. With esptool directly, from the build
-folder: `python -m esptool --chip esp32 -b 460800 write-flash @flash_args`
-(esptool v4: `write_flash`). One file for address 0x0:
+folder: `python -m esptool --chip esp32 -b 460800 write_flash @flash_args`
+(use `--chip esp32s3` in an ESP32-S3 build folder). One file for address 0x0:
 
 ```sh
 cd build_esp32
-python -m esptool --chip esp32 merge-bin -o gmeter_full.bin @flash_args
+python -m esptool --chip esp32 merge_bin -o gmeter_full.bin @flash_args
 ```
+
+These are esptool v4 spellings, which ESP-IDF 5.2-5.4 install; esptool v5
+(ESP-IDF 5.5) also accepts them, or `write-flash` and `merge-bin`.
 
 Writing a whole image (or `idf.py erase-flash`) clears the saved settings and
 calibration. To update a unit and keep them, write only `gmeter.bin` at

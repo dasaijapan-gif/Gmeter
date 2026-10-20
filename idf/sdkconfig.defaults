@@ -18,10 +18,10 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 # render pacing are exact.
 CONFIG_FREERTOS_HZ=1000
 
-# Serial console on UART0 at 115200 baud: the command line and the firmware's
-# messages.
+# Serial console on UART0 at 115200 baud (ESP-IDF's default console): the
+# command line and the firmware's messages. Another speed needs
+# CONFIG_ESP_CONSOLE_UART_CUSTOM=y with CONFIG_ESP_CONSOLE_UART_BAUDRATE.
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
-CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 
 # Only warnings and errors from the bootloader and ESP-IDF, so the console
 # shows the firmware's own lines.

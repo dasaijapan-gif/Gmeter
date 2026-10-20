@@ -10,8 +10,8 @@ menu "Gmeter"
             `mode` command, the BOOT button or auto-cycle, and `save` keeps it.
 
             HUD edition: always shows the NERV-style `hud` effect. The `mode`,
-            `cycle` and `anim` commands answer with a short note instead, and
-            a short press of BOOT does nothing. The same choice can be made with
+            `cycle` and `anim` commands and a short press of BOOT answer with a
+            short note instead of switching. The same choice can be made with
             the overlay configs/hud.defaults.
 
         config GMETER_EDITION_STANDARD
@@ -90,10 +90,14 @@ menu "Gmeter"
             range 0x00 0xFF
             default 0x00
             help
-                One bit per panel: set bit i if panel i is mounted rotated by
-                180 degrees, and its picture is turned round to match. Panel 0
-                is the one nearest the driver. Example: 0x81 flips panels 0
-                and 7. 0x00: all panels the same way up.
+                One bit per panel: set bit i if the panel on the i-th
+                chip-select pin of board_config.h (the panel that `test i`
+                lights) is mounted rotated by 180 degrees, and its picture is
+                turned round to match. Normally that is the i-th panel counted
+                from the driver (0 = nearest); with "Chip selects wired
+                windshield-first" it is the i-th counted from the windshield.
+                Example: 0x81 flips the first and last panel. 0x00: all panels
+                the same way up.
 
         config GMETER_PANELS_REVERSED
             bool "Chip selects wired windshield-first"

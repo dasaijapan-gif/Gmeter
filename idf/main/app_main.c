@@ -37,7 +37,8 @@
 
 // Artwork exported from Gmeter Studio (host/web): save it as
 // main/user_animation.h and it replaces the built-in demo animation.
-#if __has_include("user_animation.h")
+// main/CMakeLists.txt defines GM_HAVE_USER_ANIMATION when the file exists.
+#if defined(GM_HAVE_USER_ANIMATION)
 #include "user_animation.h"
 #define GM_USER_ANIMATION (&kUserAnimation)
 #else
@@ -342,6 +343,10 @@ static void display_task(void* arg) {
     portENTER_CRITICAL(&s_mux);
     s_frame_displaying = -1;
     portEXIT_CRITICAL(&s_mux);
+    // The next frame is already waiting: the bus cannot keep up (a slow SPI
+    // clock or a high frame rate). The transfer polls, so sleep one tick or
+    // the idle task on this core never runs and the task watchdog fires.
+    if (uxSemaphoreGetCount(s_frame_sem) > 0) vTaskDelay(1);
   }
 }
 

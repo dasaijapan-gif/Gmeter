@@ -9,9 +9,11 @@
 // own log lines go through the same driver.
 //
 // Output goes through a print_t, a small stand-in for Arduino's Print class:
-// the console is one; the CLI's reply buffer is another. Bytes are written as
-// given (no newline translation): print_ln ends a line with "\r\n", as
-// Arduino's println does.
+// the console is one; the CLI's reply buffer is another. On the UART and USB
+// Serial/JTAG consoles bytes are written as given (no newline translation):
+// print_ln ends a line with "\r\n", as Arduino's println does. The USB-OTG CDC
+// console goes through ESP-IDF's standard output, which turns "\n" into
+// "\r\n".
 #pragma once
 
 #include <stdbool.h>

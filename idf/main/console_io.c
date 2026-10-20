@@ -31,6 +31,9 @@
 // Any other console (USB CDC on the S3's USB-OTG, or none): standard I/O.
 #include <fcntl.h>
 #include <unistd.h>
+#if CONFIG_ESP_CONSOLE_USB_CDC
+#include "esp_vfs_cdcacm.h"
+#endif
 #endif
 
 // Room for the longest CLI reply (the 2 KB reply buffer) without waiting.
@@ -115,7 +118,11 @@ void conio_init(void) {
   esp_vfs_usb_serial_jtag_use_driver();
 #endif
 #else
-  setvbuf(stdout, NULL, _IOFBF, CONSOLE_TX_BUFFER);
+#if CONFIG_ESP_CONSOLE_USB_CDC
+  // Raw CR and LF to the command line, as on the UART (the default turns CR
+  // into LF, so a CRLF terminal would end every command twice).
+  esp_vfs_dev_cdcacm_set_rx_line_endings(ESP_LINE_ENDINGS_LF);
+#endif
   const int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
   if (flags >= 0) fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
 #endif
