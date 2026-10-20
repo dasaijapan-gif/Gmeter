@@ -1,0 +1,5 @@
+# ESP32-S3: the console is UART0, on the DevKitC-1 connector labelled UART.
+# No second copy of the boot messages on the native USB port, so that port
+# stays silent like the Arduino build (choose "USB Serial/JTAG Controller" as
+# the console in menuconfig for boards with only a native USB connector).
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

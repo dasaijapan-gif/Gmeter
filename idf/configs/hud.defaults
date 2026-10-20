@@ -1,0 +1,5 @@
+# HUD edition: always shows the `hud` effect (no mode switching, auto-cycle or
+# BOOT button switching). Combine with sdkconfig.defaults, for example:
+#   idf.py -B build_hud -DSDKCONFIG=build_hud/sdkconfig \
+#     -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;configs/hud.defaults" set-target esp32 build
+CONFIG_GMETER_EDITION_HUD=y

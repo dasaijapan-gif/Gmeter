@@ -1,0 +1,118 @@
+menu "Gmeter"
+
+    choice GMETER_EDITION
+        prompt "Edition"
+        default GMETER_EDITION_STANDARD
+        help
+            Which firmware to build.
+
+            Standard: all ten effects. The effect on screen is chosen with the
+            `mode` command, the BOOT button or auto-cycle, and `save` keeps it.
+
+            HUD edition: always shows the NERV-style `hud` effect. The `mode`,
+            `cycle` and `anim` commands answer with a short note instead, and
+            a short press of BOOT does nothing. The same choice can be made with
+            the overlay configs/hud.defaults.
+
+        config GMETER_EDITION_STANDARD
+            bool "Standard: all effects"
+
+        config GMETER_EDITION_HUD
+            bool "HUD edition: always shows hud"
+    endchoice
+
+    menu "Panels"
+
+        choice GMETER_PANEL
+            prompt "Panel type"
+            default GMETER_PANEL_WISECHIP_128X56
+            help
+                The OLED panels in the stack. All eight panels must be the
+                same type.
+
+            config GMETER_PANEL_WISECHIP_128X56
+                bool "WiseChip 128x56 transparent SSD1309 (panel model 0)"
+                help
+                    WiseChip UG-2856KLBAG01 glass, 128x56 pixels, SSD1309
+                    controller, 12 V panel supply made on the breakout. Sold as
+                    DFRobot DFR0934, SparkFun LCD-15173, Crystalfontz
+                    CFAL12856A0-0151-B and Waveshare 1.51" transparent OLED.
+
+            config GMETER_PANEL_SSD1309_128X64
+                bool "Generic SSD1309 128x64 (panel model 1)"
+                help
+                    Ordinary 128x64 OLED modules with an SSD1309 controller
+                    (often sold as 2.42" or 2.4" OLED). Same as the overlay
+                    configs/panel_128x64.defaults.
+
+            config GMETER_PANEL_SSD1306_128X64
+                bool "SSD1306 128x64 (panel model 2)"
+                help
+                    128x64 OLED modules with an SSD1306 controller and its
+                    internal charge pump (3.3 V supply only).
+        endchoice
+
+        config GMETER_PANEL_MODEL
+            int
+            default 0 if GMETER_PANEL_WISECHIP_128X56
+            default 1 if GMETER_PANEL_SSD1309_128X64
+            default 2 if GMETER_PANEL_SSD1306_128X64
+            help
+                Set by the panel type: 0 WiseChip 128x56, 1 generic SSD1309
+                128x64, 2 SSD1306 128x64. Picks the panel's start-up sequence.
+
+        config GMETER_PANEL_W
+            int
+            default 128
+            help
+                Panel width in pixels. Always 128: the SSD130x driver
+                addresses columns 0 to 127.
+
+        config GMETER_PANEL_H
+            int
+            default 56 if GMETER_PANEL_WISECHIP_128X56
+            default 64
+            help
+                Panel height in pixels, set by the panel type: 56 for the
+                WiseChip transparent panels, 64 for the 128x64 modules.
+
+        config GMETER_SPI_HZ
+            int "SPI clock (Hz)"
+            range 1000000 10000000
+            default 10000000
+            help
+                Clock of the SPI bus shared by all eight panels. 10000000
+                (10 MHz) is the SSD1309 maximum. With long wires (over about
+                10 cm) or a noisy or jumping picture, try 8000000.
+
+        config GMETER_PANEL_FLIP_MASK
+            hex "Panels mounted upside down (bit mask)"
+            range 0x00 0xFF
+            default 0x00
+            help
+                One bit per panel: set bit i if panel i is mounted rotated by
+                180 degrees, and its picture is turned round to match. Panel 0
+                is the one nearest the driver. Example: 0x81 flips panels 0
+                and 7. 0x00: all panels the same way up.
+
+        config GMETER_PANELS_REVERSED
+            bool "Chip selects wired windshield-first"
+            default n
+            help
+                Normally the first chip-select GPIO in the wiring table drives
+                panel 0, the panel nearest the driver. Turn this on if the
+                stack was wired the other way round (the first chip-select on
+                the panel nearest the windshield), instead of rewiring.
+
+    endmenu
+
+    config GMETER_TARGET_FPS
+        int "Target frame rate (frames per second)"
+        range 15 120
+        default 60
+        help
+            How often the animation is drawn and sent to the panels. 60 is
+            the tested value. Lower values save power; below 15 the effects
+            would slow down, so that is the minimum.
+
+endmenu

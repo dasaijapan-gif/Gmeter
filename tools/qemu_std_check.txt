@@ -1,0 +1,53 @@
+# qemu_boot_check.py script for the standard edition (all effects): it boots,
+# answers the basic commands, switches to every effect and saves.
+#   python3 tools/qemu_boot_check.py --qemu <qemu-system-xtensa> --image <padded _full.bin> \
+#       --machine esp32 --script tools/qemu_std_check.txt
+wait 30 >
+status
+expect 5 mode
+list
+expect 5 9 sync
+mode ball
+expect 5 mode: ball
+mode slosh
+expect 5 mode: slosh
+mode particles
+expect 5 mode: particles
+mode smoke
+expect 5 mode: smoke
+status
+expect 5 smoke allocated
+mode tunnel
+expect 5 mode: tunnel
+mode sprite
+expect 5 mode: sprite
+mode anim
+expect 5 mode: anim
+mode hud
+expect 5 mode: hud
+mode atfield
+expect 5 mode: atfield
+mode sync
+expect 5 mode: sync
+get
+expect 5 gain
+set gain 12
+expect 5 gain = 12.0000
+get gain
+expect 5 gain = 12.0000
+test 1
+expect 5 test pattern: panel 1
+test off
+expect 5 test pattern: off
+cycle 2
+expect 5 auto cycle: every 2 s
+sleep 6
+cycle 0
+expect 5 auto cycle: off
+mode ball
+expect 5 mode: ball
+sleep 10
+status
+expect 5 mode ball
+save
+expect 5 saved

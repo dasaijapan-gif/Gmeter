@@ -1,0 +1,5 @@
+# ESP-IDF build folders (README: one per variant) and generated configuration
+build/
+build_*/
+sdkconfig
+sdkconfig.old

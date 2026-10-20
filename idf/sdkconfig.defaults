@@ -1,0 +1,34 @@
+# Gmeter firmware defaults, for every chip and variant. Variant overlays are in
+# configs/ (HUD edition, 128x64 panels); chip-specific values in
+# sdkconfig.defaults.<target>. The Gmeter options themselves are under
+# `idf.py menuconfig` > Gmeter.
+
+# 4 MB flash with the custom partition table (partitions.csv: NVS settings at
+# 0x9000, the app at 0x10000).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
+
+# Speed: -O2 and the full CPU clock.
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# 1 ms scheduler tick, so the 200 Hz sensor task (5 ms period) and the 60 fps
+# render pacing are exact.
+CONFIG_FREERTOS_HZ=1000
+
+# Serial console on UART0 at 115200 baud: the command line and the firmware's
+# messages.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+
+# Only warnings and errors from the bootloader and ESP-IDF, so the console
+# shows the firmware's own lines.
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+
+# The main task runs the command line, the button and housekeeping (the Arduino
+# loop task): core 1, priority 1, 8 KB of stack.
+CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

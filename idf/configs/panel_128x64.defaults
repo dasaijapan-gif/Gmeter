@@ -1,0 +1,5 @@
+# Generic SSD1309 128x64 OLED modules (panel model 1) instead of the WiseChip
+# 128x56 transparent panels. Combine with sdkconfig.defaults, for example:
+#   idf.py -B build_64 -DSDKCONFIG=build_64/sdkconfig \
+#     -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;configs/panel_128x64.defaults" set-target esp32 build
+CONFIG_GMETER_PANEL_SSD1309_128X64=y
