@@ -26,10 +26,31 @@ void compare_timeline(Expect& ex, const gm_scenario_t* c, const gm::Scenario& p,
     EXPECT(ex, same_g(gm_scenario_at(c, t, &crng), p.at(t, &prng)));
   }
   EXPECT(ex, gm_rng_next(&crng) == prng.next());  // the same number of draws
-  const float odd[] = {diff::kNaN, diff::kInf, -diff::kInf, 0.0f, -0.0f, 1e30f, -1e30f, 1e-30f};
+  const float la = c->loop_after;
+  const float odd[] = {diff::kNaN,
+                       diff::kInf,
+                       -diff::kInf,
+                       0.0f,
+                       -0.0f,
+                       1e30f,
+                       -1e30f,
+                       1e-30f,
+                       la,
+                       std::nextafter(la, 1e30f),
+                       std::nextafter(la, -1e30f),
+                       2.0f * la,
+                       3.0f * la + 0.25f};
   for (float t : odd) {
     EXPECT(ex, same(gm_scenario_dynamic_at(c, t), p.dynamicAt(t)));
     EXPECT(ex, same_g(gm_scenario_at(c, t, &crng), p.at(t, &prng)));
+  }
+  // Each key time, its neighbouring floats and each segment's midpoint (so
+  // even microsecond spans are evaluated inside).
+  for (int k = 0; k < c->count; ++k) {
+    const float kt = c->keys[k].t;
+    const float next = k + 1 < c->count ? c->keys[k + 1].t : kt + 1.0f;
+    const float ts[] = {kt, std::nextafter(kt, -1e30f), std::nextafter(kt, 1e30f), kt + (next - kt) * 0.5f};
+    for (float t : ts) EXPECT(ex, same(gm_scenario_dynamic_at(c, t), p.dynamicAt(t)));
   }
 }
 
@@ -87,8 +108,11 @@ TEST(scenario_custom_profiles) {
     std::vector<gm::GKey> pk(static_cast<size_t>(n) + 1);
     float t = r.frange(-1.0f, 1.0f);
     for (int i = 0; i < n; ++i) {
-      if (r.chance(0.8)) t += r.chance(0.1) ? 0.0f : r.frange(1e-7f, 2.0f);  // sometimes zero spans
-      else t = r.frange(-1.0f, 10.0f);                                       // sometimes out of order
+      static const float kTinySpans[] = {0.0f, 1e-6f, 2e-6f, 5e-7f, 1e-5f};
+      if (r.chance(0.8))
+        t += r.chance(0.15) ? r.pick(kTinySpans) : r.frange(1e-7f, 2.0f);  // tiny spans
+      else
+        t = r.frange(-1.0f, 10.0f);  // out of order
       const gm_vec3_t d = gm_vec3(r.frange(-1, 1), r.frange(-1, 1), r.frange(-1, 1));
       ck[static_cast<size_t>(i)] = gm_gkey_t{t, d};
       pk[static_cast<size_t>(i)] = gm::GKey{t, diff::to_cpp(d)};

@@ -5,6 +5,7 @@
 // mismatch stays readable (the test still fails).
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -28,8 +29,13 @@ struct Expect {
 };
 #define EXPECT(e, x) (e)((x), #x, __FILE__, __LINE__)
 
-inline bool same(float a, float b) { return harness::same_float(a, b); }
-inline bool same(gm_vec3_t a, const gm::Vec3& b) { return harness::same_vec(a, b); }
+// Bit-exact float comparison, except that any two NaNs are equal: GCC treats
+// IEEE + and * as commutative, which can change which NaN operand propagates
+// (and so the sign bit of a NaN result) between two compilations of the same
+// expression, e.g. with and without the sanitizers. Signed zeros, infinities
+// and every finite value must match bit for bit.
+inline bool same(float a, float b) { return harness::same_float(a, b) || (std::isnan(a) && std::isnan(b)); }
+inline bool same(gm_vec3_t a, const gm::Vec3& b) { return same(a.x, b.x) && same(a.y, b.y) && same(a.z, b.z); }
 inline bool same(gm_vec3_t a, gm_vec3_t b) { return same(a.x, b.x) && same(a.y, b.y) && same(a.z, b.z); }
 inline bool same(const gm_mat3_t& a, const gm::Mat3& b) {
   for (int i = 0; i < 3; ++i)

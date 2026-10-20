@@ -9,10 +9,9 @@ using diff::same;
 
 namespace {
 
-const char* const kNames[] = {"gain",  "speed", "hz",     "radius", "damping", "trail",  "rings",  "hud",
-                              "scale", "x",     "y",      "z",      "a",       "b",      "c",      "d",
-                              "e",     "f",     "g",      "h",      "i",       "j",      "k",      "l",
-                              "m",     "n",     "o",      "p",      "q",       "r"};  // 30 > GM_PARAMS_MAX
+const char* const kNames[] = {"gain", "speed", "hz", "radius", "damping", "trail", "rings", "hud", "scale", "x", "y",
+                              "z",    "a",     "b",  "c",      "d",       "e",     "f",     "g",   "h",     "i", "j",
+                              "k",    "l",     "m",  "n",      "o",       "p",     "q",     "r"};  // 30 > GM_PARAMS_MAX
 
 bool same_table(const gm_param_table_t& c, const gm::ParamTable& p, const float* cv, const float* pv) {
   if (gm_params_count(&c) != p.count()) return false;

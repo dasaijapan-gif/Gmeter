@@ -74,3 +74,37 @@ TEST(gstate_random_drives) {
     }
   }
 }
+
+TEST(gstate_exact_thresholds) {
+  Expect ex;
+  diff::Rand r(32);
+  // Dyadic thresholds, components, dt and hold times: comparisons such as
+  // |d.y| >= bump_g, held >= hold_s, mine >= 0.6 * enter_g and
+  // best >= mine + 0.1 are decided on exact equality.
+  const float grid[] = {0.0f,  0.125f, 0.25f,       0.375f,       0.5f,          0.625f,       0.75f,       1.0f,
+                        0.15f, 0.6f,   0.5f + 0.1f, 0.25f + 0.1f, 0.375f + 0.1f, 0.6f * 0.25f, 0.6f * 0.5f, 0.3f};
+  const float thresholds[] = {0.25f, 0.5f, 0.125f, 0.3f, 0.375f};
+  const float holds[] = {0.0f, 0.25f, 0.5f, 0.0625f};
+  for (int run = 0; run < 600; ++run) {
+    gm_gstate_t c;
+    gm_gstate_init(&c);
+    gm::GStateTracker p;
+    c.enter_g = p.enterG = r.pick(thresholds);
+    c.hold_s = p.holdS = r.pick(holds);
+    c.bump_g = p.bumpG = r.pick(thresholds);
+    for (int i = 0; i < 400; ++i) {
+      const float sx = r.chance(0.5) ? 1.0f : -1.0f, sy = r.chance(0.5) ? 1.0f : -1.0f,
+                  sz = r.chance(0.5) ? 1.0f : -1.0f;
+      const float dx = sx * r.pick(grid), dy = r.chance(0.3) ? sy * r.pick(grid) : 0.0f, dz = sz * r.pick(grid);
+      // Rest is (0, 1, 0): x and z are exact, and y is exact for these dyadic values.
+      gm::GForce gp;
+      gp.proper = gm::Vec3{dx, 1.0f + dy, dz};
+      const gm_gforce_t g = gm_gforce_from_proper(diff::to_c(gp.proper));
+      const float dt = r.chance(0.8) ? 1.0f / 64.0f : 1.0f / 16.0f;
+      bool cb = false, pb = false;
+      EXPECT(ex, gm_gstate_update(&c, g, dt, &cb) == p.update(gp, dt, &pb));
+      EXPECT(ex, cb == pb);
+      EXPECT(ex, same_tracker(c, p));
+    }
+  }
+}

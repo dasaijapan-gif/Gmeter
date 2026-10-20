@@ -159,9 +159,29 @@ TEST(jp_mixed_strings) {
   FramePair f;
   const std::vector<std::string> p = pieces();
   // The strings the effects actually draw, plus random mixes.
-  std::vector<std::string> strings = {"待機", "加速", "制動", "左旋回", "右旋回", "衝撃", "危険", "警告", "横G",
-                                      "縦G", "パターン青", "フィールド", "第3号機", "ーー", "同期率 99.9%", "", " ",
-                                      "使徒接近", "限界", "ATフィールド全開", "\xE6\x97", "a\x80" "b"};
+  std::vector<std::string> strings = {"待機",
+                                      "加速",
+                                      "制動",
+                                      "左旋回",
+                                      "右旋回",
+                                      "衝撃",
+                                      "危険",
+                                      "警告",
+                                      "横G",
+                                      "縦G",
+                                      "パターン青",
+                                      "フィールド",
+                                      "第3号機",
+                                      "ーー",
+                                      "同期率 99.9%",
+                                      "",
+                                      " ",
+                                      "使徒接近",
+                                      "限界",
+                                      "ATフィールド全開",
+                                      "\xE6\x97",
+                                      "a\x80"
+                                      "b"};
   for (int i = 0; i < 4000; ++i) strings.push_back(random_string(r, p));
   int n = 0;
   for (const std::string& s : strings)

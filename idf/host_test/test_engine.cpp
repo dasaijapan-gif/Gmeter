@@ -136,8 +136,8 @@ void cfx_render(gm_effect_t* self, gm_frame_t* f) {
   char buf[16];
   std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(s->frames % 1000u));
   gm_frame_text(f, GM_D - 1, 60, GM_H - 12, buf);
-  gm_frame_circle(f, static_cast<int>((s->frames / 7u) % static_cast<uint32_t>(GM_D)), GM_W / 2 + static_cast<int>(s->pos.x),
-                  GM_H / 2, 10 + static_cast<int>(s->phase * 10.0f));
+  gm_frame_circle(f, static_cast<int>((s->frames / 7u) % static_cast<uint32_t>(GM_D)),
+                  GM_W / 2 + static_cast<int>(s->pos.x), GM_H / 2, 10 + static_cast<int>(s->phase * 10.0f));
 }
 
 void cfx_activate(gm_effect_t* self) {
@@ -219,8 +219,9 @@ bool same_fx(const CFx& c, const CppFx& p) {
 
 // Long names exercise the 19-character limit of the mode-name overlay; the
 // duplicate checks that lookups find the first match.
-const char* const kNames[] = {"ball",  "slosh", "Smoke2", "averyveryverylongeffectname", "a",  "hud",
-                              "sync",  "tunnel", "ball",  "x_y-z.9",                     "AT", "particles",
+const char* const kNames[] = {"ball", "slosh",   "Smoke2", "averyveryverylongeffectname",
+                              "a",    "hud",     "sync",   "tunnel",
+                              "ball", "x_y-z.9", "AT",     "particles",
                               "anim", "sprite"};
 const int kPool = 14;
 
@@ -379,8 +380,7 @@ TEST(engine_random_operation_sequences) {
         const float v = r.chance(0.2) ? r.pick(kOdd) : r.frange(-7.0f, 7.0f);
         EXPECT(ex, gm_engine_set_param(w.ce.get(), n, v) == w.pe->setParam(n, v));
       } else {
-        if (r.chance(0.03))
-          target = gm_vec3(r.frange(-1.5f, 1.5f), r.frange(-1.0f, 1.0f), r.frange(-1.5f, 1.5f));
+        if (r.chance(0.03)) target = gm_vec3(r.frange(-1.5f, 1.5f), r.frange(-1.0f, 1.0f), r.frange(-1.5f, 1.5f));
         dyn = gm_vec3_lerp(dyn, target, 0.1f);
         const gm_gforce_t g = gm_gforce_from_proper(gm_vec3_add(gm_gforce_rest_proper(), dyn));
         gm::GForce pg;
@@ -411,9 +411,10 @@ TEST(engine_random_operation_sequences) {
       w.compare(ex, label);
     }
   }
-  harness::note("steps: %d crossfading (%d with differing offsets), %d offset, %d auto-cycle switches, "
-                "%d mode name, %d readout, %d status label",
-                n_fade, n_fade_offsets, n_offset, n_auto, n_name, n_readout, n_label);
+  harness::note(
+      "steps: %d crossfading (%d with differing offsets), %d offset, %d auto-cycle switches, "
+      "%d mode name, %d readout, %d status label",
+      n_fade, n_fade_offsets, n_offset, n_auto, n_name, n_readout, n_label);
   CHECK(n_fade > 100 && n_fade_offsets > 20 && n_offset > 100 && n_auto > 5 && n_name > 100 && n_readout > 100 &&
         n_label > 100);
 }
@@ -451,4 +452,38 @@ TEST(engine_crossfade_with_offsets) {
         w.compare(ex, label);
       }
     }
+}
+
+TEST(engine_exact_timing) {
+  Expect ex;
+  // dt = 1/64 and dyadic periods: since_switch reaches auto_cycle and 1.5 s
+  // exactly, and crossfade_t reaches exactly 1.
+  const float autos[] = {0.25f, 0.5f, 1.5f, 0.015625f};
+  const float fades[] = {0.25f, 0.125f, 0.5f, 0.015625f};
+  const float dts[] = {1.0f / 64.0f, 1.0f / 32.0f, 1.0f / 16.0f};
+  int n = 0;
+  for (float a : autos)
+    for (float cf : fades)
+      for (float dt : dts) {
+        World w(n++);
+        for (int i = 0; i < 4; ++i) {
+          gm_engine_add_effect(w.ce.get(), &w.c[static_cast<size_t>(i)]->fx.base);
+          w.pe->addEffect(w.p[static_cast<size_t>(i)].get());
+        }
+        gm_engine_set_auto_cycle(w.ce.get(), a);
+        w.pe->setAutoCycle(a);
+        gm_engine_set_crossfade_seconds(w.ce.get(), cf);
+        w.pe->setCrossfadeSeconds(cf);
+        gm::GForce g;
+        for (int i = 0; i < 200; ++i) {
+          g.proper =
+              gm::Vec3{0.25f * static_cast<float>(i % 5) - 0.5f, 1.0f, 0.125f * static_cast<float>(i % 7) - 0.375f};
+          gm_engine_step(w.ce.get(), gm_gforce_from_proper(diff::to_c(g.proper)), dt);
+          w.pe->step(g, dt);
+          char label[64];
+          std::snprintf(label, sizeof(label), "auto %g fade %g dt %g step %d", static_cast<double>(a),
+                        static_cast<double>(cf), static_cast<double>(dt), i);
+          w.compare(ex, label);
+        }
+      }
 }

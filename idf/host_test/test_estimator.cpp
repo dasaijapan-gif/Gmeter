@@ -19,8 +19,8 @@ bool same_est(const gm_estimator_t& c, const gm::GForceEstimator& p) {
          same_cal(gm_estimator_calibration(&c), p.calibration()) &&
          gm_estimator_forward_trusted(&c) == p.forwardTrusted() &&
          same(gm_estimator_nominal_forward(&c), p.nominalForward()) &&
-         gm_estimator_rest_sample_count(&c) == p.restSampleCount() &&
-         same(gm_estimator_cutoff_hz(&c), p.cutoffHz()) && same(gm_estimator_sample_hz(&c), p.sampleHz());
+         gm_estimator_rest_sample_count(&c) == p.restSampleCount() && same(gm_estimator_cutoff_hz(&c), p.cutoffHz()) &&
+         same(gm_estimator_sample_hz(&c), p.sampleHz());
 }
 
 gm::Vec3 rnd_unit(diff::Rand& r) {
@@ -62,8 +62,8 @@ TEST(estimator_defaults_and_filters) {
   struct Cfg {
     float cutoff, sample;
   };
-  const Cfg cfgs[] = {{4.0f, 200.0f}, {3.0f, 100.0f}, {0.0f, 200.0f}, {150.0f, 200.0f}, {10.0f, 1000.0f},
-                      {4.0f, 0.0f},   {1.0f, 50.0f},  {-2.0f, 200.0f}};
+  const Cfg cfgs[] = {{4.0f, 200.0f},   {3.0f, 100.0f}, {0.0f, 200.0f}, {150.0f, 200.0f},
+                      {10.0f, 1000.0f}, {4.0f, 0.0f},   {1.0f, 50.0f},  {-2.0f, 200.0f}};
   for (const Cfg& cfg : cfgs) {
     auto s = std::make_unique<Pair>();
     gm_estimator_set_filter(&s->c, cfg.cutoff, cfg.sample);
@@ -190,8 +190,8 @@ TEST(estimator_rest_and_brake_calibration) {
 TEST(estimator_make_calibration) {
   Expect ex;
   diff::Rand r(54);
-  const gm::Vec3 axes[] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {-1, 0, 0}, {0, -1, 0}, {0, 0, -1}, {0, 0, 0},
-                           {1e-12f, 0, 0}, {1, 1, 0}, {0.3f, 0.9f, 0.1f}};
+  const gm::Vec3 axes[] = {{1, 0, 0},  {0, 1, 0}, {0, 0, 1},      {-1, 0, 0}, {0, -1, 0},
+                           {0, 0, -1}, {0, 0, 0}, {1e-12f, 0, 0}, {1, 1, 0},  {0.3f, 0.9f, 0.1f}};
   for (const gm::Vec3& up : axes)
     for (const gm::Vec3& fwd : axes) {
       EXPECT(ex, same_cal(gm_estimator_make_calibration(diff::to_c(up), diff::to_c(fwd)),
@@ -267,4 +267,27 @@ TEST(estimator_auto_zero_long_runs) {
       s->update(ex, gm::simulateRawSensor(g, mount, noise, jitter));
     }
   }
+}
+
+TEST(estimator_rest_magnitude_limits) {
+  Expect ex;
+  // One sample carrying 8x the mean and seven zeros: the mean is then exactly
+  // the intended vector (scaling by 8 is exact), so mag hits 0.7 and 1.3 exactly.
+  const float mags[] = {0.7f, 1.3f, std::nextafter(0.7f, 0.0f), std::nextafter(1.3f, 2.0f), 1.0f};
+  const gm::Vec3 dirs[] = {{0, 1, 0}, {0, -1, 0}, {1, 0, 0}, {0, 0, 1}, {0, 0, -1}};
+  for (float m : mags)
+    for (const gm::Vec3& d : dirs)
+      for (int extra = 0; extra < 3; ++extra) {
+        auto s = std::make_unique<Pair>();
+        gm_estimator_begin_rest_calibration(&s->c);
+        s->p.beginRestCalibration();
+        const int count = 8 + extra * 8;
+        for (int i = 0; i < count; ++i) {
+          const gm::Vec3 raw = i == 0 ? d * (m * static_cast<float>(count)) : gm::Vec3{};
+          gm_estimator_feed_rest_sample(&s->c, diff::to_c(raw));
+          s->p.feedRestSample(raw);
+        }
+        EXPECT(ex, gm_estimator_finish_rest_calibration(&s->c) == s->p.finishRestCalibration());
+        EXPECT(ex, same_est(s->c, s->p));
+      }
 }

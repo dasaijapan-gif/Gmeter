@@ -10,8 +10,8 @@ using diff::same;
 
 namespace {
 
-const float kSpecial[] = {0.0f, -0.0f, 1.0f, -1.0f, 0.5f, -0.5f, 1e-9f, -1e-9f, 1e-30f, 3.4e38f, -3.4e38f,
-                          0.1f, 2.5f, -2.5f, 63.5f, -63.5f, 1e6f, diff::kInf, -diff::kInf, diff::kNaN};
+const float kSpecial[] = {0.0f,     -0.0f, 1.0f, -1.0f, 0.5f,  -0.5f,  1e-9f, -1e-9f,     1e-30f,      3.4e38f,
+                          -3.4e38f, 0.1f,  2.5f, -2.5f, 63.5f, -63.5f, 1e6f,  diff::kInf, -diff::kInf, diff::kNaN};
 
 float rnd_float(diff::Rand& r) {
   if (r.chance(0.15)) return r.pick(kSpecial);
@@ -143,9 +143,9 @@ TEST(math_lowpass) {
   struct Cfg {
     float cutoff, sample;
   };
-  const Cfg cfgs[] = {{4.0f, 200.0f},  {0.0f, 200.0f},   {-1.0f, 200.0f}, {4.0f, 0.0f},     {4.0f, -200.0f},
-                      {98.0f, 200.0f}, {97.99f, 200.0f}, {99.0f, 200.0f}, {0.001f, 200.0f}, {1.0f, 60.0f},
-                      {25.0f, 1000.0f}, {3.0f, 100.0f},  {diff::kNaN, 200.0f}, {4.0f, diff::kInf}};
+  const Cfg cfgs[] = {{4.0f, 200.0f},   {0.0f, 200.0f},   {-1.0f, 200.0f},      {4.0f, 0.0f},      {4.0f, -200.0f},
+                      {98.0f, 200.0f},  {97.99f, 200.0f}, {99.0f, 200.0f},      {0.001f, 200.0f},  {1.0f, 60.0f},
+                      {25.0f, 1000.0f}, {3.0f, 100.0f},   {diff::kNaN, 200.0f}, {4.0f, diff::kInf}};
   // Default (gm_lowpass_init) is a pass-through like the C++ default.
   {
     gm_lowpass_t c;
@@ -189,10 +189,10 @@ TEST(math_lowpass) {
 TEST(math_spring) {
   Expect ex;
   diff::Rand r(14);
-  const float zetas[] = {-1.0f, 0.0f,    0.005f,  0.01f, 0.2f,  0.5f,   0.9f, 0.998f, 0.999f, 0.9995f, 1.0f,
-                         1.0005f, 1.001f, 1.002f, 1.5f,  2.0f,  5.0f,   30.0f, 1000.0f};
-  const float dts[] = {0.0f, 1e-9f, 1e-7f, 1e-6f, 1e-4f, 1.0f / 1000.0f, 1.0f / 200.0f, 1.0f / 60.0f,
-                       1.0f / 15.0f, 0.1f, 0.5f, 1.0f, 10.0f, 100.0f};
+  const float zetas[] = {-1.0f, 0.0f,    0.005f, 0.01f,  0.2f, 0.5f, 0.9f, 0.998f, 0.999f, 0.9995f,
+                         1.0f,  1.0005f, 1.001f, 1.002f, 1.5f, 2.0f, 5.0f, 30.0f,  1000.0f};
+  const float dts[] = {0.0f,         1e-9f,        1e-7f, 1e-6f, 1e-4f, 1.0f / 1000.0f, 1.0f / 200.0f,
+                       1.0f / 60.0f, 1.0f / 15.0f, 0.1f,  0.5f,  1.0f,  10.0f,          100.0f};
   const float hzs[] = {0.0f, 1e-7f, 1e-3f, 0.3f, 1.0f, 2.5f, 6.0f, 20.0f, 100.0f, 2000.0f};
   for (float zeta : zetas)
     for (float dt : dts)
@@ -288,7 +288,8 @@ TEST(math_world_mapping_and_bayer) {
         EXPECT(ex, same(gm_frame_bayer_threshold(x, y, z), VF::bayerThreshold(x, y, z)));
         EXPECT(ex, gm_frame_in_bounds(x, y, z) == VF::inBounds(x, y, z));
       }
-  const int edges[] = {-1000000, -129, -128, -65, -64, -57, -56, -1, 0, 1, 7, 8, 31, 32, 55, 56, 63, 64, 127, 128, 1000000};
+  const int edges[] = {-1000000, -129, -128, -65, -64, -57, -56, -1,  0,   1,      7,
+                       8,        31,   32,   55,  56,  63,  64,  127, 128, 1000000};
   for (int x : edges)
     for (int y : edges)
       for (int z : edges) EXPECT(ex, gm_frame_in_bounds(x, y, z) == VF::inBounds(x, y, z));

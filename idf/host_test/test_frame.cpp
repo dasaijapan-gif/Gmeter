@@ -16,20 +16,22 @@ using diff::same;
 namespace {
 
 // Integer coordinate: mostly in or near range, sometimes far out. `extreme`
-// adds INT_MIN/INT_MAX-like values for the primitives that clip before any
-// arithmetic (set/get/reset, hline, vline, line, rect, fill_rect, clear_box).
+// adds INT_MIN/INT_MAX-like values for the arguments that are clipped before
+// any arithmetic (set/get/reset, hline, vline, line, rect, clear_box, fill_rect
+// x/y, disc z, shift).
 int coord(diff::Rand& r, int n, bool extreme) {
   const int k = r.irange(0, 19);
   if (k < 12) return r.irange(-4, n + 3);
   if (k < 17 || !extreme) return r.irange(-3 * n - 50, 4 * n + 50);
-  static const int kExtremes[] = {INT_MIN, INT_MIN + 1, -1000000, -(1 << 14) - 1, -(1 << 14), (1 << 14),
-                                  (1 << 14) + 1, 1000000, INT_MAX - 1, INT_MAX};
+  static const int kExtremes[] = {INT_MIN,   INT_MIN + 1,   -1000000, -(1 << 14) - 1, -(1 << 14),
+                                  (1 << 14), (1 << 14) + 1, 1000000,  INT_MAX - 1,    INT_MAX};
   return r.pick(kExtremes);
 }
 
 float intensity(diff::Rand& r) {
-  static const float kSpecial[] = {0.0f, -0.0f, 1.0f, -1.0f, 1.5f, 0.5f, 1.0f / 64.0f, 0.5f / 64.0f, 63.5f / 64.0f,
-                                   0.99999994f, 1e-7f, diff::kNaN, diff::kInf, -diff::kInf};
+  static const float kSpecial[] = {0.0f,  -0.0f,        1.0f,         -1.0f,         1.5f,
+                                   0.5f,  1.0f / 64.0f, 0.5f / 64.0f, 63.5f / 64.0f, 0.99999994f,
+                                   1e-7f, diff::kNaN,   diff::kInf,   -diff::kInf};
   return r.chance(0.3) ? r.pick(kSpecial) : r.frange(-0.2f, 1.2f);
 }
 
@@ -115,7 +117,8 @@ const char* random_op(FramePair& f, diff::Rand& r, Expect& ex) {
       return "rect";
     }
     case 7: {
-      const int z = coord(r, D, true), x0 = coord(r, W, true), y0 = coord(r, H, true), x1 = coord(r, W, true),
+      // fill_rect clips x and y but plots on any z, so z stays where plot is defined.
+      const int z = coord(r, D, false), x0 = coord(r, W, true), y0 = coord(r, H, true), x1 = coord(r, W, true),
                 y1 = coord(r, H, true);
       if (r.chance(0.2)) {
         gm_frame_fill_rect(c, z, x0, y0, x1, y1, 1.0f);
@@ -352,8 +355,8 @@ TEST(frame_crossfade) {
   Expect ex;
   diff::Rand r(64);
   FramePair a, b, f;
-  std::vector<float> ts = {-1.0f, -0.0f, 0.0f, 1e-9f, 1.0f, 2.0f, diff::kNaN, diff::kInf, -diff::kInf, 0.5f,
-                           0.99999994f};
+  std::vector<float> ts = {-1.0f,      -0.0f,      0.0f,        1e-9f, 1.0f,       2.0f,
+                           diff::kNaN, diff::kInf, -diff::kInf, 0.5f,  0.99999994f};
   for (int k = 0; k <= 64; ++k) {
     const float t = (static_cast<float>(k) + 0.5f) / 64.0f;
     ts.push_back(t);
@@ -411,4 +414,59 @@ TEST(frame_or_and_counts) {
   EXPECT(ex, f.same("clear") && gm_frame_count_lit(f.c.get()) == 0);
   // Raw access points at the same layout.
   EXPECT(ex, gm_frame_layer(f.c.get(), 3) - gm_frame_data(f.c.get()) == f.p->layer(3) - f.p->data());
+}
+
+TEST(frame_exact_boundaries) {
+  Expect ex;
+  FramePair f;
+  // Discs whose rim passes exactly through pixel centres (integer and
+  // half-integer centres, radii from Pythagorean triples), so `<= r*r` is
+  // decided on equality.
+  const float radii[] = {1.0f, 2.0f, 2.5f, 5.0f, 10.0f, 13.0f, 25.0f, 0.5f, 1.5f};
+  for (float rad : radii)
+    for (float cx = 10.0f; cx <= 11.0f; cx += 0.5f)
+      for (float cy = 20.0f; cy <= 21.0f; cy += 0.5f)
+        for (float it : {1.0f, 0.5f}) {
+          gm_frame_clear(f.c.get());
+          f.p->clear();
+          for (int z = 0; z < GM_D; ++z) {
+            gm_frame_disc(f.c.get(), z, cx + 8.0f * static_cast<float>(z), cy, rad, it);
+            f.p->disc(z, cx + 8.0f * static_cast<float>(z), cy, rad, it);
+          }
+          EXPECT(ex, f.same("exact disc"));
+        }
+  // Spheres centred exactly on a layer plane or between two, with rz exact
+  // multiples of the pitch, so dz hits +-1 and the radius test exactly.
+  for (int k = 0; k < GM_D; ++k)
+    for (float half : {0.0f, 0.5f})
+      for (float m : {0.6f, 1.0f, 1.5f, 2.0f, 3.0f}) {
+        const gm::Vec3 c{-20.0f + 5.0f * static_cast<float>(k), 3.0f,
+                         (static_cast<float>(k) + half - (GM_D - 1) * 0.5f) * GM_LAYER_PITCH_PX};
+        for (float rxy : {0.35f, 1.0f, 6.0f}) {
+          gm_frame_clear(f.c.get());
+          f.p->clear();
+          gm_frame_sphere(f.c.get(), diff::to_c(c), rxy, m * GM_LAYER_PITCH_PX, 1.0f);
+          f.p->sphere(c, rxy, m * GM_LAYER_PITCH_PX);
+          EXPECT(ex, f.same("exact sphere"));
+        }
+      }
+  // Points and 3D lines on exact half-voxel positions (round-half-up) and
+  // with integer spans (ceil of an exact integer).
+  diff::Rand r(66);
+  gm_frame_clear(f.c.get());
+  f.p->clear();
+  for (int i = 0; i < 3000; ++i) {
+    const gm_vec3_t v = gm_voxel_to_world(0.5f * static_cast<float>(r.irange(-4, 2 * GM_W + 4)),
+                                          0.5f * static_cast<float>(r.irange(-4, 2 * GM_H + 4)),
+                                          0.5f * static_cast<float>(r.irange(-2, 2 * GM_D + 2)));
+    gm_frame_point(f.c.get(), v, 1.0f);
+    f.p->point(diff::to_cpp(v));
+    const gm_vec3_t w =
+        gm_voxel_to_world(static_cast<float>(r.irange(-2, GM_W + 2)), static_cast<float>(r.irange(-2, GM_H + 2)),
+                          static_cast<float>(r.irange(0, GM_D - 1)));
+    gm_frame_line3(f.c.get(), v, w, 0.75f);
+    f.p->line3(diff::to_cpp(v), diff::to_cpp(w), 0.75f);
+    if (i % 100 == 0) EXPECT(ex, f.same("exact points/lines"));
+  }
+  EXPECT(ex, f.same("exact points/lines"));
 }

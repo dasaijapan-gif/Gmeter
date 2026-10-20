@@ -126,8 +126,8 @@ def cpp_source(out):
     lines += ['#include "jp_text.hpp"', "", "namespace gm {", "namespace {"]
     for name, (size, glyphs) in out.items():
         for ch, w, bits in glyphs:
-            data = pack_rows(w, bits)
-            lines.append(f"const uint8_t k_{name}_{ord(ch):04X}[] = {{{', '.join(f'0x{b:02X}' for b in data)}}};  // {ch}")
+            data = ", ".join(f"0x{b:02X}" for b in pack_rows(w, bits))
+            lines.append(f"const uint8_t k_{name}_{ord(ch):04X}[] = {{{data}}};  // {ch}")
         lines.append(f"const JpGlyph k_{name}_glyphs[] = {{")
         for ch, w, bits in glyphs:
             lines.append(f"    {{0x{ord(ch):04X}, {w}, k_{name}_{ord(ch):04X}}},")
