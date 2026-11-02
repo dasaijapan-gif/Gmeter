@@ -31,7 +31,7 @@ gmeter/
 | `partitions.csv` | 5 | Flash layout: settings (NVS) at 0x9000, the app at 0x10000. |
 | `README.md` | 184 | Building, flashing, the six variants, menuconfig options, calibration. |
 
-### Application: `idf/main/` (2227 lines)
+### Application: `idf/main/` (2229 lines)
 
 | File | Lines | What it does |
 | --- | ---: | --- |
@@ -40,7 +40,7 @@ gmeter/
 | `board_config.h` | 59 | Pin map for the classic ESP32 and the ESP32-S3. Edit this to change wiring. |
 | `display_ssd1309.h/.c` | 72 / 285 | Driver for eight SSD1309 panels on one SPI bus (ESP-IDF `spi_master`) with separate chip selects: init sequence, frame transfer, contrast ramp, soft and hard refresh, test pattern. |
 | `imu_mpu6050.h/.c` | 58 / 192 | Register-level MPU-6050 driver on the ESP-IDF I2C master driver: ±4 g, 44 Hz low-pass, 200 Hz; recovers a stuck I2C bus; accepts common clone chips. |
-| `serial_cli.h/.c` | 67 / 402 | The serial command line (115200 baud): `help`, `status`, `mode`, `set`, `cal`, `test`, `save` and the rest. The HUD edition refuses `mode`, `cycle` and `anim`. |
+| `serial_cli.h/.c` | 67 / 404 | The serial command line (115200 baud): `help`, `status`, `mode`, `set`, `cal`, `test`, `save` and the rest. The HUD edition refuses `mode`, `cycle` and `anim`. |
 | `console_io.h/.c` | 52 / 133 | Serial port input and output (UART console, or USB Serial/JTAG when chosen in menuconfig). |
 | `storage.h/.c` | 46 / 139 | Saves settings and calibration in the ESP32's NVS flash. |
 | `CMakeLists.txt` | 27 | The `main` component. |
