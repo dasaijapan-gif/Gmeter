@@ -156,9 +156,10 @@ def main():
         else:
             t.extractall(src_parent)
     project = os.path.join(src_parent, "gmeter")
-    # The host tests compare the C core with the C++ core of the PC tools,
-    # which is not part of this package.
-    shutil.rmtree(os.path.join(project, "host_test"), ignore_errors=True)
+    # The host tests (host_test compares the C core with the C++ core of the
+    # PC tools, test holds the C tests of the core) are for development only.
+    for tests in ("host_test", "test"):
+        shutil.rmtree(os.path.join(project, tests), ignore_errors=True)
     shipped = set()
     for dirpath, _, files in os.walk(project):
         for name in files:
