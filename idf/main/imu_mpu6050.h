@@ -31,9 +31,8 @@ typedef struct {
   i2c_master_dev_handle_t dev;
 } mpu6050_t;
 
-// Not started, nothing detected.
-void mpu6050_init(mpu6050_t* m);
-// Starts I2C on the given pins and configures the sensor. Returns false if
+// Starts I2C on the given pins and configures the sensor. Call once, before
+// any other function, on a zeroed mpu6050_t (static storage). Returns false if
 // the device does not answer or WHO_AM_I is not an MPU-6050 family die.
 // (The usual address is 0x68.)
 bool mpu6050_begin(mpu6050_t* m, int sda, int scl, uint8_t address);
@@ -52,7 +51,6 @@ static inline bool mpu6050_detected(const mpu6050_t* m) { return m->detected; } 
 static inline bool mpu6050_clone(const mpu6050_t* m) { return m->clone; }
 static inline uint8_t mpu6050_who_am_i(const mpu6050_t* m) { return m->who; }
 static inline uint32_t mpu6050_error_count(const mpu6050_t* m) { return m->errors; }
-static inline uint32_t mpu6050_consecutive_errors(const mpu6050_t* m) { return m->consecutive; }
 static inline uint32_t mpu6050_recoveries(const mpu6050_t* m) { return m->recoveries; }
 
 #ifdef __cplusplus

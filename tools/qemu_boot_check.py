@@ -3,18 +3,16 @@
 report crashes, watchdog resets and reboots.
 
 QEMU: https://github.com/espressif/qemu/releases (qemu-xtensa-softmmu-*).
-Build the image with esptool merge_bin (bootloader, partitions, boot_app0 and
-firmware at their offsets), or take a release *_full.bin, and pad the file to
-4 MB for the ESP32 (--fill-flash-size 4MB or truncate -s 4M). The ESP32-S3
+Take a release *_full.bin, or a build merged into one file (idf/README.md
+section 5), and pad it to 4 MB for the ESP32 (truncate -s 4M). The ESP32-S3
 emulator only accepts a 16 MB file: pad S3 images to 16 MB; the release's 4 MB
-header is fine. No IMU or panels are emulated:
-the firmware runs its demo drive and the SPI writes go nowhere. The ESP32-S3
-emulator does not keep NVS writes across a reboot (a bare Preferences sketch
-behaves the same), so check `save` and restore on the ESP32 machine or on a
-real S3 board.
+header is fine. No IMU or panels are emulated: the firmware runs its demo
+drive and the SPI writes go nowhere. The ESP32-S3 emulator does not keep NVS
+writes across a reboot, so check `save` and restore on the ESP32 machine or on
+a real S3 board.
 
   python3 tools/qemu_boot_check.py --qemu /path/qemu-system-xtensa \\
-      --image esp32dev_flash.bin --machine esp32 --script commands.txt --log boot.log
+      --image gmeter_esp32_128x56_full.bin --machine esp32 --script commands.txt --log boot.log
 
 Script lines: a serial command, `sleep <s>`, `wait <s> <text>` (wait until the
 text appears) or `expect <s> <text>` (the same, but the check fails if it does
@@ -43,7 +41,6 @@ def main():
     ap.add_argument("--machine", default="esp32", choices=["esp32", "esp32s3"])
     ap.add_argument("--script", help="file of serial commands (default: help, status, list)")
     ap.add_argument("--log", default="qemu_boot.log")
-    ap.add_argument("--boot-marker", default="gmeter: ", help="line printed once per firmware boot")
     a = ap.parse_args()
 
     cmd = [a.qemu, "-nographic", "-machine", a.machine, "-drive", "file=%s,if=mtd,format=raw" % a.image,
@@ -93,7 +90,7 @@ def main():
     out = text()
     with open(a.log, "w") as f:
         f.write(out)
-    boots = out.count(a.boot_marker)
+    boots = out.count("gmeter: ")  # the firmware's first line, printed once per boot
     fatal = [k for k in FATAL if k in out]
     print("boots: %d  fatal: %s  log: %s" % (boots, ", ".join(fatal) or "none", a.log))
     for needle in missing:

@@ -50,31 +50,14 @@ size_t print_ln(print_t* p, const char* s) {
 }
 
 size_t print_fmt(print_t* p, const char* fmt, ...) {
-  // Same approach as Arduino's Print::printf: format on the stack, fall back
-  // to the heap for long lines.
-  char local[128];
-  char* text = local;
+  char* text;
   va_list args;
   va_start(args, fmt);
-  va_list copy;
-  va_copy(copy, args);
-  int len = vsnprintf(local, sizeof(local), fmt, copy);
-  va_end(copy);
-  if (len < 0) {
-    va_end(args);
-    return 0;
-  }
-  if (len >= (int)sizeof(local)) {
-    text = (char*)malloc((size_t)len + 1);
-    if (!text) {
-      va_end(args);
-      return 0;
-    }
-    len = vsnprintf(text, (size_t)len + 1, fmt, args);
-  }
+  const int len = vasprintf(&text, fmt, args);  // newlib, declared because ESP-IDF builds with _GNU_SOURCE
   va_end(args);
+  if (len < 0) return 0;
   const size_t n = print_write(p, text, (size_t)len);
-  if (text != local) free(text);
+  free(text);
   return n;
 }
 

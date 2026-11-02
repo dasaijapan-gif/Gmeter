@@ -8,7 +8,6 @@
 CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
-CONFIG_PARTITION_TABLE_OFFSET=0x8000
 
 # Speed: -O2 and the full CPU clock.
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
@@ -18,17 +17,16 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 # render pacing are exact.
 CONFIG_FREERTOS_HZ=1000
 
-# Serial console on UART0 at 115200 baud (ESP-IDF's default console): the
-# command line and the firmware's messages. Another speed needs
+# The serial console is ESP-IDF's default, UART0 at 115200 baud: the command
+# line and the firmware's messages. Another speed needs
 # CONFIG_ESP_CONSOLE_UART_CUSTOM=y with CONFIG_ESP_CONSOLE_UART_BAUDRATE.
-CONFIG_ESP_CONSOLE_UART_DEFAULT=y
 
 # Only warnings and errors from the bootloader and ESP-IDF, so the console
 # shows the firmware's own lines.
 CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
 
-# The main task runs the command line, the button and housekeeping (the Arduino
-# loop task): core 1, priority 1, 8 KB of stack.
+# The main task runs the command line, the button and housekeeping: core 1,
+# priority 1, 8 KB of stack.
 CONFIG_ESP_MAIN_TASK_AFFINITY_CPU1=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

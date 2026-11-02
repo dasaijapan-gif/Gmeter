@@ -61,13 +61,6 @@ menu "Gmeter"
                 Set by the panel type: 0 WiseChip 128x56, 1 generic SSD1309
                 128x64, 2 SSD1306 128x64. Picks the panel's start-up sequence.
 
-        config GMETER_PANEL_W
-            int
-            default 128
-            help
-                Panel width in pixels. Always 128: the SSD130x driver
-                addresses columns 0 to 127.
-
         config GMETER_PANEL_H
             int
             default 56 if GMETER_PANEL_WISECHIP_128X56

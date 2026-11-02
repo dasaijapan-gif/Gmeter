@@ -30,13 +30,11 @@ typedef struct {
 // forward axis +z, refresh every 10 minutes, 4 Hz filter, no auto-cycle.
 void settings_defaults(settings_t* s);
 
-// Initialises the NVS flash (erasing it if it is full or from a newer
-// format, as the Arduino core does at start-up). Call once before load/save.
+// Initialises the NVS flash (erasing it if it is full or was written in a newer
+// NVS format). Call once before load/save.
 void storage_init(void);
-// `migrated` (may be NULL) reports a calibration saved by an older firmware
-// whose left/right axis was mirrored and has been corrected on load. Leaves
-// both outputs untouched when nothing valid is stored.
-bool storage_load(settings_t* settings, gm_calibration_t* calibration, bool* migrated);
+// Leaves both outputs untouched when nothing valid is stored.
+bool storage_load(settings_t* settings, gm_calibration_t* calibration);
 bool storage_save(const settings_t* settings, const gm_calibration_t* calibration);
 bool storage_clear(void);
 gm_vec3_t storage_forward_axis_vector(uint8_t index);

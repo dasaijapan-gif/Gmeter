@@ -5,6 +5,8 @@
 #include <string.h>
 
 #include "gm_config.h"
+#include "gm_math.h"
+#include "storage.h"
 
 static char* next_token(char** cursor) {
   char* c = *cursor;
@@ -80,7 +82,8 @@ static bool needs_engine(const char* cmd) {
   return false;
 }
 
-bool serial_cli_parse_float(const char* s, float* out) {
+// Strict number parsing: the whole token must be a finite number.
+static bool parse_float(const char* s, float* out) {
   if (!s || !*s) return false;
   char* end = NULL;
   const float v = strtof(s, &end);
@@ -89,15 +92,13 @@ bool serial_cli_parse_float(const char* s, float* out) {
   return true;
 }
 
-void serial_cli_init(serial_cli_t* cli, const app_control_t* app) {
-  memset(cli, 0, sizeof(*cli));
-  cli->app = app;
-}
+static void execute(serial_cli_t* cli, char* line, print_t* out);
 
-void serial_cli_poll(serial_cli_t* cli, cli_read_fn read, print_t* io) {
+void serial_cli_poll(serial_cli_t* cli) {
+  print_t* io = conio_out();
   uint8_t chunk[64];
   size_t got;
-  while ((got = read(chunk, sizeof(chunk))) > 0) {
+  while ((got = conio_read(chunk, sizeof(chunk))) > 0) {
     for (size_t k = 0; k < got; ++k) {
       const int c = chunk[k];
       // CR, LF or CRLF end a line (an LF straight after a CR is swallowed).
@@ -110,7 +111,7 @@ void serial_cli_poll(serial_cli_t* cli, cli_read_fn read, print_t* io) {
         print_str(io, "\r\n");
         cli->buf[cli->len] = '\0';
         if (cli->overflow) print_ln(io, "line too long (max 95 characters); ignored");
-        else if (cli->len > 0) serial_cli_execute(cli, cli->buf, io);
+        else if (cli->len > 0) execute(cli, cli->buf, io);
         cli->len = 0;
         cli->overflow = false;
         print_str(io, "> ");
@@ -135,8 +136,8 @@ void serial_cli_poll(serial_cli_t* cli, cli_read_fn read, print_t* io) {
   }
 }
 
-static void help(serial_cli_t* cli, print_t* out) {
-  const char* fixed = cli->app->fixed_effect();
+static void help(print_t* out) {
+  const char* fixed = app_fixed_effect();
   if (fixed) print_fmt(out, "single-effect build: always shows %s (mode, cycle and anim are disabled)\n", fixed);
   print_ln(out, "commands:");
   print_ln(out, "  status                 fps, timings, g, imu, heap");
@@ -165,8 +166,8 @@ static void help(serial_cli_t* cli, print_t* out) {
   print_ln(out, "  reboot");
 }
 
-static void list_params(serial_cli_t* cli, print_t* out) {
-  gm_effect_t* e = gm_engine_current(cli->app->engine());
+static void list_params(print_t* out) {
+  gm_effect_t* e = gm_engine_current(app_engine());
   if (!e) return;
   const gm_param_table_t* p = gm_effect_params(e);
   print_fmt(out, "[%s] parameters:\n", gm_effect_name(e));
@@ -177,33 +178,37 @@ static void list_params(serial_cli_t* cli, print_t* out) {
   }
 }
 
-static void run(serial_cli_t* cli, char* line, print_t* out) {
-  const app_control_t* app = cli->app;
-  char* cursor = line;
-  const char* cmd = next_token(&cursor);
-  if (!cmd) return;
-  const char* a1 = next_token(&cursor);
-  const char* a2 = next_token(&cursor);
-  const char* a3 = next_token(&cursor);
+// `<name> on|off`: applies the switch and confirms it as "<label>: on|off".
+static void on_off(const char* name, const char* label, void (*set)(bool), const char* a1, print_t* out) {
+  bool on;
+  if (!parse_on_off(a1, &on)) {
+    print_fmt(out, "usage: %s on|off\r\n", name);
+    return;
+  }
+  set(on);
+  print_fmt(out, "%s: %s\n", label, on ? "on" : "off");
+}
 
+// Runs one command: cmd and up to three arguments (NULL when absent).
+static void run(const char* cmd, const char* a1, const char* a2, const char* a3, print_t* out) {
   if (!strcmp(cmd, "help") || !strcmp(cmd, "?")) {
-    help(cli, out);
+    help(out);
     return;
   }
   if (!strcmp(cmd, "status")) {
-    app->print_status(out);
+    app_print_status(out);
     return;
   }
   if (!strcmp(cmd, "list")) {
-    gm_engine_t* eng = app->engine();
+    gm_engine_t* eng = app_engine();
     print_ln(out, "effects:");
     for (int i = 0; i < gm_engine_effect_count(eng); ++i)
       print_fmt(out, "  %d %s%s\n", i, gm_effect_name(gm_engine_effect(eng, i)),
                 i == gm_engine_current_index(eng) ? "  (active)" : "");
-    app->print_scenarios(out);
+    app_print_scenarios(out);
     return;
   }
-  const char* fixed = app->fixed_effect();
+  const char* fixed = app_fixed_effect();
   if (fixed && (!strcmp(cmd, "mode") || !strcmp(cmd, "cycle") || (!strcmp(cmd, "anim") && strcmp(fixed, "anim")))) {
     print_fmt(out, "this firmware always shows %s (single-effect build); flash the standard image to switch effects\n",
               fixed);
@@ -215,21 +220,21 @@ static void run(serial_cli_t* cli, char* line, print_t* out) {
       return;
     }
     if (!strcmp(a1, "next")) {
-      app->next_mode();
-    } else if (!app->set_mode(a1)) {
+      gm_engine_next_effect(app_engine());
+    } else if (!app_set_mode(a1)) {
       print_ln(out, "unknown effect (list)");
       return;
     }
-    print_fmt(out, "mode: %s\n", gm_effect_name(gm_engine_current(app->engine())));
+    print_fmt(out, "mode: %s\n", gm_effect_name(gm_engine_current(app_engine())));
     return;
   }
   if (!strcmp(cmd, "get")) {
     if (!a1) {
-      list_params(cli, out);
+      list_params(out);
       return;
     }
     float v;
-    gm_effect_t* cur = gm_engine_current(app->engine());
+    gm_effect_t* cur = gm_engine_current(app_engine());
     if (cur && gm_params_get(gm_effect_params(cur), a1, &v)) print_fmt(out, "%s = %.4f\n", a1, (double)v);
     else print_ln(out, "unknown parameter (get)");
     return;
@@ -240,12 +245,12 @@ static void run(serial_cli_t* cli, char* line, print_t* out) {
       print_ln(out, "usage: set <param> <value>");
       return;
     }
-    if (!serial_cli_parse_float(a2, &v)) {
+    if (!parse_float(a2, &v)) {
       print_ln(out, "bad number");
       return;
     }
-    if (gm_engine_set_param(app->engine(), a1, v)) {
-      gm_params_get(gm_effect_params(gm_engine_current(app->engine())), a1, &v);
+    if (gm_engine_set_param(app_engine(), a1, v)) {
+      gm_params_get(gm_effect_params(gm_engine_current(app_engine())), a1, &v);
       print_fmt(out, "%s = %.4f\n", a1, (double)v);
     } else {
       print_ln(out, "unknown parameter (get)");
@@ -253,71 +258,55 @@ static void run(serial_cli_t* cli, char* line, print_t* out) {
     return;
   }
   if (!strcmp(cmd, "src")) {
-    if (!a1 || !app->set_source(a1, a2)) print_ln(out, "usage: src imu | src serial | src demo [scenario]");
+    if (!a1 || !app_set_source(a1, a2)) print_ln(out, "usage: src imu | src serial | src demo [scenario]");
     else print_fmt(out, "source: %s%s%s\n", a1, a2 ? " " : "", a2 ? a2 : "");
     return;
   }
   if (!strcmp(cmd, "g")) {
     float lat, vert, lon;
-    if (!serial_cli_parse_float(a1, &lat) || !serial_cli_parse_float(a2, &vert) ||
-        !serial_cli_parse_float(a3, &lon)) {
+    if (!parse_float(a1, &lat) || !parse_float(a2, &vert) || !parse_float(a3, &lon)) {
       print_ln(out, "usage: g <lat> <vert> <lon>");
       return;
     }
-    app->inject_g(lat, vert, lon);
+    app_inject_g(lat, vert, lon);
     return;
   }
   if (!strcmp(cmd, "cal")) {
-    if (!a1) {
-      print_ln(out, "usage: cal fwd <axis> | rest | brake | clear");
-      return;
-    }
-    if (!strcmp(a1, "rest") || !strcmp(a1, "brake")) {
-      const char* why = app->start_calibration(a1);
+    if (a1 && (!strcmp(a1, "rest") || !strcmp(a1, "brake"))) {
+      const char* why = app_start_calibration(a1);
       if (why) {
         print_fmt(out, "cannot start: %s\n", why);
       } else {
         print_ln(out, !strcmp(a1, "rest") ? "capturing for 2 s, keep still..."
                                           : "capturing for 1.5 s, brake firmly now...");
       }
-    } else if (!strcmp(a1, "fwd")) {
+    } else if (a1 && !strcmp(a1, "fwd")) {
       print_ln(out,
-               app->set_forward_axis(a2) ? "forward axis set; now run cal rest" : "usage: cal fwd +x|-x|+y|-y|+z|-z");
-    } else if (!strcmp(a1, "clear")) {
-      print_ln(out, app->clear_state() ? "cleared; reboot to apply defaults" : "clear failed");
+               app_set_forward_axis(a2) ? "forward axis set; now run cal rest" : "usage: cal fwd +x|-x|+y|-y|+z|-z");
+    } else if (a1 && !strcmp(a1, "clear")) {
+      print_ln(out, storage_clear() ? "cleared; reboot to apply defaults" : "clear failed");
     } else {
       print_ln(out, "usage: cal fwd <axis> | rest | brake | clear");
     }
     return;
   }
   if (!strcmp(cmd, "zero")) {
-    bool on;
-    if (parse_on_off(a1, &on)) {
-      app->set_auto_zero(on);
-      print_fmt(out, "auto zero: %s\n", on ? "on" : "off");
-    } else {
-      print_ln(out, "usage: zero on|off");
-    }
+    on_off("zero", "auto zero", app_set_auto_zero, a1, out);
     return;
   }
   if (!strcmp(cmd, "filter")) {
     float hz;
-    if (serial_cli_parse_float(a1, &hz)) print_fmt(out, "filter: %.1f Hz\n", (double)app->set_filter_hz(hz));
+    if (parse_float(a1, &hz)) print_fmt(out, "filter: %.1f Hz\n", (double)app_set_filter_hz(hz));
     else print_ln(out, "usage: filter <hz>");
     return;
   }
   if (!strcmp(cmd, "contrast")) {
-    int v;
-    if (!a1 || !parse_int(a2, &v)) {
+    int v, panel = -1;
+    if (!a1 || !parse_int(a2, &v) || (strcmp(a1, "all") && (!parse_int(a1, &panel) || panel < 0 || panel >= GM_D))) {
       print_ln(out, "usage: contrast <n|all> <0-255>");
       return;
     }
-    int panel = -1;
-    if (strcmp(a1, "all") && (!parse_int(a1, &panel) || panel < 0 || panel >= GM_D)) {
-      print_ln(out, "usage: contrast <n|all> <0-255>");
-      return;
-    }
-    const int applied = app->set_contrast(panel, v);
+    const int applied = app_set_contrast(panel, v);
     if (panel < 0) print_fmt(out, "contrast: all panels %d\n", applied);
     else print_fmt(out, "contrast: panel %d = %d\n", panel, applied);
     return;
@@ -328,45 +317,33 @@ static void run(serial_cli_t* cli, char* line, print_t* out) {
       print_ln(out, "usage: ramp <front> <back>");
       return;
     }
-    f = f < 0 ? 0 : (f > 255 ? 255 : f);
-    b = b < 0 ? 0 : (b > 255 ? 255 : b);
-    app->set_contrast_ramp(f, b);
+    f = gm_clampi(f, 0, 255);
+    b = gm_clampi(b, 0, 255);
+    app_set_contrast_ramp(f, b);
     print_fmt(out, "contrast ramp: front %d, back %d\n", f, b);
     return;
   }
   if (!strcmp(cmd, "cycle")) {
     float s;
-    if (!serial_cli_parse_float(a1, &s)) {
+    if (!parse_float(a1, &s)) {
       print_ln(out, "usage: cycle <seconds>");
       return;
     }
-    const float applied = app->set_auto_cycle(s);
+    const float applied = app_set_auto_cycle(s);
     if (applied > 0.0f) print_fmt(out, "auto cycle: every %.0f s\n", (double)applied);
     else print_ln(out, "auto cycle: off");
     return;
   }
   if (!strcmp(cmd, "readout")) {
-    bool on;
-    if (parse_on_off(a1, &on)) {
-      app->set_readout(on);
-      print_fmt(out, "readout: %s\n", on ? "on" : "off");
-    } else {
-      print_ln(out, "usage: readout on|off");
-    }
+    on_off("readout", "readout", app_set_readout, a1, out);
     return;
   }
   if (!strcmp(cmd, "invert")) {
-    bool on;
-    if (parse_on_off(a1, &on)) {
-      app->set_invert(on);
-      print_fmt(out, "invert: %s\n", on ? "on" : "off");
-    } else {
-      print_ln(out, "usage: invert on|off");
-    }
+    on_off("invert", "invert", app_set_invert, a1, out);
     return;
   }
   if (!strcmp(cmd, "anim")) {
-    if (!app->pin_anim_state(a1)) print_ln(out, "usage: anim idle|accelerate|brake|left|right|bump|auto");
+    if (!app_pin_anim_state(a1)) print_ln(out, "usage: anim idle|accelerate|brake|left|right|bump|auto");
     else print_fmt(out, "anim: %s\n", (!a1 || !strcmp(a1, "auto")) ? "follows g-force" : a1);
     return;
   }
@@ -376,14 +353,14 @@ static void run(serial_cli_t* cli, char* line, print_t* out) {
       print_ln(out, "usage: test [panel|off]");
       return;
     }
-    const int shown = app->test_pattern(n);
+    const int shown = app_test_pattern(n);
     if (shown < 0) print_ln(out, "test pattern: off");
     else print_fmt(out, "test pattern: panel %d (type test to go back)\n", shown);
     return;
   }
   if (!strcmp(cmd, "reinit")) {
     if (!a1) {
-      app->reinit_panels();
+      app_reinit_panels();
       print_ln(out, "panels reset and re-initialised");
       return;
     }
@@ -392,43 +369,36 @@ static void run(serial_cli_t* cli, char* line, print_t* out) {
       print_ln(out, "usage: reinit [minutes 0-255]");
       return;
     }
-    app->set_refresh_minutes(m);
+    app_set_refresh_minutes(m);
     print_fmt(out, "periodic refresh: %s\n", m ? "on" : "off");
     return;
   }
   if (!strcmp(cmd, "save")) {
-    print_ln(out, app->save_state() ? "saved" : "save failed");
+    print_ln(out, app_save_state() ? "saved" : "save failed");
     return;
   }
   if (!strcmp(cmd, "reboot")) {
-    app->reboot();
+    app_reboot();
     return;
   }
   print_ln(out, "unknown command (help)");
 }
 
-void serial_cli_execute(serial_cli_t* cli, char* line, print_t* out) {
-  // Peek at the command word to decide whether the engine lock is needed.
-  char word[12] = {0};
-  {
-    const char* p = line;
-    while (*p == ' ' || *p == '\t') ++p;
-    size_t n = 0;
-    while (p[n] && p[n] != ' ' && p[n] != '\t' && n + 1 < sizeof(word)) {
-      word[n] = p[n];
-      ++n;
-    }
-  }
-  if (!needs_engine(word)) {
-    run(cli, line, out);
+// Runs one command line, under the engine lock if the command needs it.
+static void execute(serial_cli_t* cli, char* line, print_t* out) {
+  const char* t[4];  // the command and up to three arguments
+  for (int i = 0; i < 4; ++i) t[i] = next_token(&line);
+  if (!t[0]) return;
+  if (!needs_engine(t[0])) {
+    run(t[0], t[1], t[2], t[3], out);
     return;
   }
   // Format the reply under the lock, send it after.
   buffer_print_t reply;
   buffer_print_init(&reply, cli->reply, sizeof(cli->reply));
-  cli->app->lock_engine();
-  run(cli, line, &reply.base);
-  cli->app->unlock_engine();
+  app_lock_engine();
+  run(t[0], t[1], t[2], t[3], &reply.base);
+  app_unlock_engine();
   print_write(out, cli->reply, reply.len);
   if (reply.overflowed) print_ln(out, "(reply truncated)");
 }

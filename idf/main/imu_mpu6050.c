@@ -22,15 +22,6 @@
 #define I2C_HZ 400000
 #define I2C_TIMEOUT_MS 5  // a long timeout would stall a frame on a glitch
 
-void mpu6050_init(mpu6050_t* m) {
-  memset(m, 0, sizeof(*m));
-  m->addr = 0x68;
-  m->sda = -1;
-  m->scl = -1;
-  m->temp_scale = 1.0f / 340.0f;
-  m->temp_offset = 36.53f;
-}
-
 static bool write_reg(mpu6050_t* m, uint8_t reg, uint8_t value) {
   if (!m->dev) return false;
   const uint8_t b[2] = {reg, value};
@@ -45,31 +36,26 @@ static bool read_regs(mpu6050_t* m, uint8_t reg, uint8_t* buf, size_t n) {
   return true;
 }
 
-// Starts the I2C peripheral on the pins (Arduino: Wire.begin(sda, scl, 400000)).
-// An existing bus (one that could not be deleted) is reset and reused.
+// Starts the I2C peripheral on the pins and attaches the sensor at I2C_HZ. An
+// existing bus (one that could not be deleted) is reset and reused.
 static bool bus_start(mpu6050_t* m) {
   if (m->bus) {
     i2c_master_bus_reset(m->bus);
   } else {
-    i2c_master_bus_config_t cfg;
-    memset(&cfg, 0, sizeof(cfg));
-    cfg.i2c_port = I2C_NUM_0;
-    cfg.sda_io_num = (gpio_num_t)m->sda;
-    cfg.scl_io_num = (gpio_num_t)m->scl;
-    cfg.clk_source = I2C_CLK_SRC_DEFAULT;
-    cfg.glitch_ignore_cnt = 7;
-    cfg.flags.enable_internal_pullup = true;
+    const i2c_master_bus_config_t cfg = {.i2c_port = I2C_NUM_0,
+                                         .sda_io_num = (gpio_num_t)m->sda,
+                                         .scl_io_num = (gpio_num_t)m->scl,
+                                         .clk_source = I2C_CLK_SRC_DEFAULT,
+                                         .glitch_ignore_cnt = 7,
+                                         .flags.enable_internal_pullup = true};
     if (i2c_new_master_bus(&cfg, &m->bus) != ESP_OK) {
       m->bus = NULL;
       return false;
     }
   }
   if (!m->dev) {
-    i2c_device_config_t dev;
-    memset(&dev, 0, sizeof(dev));
-    dev.dev_addr_length = I2C_ADDR_BIT_LEN_7;
-    dev.device_address = m->addr;
-    dev.scl_speed_hz = I2C_HZ;
+    const i2c_device_config_t dev = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7, .device_address = m->addr, .scl_speed_hz = I2C_HZ};
     if (i2c_master_bus_add_device(m->bus, &dev, &m->dev) != ESP_OK) {
       m->dev = NULL;
       return false;
@@ -78,7 +64,7 @@ static bool bus_start(mpu6050_t* m) {
   return true;
 }
 
-// Detaches the I2C peripheral so the pins can be driven by hand (Arduino: Wire.end()).
+// Detaches the I2C peripheral so the pins can be driven by hand.
 static void bus_end(mpu6050_t* m) {
   if (m->dev) {
     if (i2c_master_bus_rm_device(m->dev) != ESP_OK && m->bus) {
@@ -164,7 +150,7 @@ bool mpu6050_begin(mpu6050_t* m, int sda, int scl, uint8_t address) {
   m->scl = scl;
   // The firmware reports the sensor's state itself; without this, ESP-IDF's
   // I2C driver would print an error line for every failed read while no
-  // sensor is wired (the Arduino build ran with the core's log level at 0).
+  // sensor is wired.
   esp_log_level_set("i2c.master", ESP_LOG_NONE);
   esp_log_level_set("i2c.common", ESP_LOG_NONE);
   unstick_bus(m);
@@ -173,7 +159,6 @@ bool mpu6050_begin(mpu6050_t* m, int sda, int scl, uint8_t address) {
 }
 
 bool mpu6050_recover(mpu6050_t* m) {
-  if (m->sda < 0) return false;
   ++m->recoveries;
   bus_end(m);
   if (!m->bus) unstick_bus(m);

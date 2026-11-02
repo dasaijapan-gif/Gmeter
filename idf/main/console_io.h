@@ -8,12 +8,11 @@
 // queued instead of holding up the caller, and reads never block. ESP-IDF's
 // own log lines go through the same driver.
 //
-// Output goes through a print_t, a small stand-in for Arduino's Print class:
-// the console is one; the CLI's reply buffer is another. On the UART and USB
-// Serial/JTAG consoles bytes are written as given (no newline translation):
-// print_ln ends a line with "\r\n", as Arduino's println does. The USB-OTG CDC
-// console goes through ESP-IDF's standard output, which turns "\n" into
-// "\r\n".
+// Output goes through a print_t, a small byte sink interface: the console is
+// one; the CLI's reply buffer is another. On the UART and USB Serial/JTAG
+// consoles bytes are written as given (no newline translation): print_ln ends
+// a line with "\r\n". The USB-OTG CDC console goes through ESP-IDF's standard
+// output, which turns "\n" into "\r\n".
 #pragma once
 
 #include <stdbool.h>
@@ -31,11 +30,11 @@ struct print {
 };
 
 static inline size_t print_write(print_t* p, const char* data, size_t n) { return p->write(p, data, n); }
-// Arduino print(s).
+// s, as is.
 size_t print_str(print_t* p, const char* s);
-// Arduino println(s): s (may be "") then "\r\n".
+// s (may be "") then "\r\n".
 size_t print_ln(print_t* p, const char* s);
-// Arduino printf.
+// printf-style formatting.
 size_t print_fmt(print_t* p, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 
 // Installs the console driver. Call once, before any other conio_* call.

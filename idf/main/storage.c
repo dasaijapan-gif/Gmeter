@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <string.h>
 
-#include "esp_partition.h"
+#include "esp_rom_crc.h"
 #include "gm_config.h"
 #include "nvs.h"
 #include "nvs_flash.h"
@@ -29,14 +29,8 @@ typedef struct {
 GM_STATIC_ASSERT(sizeof(settings_t) == 16, "settings_t layout changed");
 GM_STATIC_ASSERT(sizeof(blob_t) == 68 && offsetof(blob_t, crc) == 64, "stored blob layout changed");
 
-static uint32_t crc32(const uint8_t* p, size_t n) {
-  uint32_t c = 0xFFFFFFFFu;
-  for (size_t i = 0; i < n; ++i) {
-    c ^= p[i];
-    for (int k = 0; k < 8; ++k) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
-  }
-  return ~c;
-}
+// CRC-32 (ISO-HDLC, the zlib one) of the blob up to its crc field.
+static uint32_t blob_crc(const blob_t* b) { return esp_rom_crc32_le(0, (const uint8_t*)b, offsetof(blob_t, crc)); }
 
 void settings_defaults(settings_t* s) {
   s->mode = 0;
@@ -52,29 +46,21 @@ void settings_defaults(settings_t* s) {
 }
 
 void storage_init(void) {
-  esp_err_t err = nvs_flash_init();
-  if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    const esp_partition_t* partition =
-        esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS, NULL);
-    if (partition != NULL && esp_partition_erase_range(partition, 0, partition->size) == ESP_OK) nvs_flash_init();
-  }
+  const esp_err_t err = nvs_flash_init();
+  if ((err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) && nvs_flash_erase() == ESP_OK)
+    nvs_flash_init();
 }
 
-bool storage_load(settings_t* settings, gm_calibration_t* calibration, bool* migrated) {
-  if (migrated) *migrated = false;
+bool storage_load(settings_t* settings, gm_calibration_t* calibration) {
   nvs_handle_t h;
   if (nvs_open(STORAGE_NAMESPACE, NVS_READONLY, &h) != ESP_OK) return false;
   blob_t b;
-  memset(&b, 0, sizeof(b));
-  size_t n = 0;
-  bool ok = nvs_get_blob(h, STORAGE_KEY, NULL, &n) == ESP_OK && n == sizeof(b);
-  if (ok) {
-    n = sizeof(b);
-    ok = nvs_get_blob(h, STORAGE_KEY, &b, &n) == ESP_OK && n == sizeof(b);
-  }
+  // A larger stored blob fails (ESP_ERR_NVS_INVALID_LENGTH); a smaller one changes n.
+  size_t n = sizeof(b);
+  const bool ok = nvs_get_blob(h, STORAGE_KEY, &b, &n) == ESP_OK && n == sizeof(b);
   nvs_close(h);
   if (!ok || b.magic != STORAGE_MAGIC || b.version != STORAGE_VERSION) return false;
-  if (crc32((const uint8_t*)&b, offsetof(blob_t, crc)) != b.crc) return false;
+  if (blob_crc(&b) != b.crc) return false;
   *settings = b.settings;
   // Reject values a corrupted or hand-edited blob could carry.
   settings_t defaults;
@@ -91,19 +77,6 @@ bool storage_load(settings_t* settings, gm_calibration_t* calibration, bool* mig
       finite = finite && isfinite(b.rotation[r * 3 + c]);
     }
   calibration->valid = b.cal_valid != 0 && finite;
-  if (calibration->valid) {
-    // The car frame (x right, y up, z forward) is left-handed, so a correct
-    // sensor-to-car matrix has determinant -1. Firmware before the fix built
-    // right = up x forward (determinant +1), which mirrors left and right;
-    // negating that row converts it exactly.
-    const gm_vec3_t r0 = gm_mat3_row(&calibration->sensor_to_car, 0);
-    const gm_vec3_t r1 = gm_mat3_row(&calibration->sensor_to_car, 1);
-    const gm_vec3_t r2 = gm_mat3_row(&calibration->sensor_to_car, 2);
-    if (gm_vec3_dot(r0, gm_vec3_cross(r1, r2)) > 0.0f) {
-      for (int c = 0; c < 3; ++c) calibration->sensor_to_car.m[0][c] = -calibration->sensor_to_car.m[0][c];
-      if (migrated) *migrated = true;
-    }
-  }
   return true;
 }
 
@@ -116,7 +89,7 @@ bool storage_save(const settings_t* settings, const gm_calibration_t* calibratio
   for (int r = 0; r < 3; ++r)
     for (int c = 0; c < 3; ++c) b.rotation[r * 3 + c] = calibration->sensor_to_car.m[r][c];
   b.cal_valid = calibration->valid ? 1 : 0;
-  b.crc = crc32((const uint8_t*)&b, offsetof(blob_t, crc));
+  b.crc = blob_crc(&b);
   nvs_handle_t h;
   if (nvs_open(STORAGE_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) return false;
   const bool ok = nvs_set_blob(h, STORAGE_KEY, &b, sizeof(b)) == ESP_OK && nvs_commit(h) == ESP_OK;

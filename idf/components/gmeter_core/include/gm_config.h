@@ -2,8 +2,8 @@
 //
 // The display is a stack of GM_LAYERS transparent monochrome OLED panels,
 // each GM_PANEL_W x GM_PANEL_H pixels, viewed from the front (the driver's
-// seat). In the firmware the panel size comes from menuconfig (Gmeter >
-// Panels); host builds pass -D flags.
+// seat). In the firmware the panel height comes from menuconfig (Gmeter >
+// Panels) and the width is always 128; host builds pass -D flags.
 #pragma once
 
 #include <stdint.h>
@@ -16,9 +16,6 @@
 
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
-#ifndef GM_PANEL_W
-#define GM_PANEL_W CONFIG_GMETER_PANEL_W
-#endif
 #ifndef GM_PANEL_H
 #define GM_PANEL_H CONFIG_GMETER_PANEL_H
 #endif

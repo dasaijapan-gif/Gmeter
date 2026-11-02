@@ -21,13 +21,8 @@
 #include "gm_config.h"
 #include "sdkconfig.h"
 
-// 0 = WiseChip 128x56 SSD1309, 1 = generic SSD1309 128x64, 2 = SSD1306 128x64
-#define GM_PANEL_MODEL CONFIG_GMETER_PANEL_MODEL
-#define GM_SPI_HZ CONFIG_GMETER_SPI_HZ
-#define GM_TARGET_FPS CONFIG_GMETER_TARGET_FPS
-// Bit i set: panel i is mounted rotated 180 degrees (segment/COM remap inverted).
-#define GM_PANEL_FLIP_MASK CONFIG_GMETER_PANEL_FLIP_MASK
-// 1 if the chip-select list below is wired windshield-first.
+// 1 if the chip-select list below is wired windshield-first (a bool Kconfig
+// option is not defined at all when off, so C expressions need this 0/1 form).
 #ifdef CONFIG_GMETER_PANELS_REVERSED
 #define GM_PANELS_REVERSED 1
 #else
@@ -46,7 +41,6 @@ GM_STATIC_ASSERT(GM_PANEL_W == 128, "the SSD130x driver addresses columns 0..127
 #define BOARD_OLED_CS_PINS {10, 4, 5, 6, 7, 15, 16, 17}
 #define BOARD_I2C_SDA 8
 #define BOARD_I2C_SCL 9
-#define BOARD_BUTTON 0
 #elif CONFIG_IDF_TARGET_ESP32
 #define BOARD_SPI_HOST SPI3_HOST  // VSPI
 #define BOARD_SPI_SCK 18          // VSPI IO_MUX pins
@@ -56,10 +50,10 @@ GM_STATIC_ASSERT(GM_PANEL_W == 128, "the SSD130x driver addresses columns 0..127
 #define BOARD_OLED_CS_PINS {5, 32, 14, 4, 27, 26, 25, 33}
 #define BOARD_I2C_SDA 21
 #define BOARD_I2C_SCL 22
-#define BOARD_BUTTON 0
 #else
 #error "Gmeter supports the ESP32 and the ESP32-S3 (idf.py set-target esp32 or esp32s3)"
 #endif
 
+#define BOARD_BUTTON 0          // GPIO0, the BOOT button on both chips' dev boards
 #define BOARD_IMU_ADDRESS 0x68  // 0x69 if AD0 is tied high
 #define BOARD_IMU_SAMPLE_HZ 200

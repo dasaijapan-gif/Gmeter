@@ -33,9 +33,7 @@ calibration code are exercised exactly as on the car.
 layer 0 is the panel nearest the driver, layer 7 nearest the windshield. Like
 screen coordinates with depth, this frame is left-handed: right = forward x up
 (up x forward points left). The accelerometer is right-handed, so the
-sensor-to-car matrix has determinant -1; the firmware's settings loader
-(`idf/main/storage.c`) converts calibrations saved by firmware that got this
-wrong.
+sensor-to-car matrix has determinant -1.
 
 **Voxel frame**: x = column 0..127 (left to right), y = row 0..H-1 (top to
 bottom, screen convention), z = layer 0..7. `VoxelFrame::worldToVoxel` maps a
@@ -161,9 +159,10 @@ ESP32; measure on target with `status` (step and SPI microseconds).
 | `GM_SMOKE_NX`, `GM_SMOKE_NY` | NX divides the width, NY the height; default 4x4-px cells, ESP32 builds use 16 x 8 | `-DGM_SMOKE_NX=` / `-DGM_SMOKE_NY=` |
 | Panel model, SPI clock, frame rate, flip mask, panel order | firmware only | n/a |
 
-In the firmware these come from menuconfig (Gmeter): `CONFIG_GMETER_PANEL_W`
-and `CONFIG_GMETER_PANEL_H` set the geometry through `gm_config.h`, and the
-smoke grid is fixed at 16 x 8 in `idf/components/gmeter_core/CMakeLists.txt`.
+In the firmware the panel height comes from menuconfig (Gmeter > Panels):
+`CONFIG_GMETER_PANEL_H` sets it through `gm_config.h`, the width is
+`gm_config.h`'s default of 128, and the smoke grid is fixed at 16 x 8 in
+`idf/components/gmeter_core/CMakeLists.txt`.
 `idf/main/board_config.h` checks the width and layer limits. Tests pass at
 128x56 and 128x64.
 

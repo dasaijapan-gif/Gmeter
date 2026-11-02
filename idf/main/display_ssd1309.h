@@ -5,13 +5,11 @@
 // controller's page-major GDDRAM format, so a layer upload is one window
 // command plus one contiguous write. At 10 MHz, 8 panels of 7 pages take
 // about 6 ms (around 150 fps ceiling). The layer data goes out by DMA while
-// the calling task polls for the end of each transfer (a blocking transfer,
-// as in the Arduino driver), which is why app_main.c runs it on its own task
-// on the other core.
+// the calling task polls for the end of each transfer (a blocking transfer),
+// which is why app_main.c runs it on its own task on the other core.
 //
 // Every function may be called from any task: each one holds the driver's
-// lock while it drives the bus, D/C and the chip selects (like a transaction
-// on Arduino's SPI class).
+// lock while it drives the bus, D/C and the chip selects.
 #pragma once
 
 #include <stdbool.h>
@@ -40,7 +38,7 @@ typedef struct {
 } panel_stack_t;
 
 // Configures GPIOs and the SPI bus, pulses reset, initialises every panel and
-// clears them.
+// clears them. Call once, first, on a zeroed panel_stack_t (static storage).
 void panel_stack_begin(panel_stack_t* d);
 // Hard reset: pulses RES, re-sends the init sequence, clears GDDRAM and waits
 // 100 ms before display-on. The panels go dark for about 0.12 s.
@@ -55,13 +53,11 @@ void panel_stack_refresh(panel_stack_t* d);
 // DMA-capable memory (heap_caps_malloc with MALLOC_CAP_DMA); otherwise the
 // SPI driver copies each layer first.
 void panel_stack_write_frame(panel_stack_t* d, const gm_frame_t* frame);
-void panel_stack_clear(panel_stack_t* d);
 
 // 0..255 segment current. Rear layers usually need more: see set_contrast_ramp.
 void panel_stack_set_contrast(panel_stack_t* d, int panel, uint8_t value);
 void panel_stack_set_contrast_ramp(panel_stack_t* d, uint8_t front, uint8_t back);
 void panel_stack_set_inverted(panel_stack_t* d, bool on);
-void panel_stack_set_display_on(panel_stack_t* d, bool on);
 // Draws a double border, the panel index and the layer it maps to on panel
 // `panel`; all other panels go dark.
 void panel_stack_test_pattern(panel_stack_t* d, int panel);

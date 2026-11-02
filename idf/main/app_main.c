@@ -8,7 +8,7 @@
 //   display_task (core 0)          streams finished frames to the 8 panels over SPI.
 //   app_main     (core 1, idle)    serial CLI, mode button, periodic housekeeping
 //                                  (the main task: priority 1 on core 1, set in
-//                                  sdkconfig.defaults, like Arduino's loop task).
+//                                  sdkconfig.defaults).
 //
 // Concurrency: the g vector, source and frame-buffer indices are shared under
 // the s_mux spinlock. The engine (and its effects) is guarded by s_engine_mtx:
@@ -56,7 +56,9 @@ static const char* const k_fixed_effect = NULL;
 #endif
 
 // ---- hardware & core objects ------------------------------------------------------------
-// Static storage, set up at the top of app_main by their init functions.
+// Static storage, so every object starts zeroed. The core objects are set up
+// at the top of app_main by their init functions, the display and the sensor
+// later by panel_stack_begin and mpu6050_begin.
 static panel_stack_t s_display;
 static mpu6050_t s_imu;
 static gm_estimator_t s_estimator;
@@ -73,7 +75,6 @@ static gm_atfield_t s_atfield;
 static gm_sync_t s_sync;
 
 static void build_objects(void) {
-  mpu6050_init(&s_imu);
   gm_estimator_init(&s_estimator);
   gm_engine_init(&s_engine);
   gm_gball_init(&s_ball);
@@ -111,7 +112,7 @@ static bool s_demo_because_no_imu = false;  // switch to the IMU automatically w
 static bool s_imu_live = false;             // the IMU is delivering samples (false after it is lost)
 static const gm_scenario_t* s_demo_scenario;  // "drive", the last preset (set in app_main)
 
-typedef enum { CAL_IDLE, CAL_REST, CAL_BRAKE, CAL_DONE, CAL_FAILED } cal_state_t;
+typedef enum { CAL_IDLE, CAL_REST, CAL_BRAKE, CAL_FINISHED } cal_state_t;  // FINISHED: main loop prints s_cal_message
 static volatile cal_state_t s_cal_state = CAL_IDLE;
 static gm_vec3_t s_cal_accum;
 static int s_cal_count = 0;
@@ -261,7 +262,7 @@ static void imu_task(void* arg) {
                              : "braking capture too weak (needs more than 0.05 g): brake harder and try again";
         }
         if (ok) s_calibration = gm_estimator_calibration(&s_estimator);
-        s_cal_state = ok ? CAL_DONE : CAL_FAILED;
+        s_cal_state = CAL_FINISHED;
       }
     }
     unlock(s_est_mtx);
@@ -272,7 +273,7 @@ static void imu_task(void* arg) {
 static void render_task(void* arg) {
   (void)arg;
   int64_t last_us = esp_timer_get_time();
-  const int64_t period_us = 1000000 / GM_TARGET_FPS;
+  const int64_t period_us = 1000000 / CONFIG_GMETER_TARGET_FPS;
   for (;;) {
     const int64_t now = esp_timer_get_time();
     const float dt = (float)(now - last_us) * 1e-6f;
@@ -350,12 +351,12 @@ static void display_task(void* arg) {
   }
 }
 
-// ---- CLI binding ----------------------------------------------------------------------------------------
-static void app_lock_engine(void) { lock(s_engine_mtx); }
-static void app_unlock_engine(void) { unlock(s_engine_mtx); }
-static gm_engine_t* app_engine(void) { return &s_engine; }
+// ---- the functions behind the serial commands (serial_cli.h) -------------------------------------------
+void app_lock_engine(void) { lock(s_engine_mtx); }
+void app_unlock_engine(void) { unlock(s_engine_mtx); }
+gm_engine_t* app_engine(void) { return &s_engine; }
 
-static void app_print_status(print_t* out) {
+void app_print_status(print_t* out) {
   portENTER_CRITICAL(&s_mux);
   const gm_gforce_t g = s_imu_g;
   const gm_vec3_t raw = s_imu_raw;
@@ -411,7 +412,7 @@ static void app_print_status(print_t* out) {
             (unsigned)s_settings.reinit_minutes);
 }
 
-static void app_print_scenarios(print_t* out) {
+void app_print_scenarios(print_t* out) {
   print_ln(out, "demo scenarios:");
   for (int i = 0; i < gm_scenario_preset_count(); ++i)
     print_fmt(out, "  %s (%.0f s)\n", gm_scenario_name(gm_scenario_preset(i)),
@@ -419,22 +420,16 @@ static void app_print_scenarios(print_t* out) {
 }
 
 // (engine) functions: callers hold s_engine_mtx.
-static bool app_set_mode(const char* name_or_index) {
+bool app_set_mode(const char* name_or_index) {
   if (!name_or_index) return false;
   int idx = gm_engine_find_effect(&s_engine, name_or_index);
   if (idx < 0 && name_or_index[0] >= '0' && name_or_index[0] <= '9') idx = atoi(name_or_index);
   if (idx < 0 || idx >= gm_engine_effect_count(&s_engine)) return false;
   gm_engine_set_effect(&s_engine, idx, true);
-  s_settings.mode = (uint8_t)idx;
   return true;
 }
 
-static void app_next_mode(void) {
-  gm_engine_next_effect(&s_engine);
-  s_settings.mode = (uint8_t)gm_engine_current_index(&s_engine);
-}
-
-static bool app_set_source(const char* name, const char* arg) {
+bool app_set_source(const char* name, const char* arg) {
   source_t s;
   const gm_scenario_t* sc = s_demo_scenario;
   if (!strcmp(name, "imu")) {
@@ -466,7 +461,7 @@ static bool app_set_source(const char* name, const char* arg) {
   return true;
 }
 
-static void app_inject_g(float lat, float vert, float lon) {
+void app_inject_g(float lat, float vert, float lon) {
   const gm_vec3_t v =
       gm_vec3(gm_clampf(lat, -8.0f, 8.0f), gm_clampf(vert, -8.0f, 8.0f), gm_clampf(lon, -8.0f, 8.0f));
   portENTER_CRITICAL(&s_mux);
@@ -476,7 +471,7 @@ static void app_inject_g(float lat, float vert, float lon) {
   portEXIT_CRITICAL(&s_mux);
 }
 
-static const char* app_start_calibration(const char* which) {
+const char* app_start_calibration(const char* which) {
   if (!mpu6050_present(&s_imu)) return "no imu detected";
   if (s_cal_state == CAL_REST || s_cal_state == CAL_BRAKE) return "a capture is already running";
   const bool rest = !strcmp(which, "rest");
@@ -491,7 +486,7 @@ static const char* app_start_calibration(const char* which) {
   return NULL;
 }
 
-static bool app_set_forward_axis(const char* axis) {
+bool app_set_forward_axis(const char* axis) {
   const int idx = storage_parse_forward_axis(axis);
   if (idx < 0) return false;
   s_settings.forward_axis = (uint8_t)idx;
@@ -501,9 +496,9 @@ static bool app_set_forward_axis(const char* axis) {
   return true;
 }
 
-static bool app_save_state(void) {
-  // Auto-cycle changes the effect without going through set_mode: save the
-  // one on screen. (The CLI calls this without holding the lock.) A
+bool app_save_state(void) {
+  // Save the effect on screen, however it was chosen (mode, the button,
+  // auto-cycle). (The CLI calls this without holding the lock.) A
   // single-effect build keeps the stored choice for the standard firmware.
   lock(s_engine_mtx);
   if (!k_fixed_effect) s_settings.mode = (uint8_t)gm_engine_current_index(&s_engine);
@@ -514,9 +509,7 @@ static bool app_save_state(void) {
   return storage_save(&s_settings, &c);
 }
 
-static bool app_clear_state(void) { return storage_clear(); }
-
-static float app_set_filter_hz(float hz) {
+float app_set_filter_hz(float hz) {
   s_settings.filter_hz = gm_clampf(hz, 0.5f, 30.0f);
   lock(s_est_mtx);
   gm_estimator_set_filter(&s_estimator, s_settings.filter_hz, (float)BOARD_IMU_SAMPLE_HZ);
@@ -524,7 +517,7 @@ static float app_set_filter_hz(float hz) {
   return s_settings.filter_hz;
 }
 
-static int app_set_contrast(int panel, int value) {
+int app_set_contrast(int panel, int value) {
   const uint8_t v = (uint8_t)gm_clampi(value, 0, 255);
   if (panel < 0) {
     s_settings.contrast_front = s_settings.contrast_back = v;
@@ -535,45 +528,45 @@ static int app_set_contrast(int panel, int value) {
   return v;
 }
 
-static void app_set_contrast_ramp(int front, int back) {
+void app_set_contrast_ramp(int front, int back) {
   s_settings.contrast_front = (uint8_t)gm_clampi(front, 0, 255);
   s_settings.contrast_back = (uint8_t)gm_clampi(back, 0, 255);
   panel_stack_set_contrast_ramp(&s_display, s_settings.contrast_front, s_settings.contrast_back);
 }
 
-static float app_set_auto_cycle(float s) {
+float app_set_auto_cycle(float s) {
   s_settings.auto_cycle_s = gm_clampf(s, 0.0f, 3600.0f);
   gm_engine_set_auto_cycle(&s_engine, s_settings.auto_cycle_s);
   return s_settings.auto_cycle_s;
 }
 
-static void app_set_readout(bool on) {
+void app_set_readout(bool on) {
   s_settings.readout = on;
   gm_engine_set_readout(&s_engine, on);
 }
 
-static void app_set_invert(bool on) {
+void app_set_invert(bool on) {
   s_settings.invert = on;
   panel_stack_set_inverted(&s_display, on);
 }
 
-static void app_set_auto_zero(bool on) {
+void app_set_auto_zero(bool on) {
   s_settings.auto_zero = on;
   lock(s_est_mtx);
   gm_estimator_set_auto_zero(&s_estimator, on, 60.0f);
   unlock(s_est_mtx);
 }
 
-static int app_test_pattern(int panel) {
+int app_test_pattern(int panel) {
   s_test_panel = panel < 0 ? -2 : gm_clampi(panel, 0, PANEL_COUNT - 1);
   return panel < 0 ? -1 : s_test_panel;
 }
 
-static void app_reinit_panels(void) { s_want_reinit = true; }
+void app_reinit_panels(void) { s_want_reinit = true; }
 
-static void app_set_refresh_minutes(int minutes) { s_settings.reinit_minutes = (uint8_t)gm_clampi(minutes, 0, 255); }
+void app_set_refresh_minutes(int minutes) { s_settings.reinit_minutes = (uint8_t)gm_clampi(minutes, 0, 255); }
 
-static bool app_pin_anim_state(const char* name) {
+bool app_pin_anim_state(const char* name) {
   if (!name || !strcmp(name, "auto")) {
     gm_anim_force_state(&s_anim, -1);
     return true;
@@ -587,41 +580,12 @@ static bool app_pin_anim_state(const char* name) {
   return false;
 }
 
-static void app_reboot(void) {
+void app_reboot(void) {
   conio_flush(100);
   esp_restart();
 }
 
-static const char* app_fixed_effect(void) { return k_fixed_effect; }
-
-static const app_control_t k_app = {
-    .lock_engine = app_lock_engine,
-    .unlock_engine = app_unlock_engine,
-    .engine = app_engine,
-    .print_status = app_print_status,
-    .print_scenarios = app_print_scenarios,
-    .set_mode = app_set_mode,
-    .next_mode = app_next_mode,
-    .set_source = app_set_source,
-    .inject_g = app_inject_g,
-    .start_calibration = app_start_calibration,
-    .set_forward_axis = app_set_forward_axis,
-    .save_state = app_save_state,
-    .clear_state = app_clear_state,
-    .set_filter_hz = app_set_filter_hz,
-    .set_contrast = app_set_contrast,
-    .set_contrast_ramp = app_set_contrast_ramp,
-    .set_auto_cycle = app_set_auto_cycle,
-    .set_readout = app_set_readout,
-    .set_invert = app_set_invert,
-    .set_auto_zero = app_set_auto_zero,
-    .test_pattern = app_test_pattern,
-    .reinit_panels = app_reinit_panels,
-    .set_refresh_minutes = app_set_refresh_minutes,
-    .pin_anim_state = app_pin_anim_state,
-    .reboot = app_reboot,
-    .fixed_effect = app_fixed_effect,
-};
+const char* app_fixed_effect(void) { return k_fixed_effect; }
 
 static serial_cli_t s_cli;
 
@@ -643,15 +607,16 @@ static void poll_button(void) {
     if (why) print_fmt(con, "button: cannot start rest calibration: %s\n", why);
     else print_ln(con, "button: rest calibration started (hold still 2 s)");
   }
-  if (!down && was_down && !long_fired && now - down_since > 40 && k_fixed_effect) {
-    print_fmt(con, "button: this firmware always shows %s\n", k_fixed_effect);
-  } else if (!down && was_down && !long_fired && now - down_since > 40) {
-    const char* name;
-    lock(s_engine_mtx);
-    app_next_mode();
-    name = gm_effect_name(gm_engine_current(&s_engine));
-    unlock(s_engine_mtx);
-    print_fmt(con, "button: mode %s\n", name);
+  if (!down && was_down && !long_fired && now - down_since > 40) {  // short press
+    if (k_fixed_effect) {
+      print_fmt(con, "button: this firmware always shows %s\n", k_fixed_effect);
+    } else {
+      lock(s_engine_mtx);
+      gm_engine_next_effect(&s_engine);
+      const char* name = gm_effect_name(gm_engine_current(&s_engine));
+      unlock(s_engine_mtx);
+      print_fmt(con, "button: mode %s\n", name);
+    }
   }
   was_down = down;
 }
@@ -670,7 +635,7 @@ void app_main(void) {
   s_boot_us = esp_timer_get_time();
   print_ln(con, "");
   print_fmt(con, "gmeter: %dx%dx%d voxels, panel model %d, spi %d Hz, target %d fps\n", GM_W, GM_H, GM_D,
-            GM_PANEL_MODEL, GM_SPI_HZ, GM_TARGET_FPS);
+            CONFIG_GMETER_PANEL_MODEL, CONFIG_GMETER_SPI_HZ, CONFIG_GMETER_TARGET_FPS);
 
   s_engine_mtx = xSemaphoreCreateMutex();
   s_est_mtx = xSemaphoreCreateMutex();
@@ -682,33 +647,21 @@ void app_main(void) {
   }
 
   storage_init();
-  bool migrated = false;
-  const bool restored = storage_load(&s_settings, &s_calibration, &migrated);
+  const bool restored = storage_load(&s_settings, &s_calibration);
   print_ln(con, restored ? "settings restored from NVS" : "no saved settings; using defaults");
-  if (migrated)
-    print_ln(con, "calibration from an older firmware had its left/right axis mirrored; corrected (type save to keep)");
 
-  gpio_config_t button;
-  memset(&button, 0, sizeof(button));
-  button.pin_bit_mask = 1ull << BOARD_BUTTON;
-  button.mode = GPIO_MODE_INPUT;
-  button.pull_up_en = GPIO_PULLUP_ENABLE;
+  const gpio_config_t button = {
+      .pin_bit_mask = 1ull << BOARD_BUTTON, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
   gpio_config(&button);
 
   panel_stack_begin(&s_display);
   panel_stack_set_contrast_ramp(&s_display, s_settings.contrast_front, s_settings.contrast_back);
   if (s_settings.invert) panel_stack_set_inverted(&s_display, true);
 
-  gm_engine_add_effect(&s_engine, &s_ball.base);
-  gm_engine_add_effect(&s_engine, &s_slosh.base);
-  gm_engine_add_effect(&s_engine, &s_particles.base);
-  gm_engine_add_effect(&s_engine, &s_smoke.base);
-  gm_engine_add_effect(&s_engine, &s_tunnel.base);
-  gm_engine_add_effect(&s_engine, &s_sprite.base);
-  gm_engine_add_effect(&s_engine, &s_anim.base);
-  gm_engine_add_effect(&s_engine, &s_hud.base);
-  gm_engine_add_effect(&s_engine, &s_atfield.base);
-  gm_engine_add_effect(&s_engine, &s_sync.base);
+  // The order is the effect index that `save` stores: add new effects at the end.
+  gm_effect_t* const effects[] = {&s_ball.base,   &s_slosh.base, &s_particles.base, &s_smoke.base,   &s_tunnel.base,
+                                  &s_sprite.base, &s_anim.base,  &s_hud.base,       &s_atfield.base, &s_sync.base};
+  for (size_t i = 0; i < sizeof(effects) / sizeof(effects[0]); ++i) gm_engine_add_effect(&s_engine, effects[i]);
   int start_effect = s_settings.mode < gm_engine_effect_count(&s_engine) ? s_settings.mode : 0;
   if (k_fixed_effect) {
     // Overrides the stored effect and auto-cycle (apply_settings) without
@@ -719,8 +672,6 @@ void app_main(void) {
       print_fmt(con, "error: fixed effect '%s' does not exist; showing '%s'\n", k_fixed_effect,
                 gm_effect_name(gm_engine_effect(&s_engine, start_effect)));
     print_fmt(con, "single-effect build: always shows %s\n", gm_effect_name(gm_engine_effect(&s_engine, start_effect)));
-  } else {
-    s_settings.mode = (uint8_t)start_effect;
   }
   gm_engine_set_effect(&s_engine, start_effect, false);
   // Start the HUD's burn-in orbit at a random position, so short trips do not
@@ -744,7 +695,6 @@ void app_main(void) {
     s_demo_because_no_imu = true;
   }
 
-  serial_cli_init(&s_cli, &k_app);
   xTaskCreatePinnedToCore(imu_task, "imu", 4096, NULL, 3, NULL, 0);
   xTaskCreatePinnedToCore(display_task, "display", 4096, NULL, 2, NULL, 0);
   xTaskCreatePinnedToCore(render_task, "render", 8192, NULL, 2, NULL, 1);
@@ -752,15 +702,14 @@ void app_main(void) {
 
   uint32_t last_refresh_ms = millis();
   for (;;) {
-    serial_cli_poll(&s_cli, conio_read, con);
+    serial_cli_poll(&s_cli);
     poll_button();
 
     if (s_settings.reinit_minutes > 0 && millis() - last_refresh_ms > s_settings.reinit_minutes * 60000u) {
       last_refresh_ms = millis();
       s_want_refresh = true;  // soft: re-send registers without blanking the panels
     }
-    const cal_state_t cs = s_cal_state;
-    if (cs == CAL_DONE || cs == CAL_FAILED) {
+    if (s_cal_state == CAL_FINISHED) {
       print_fmt(con, "\r\n%s\r\n> ", s_cal_message);
       s_cal_state = CAL_IDLE;
     }

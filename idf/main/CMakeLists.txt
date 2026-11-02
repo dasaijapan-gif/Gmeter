@@ -1,5 +1,5 @@
 # The Gmeter application: drivers, serial command line, tasks.
-set(requires gmeter_core nvs_flash esp_timer esp_partition vfs)
+set(requires gmeter_core nvs_flash esp_timer vfs)
 if("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_GREATER_EQUAL "5.3")
   list(APPEND requires esp_driver_gpio esp_driver_spi esp_driver_i2c esp_driver_uart esp_driver_usb_serial_jtag
        esp_vfs_console)

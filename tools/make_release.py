@@ -13,9 +13,9 @@ idf.py and ESP-IDF's Python (with esptool) are on PATH.
 Layout of the result:
 
   README_FIRST.md            supplier guide (docs/SUPPLIER.md, or docs/SUPPLIER_HUD.md
-                             for the HUD edition; --guide overrides)
+                             for the HUD edition)
   BUILD_INFO.txt             commit, ESP-IDF version, compiler, memory use
-  firmware/<chip>_<W>x<H>[_hud]/
+  firmware/<chip>_128x<H>[_hud]/
                              gmeter_<label>_full.bin (flash at 0x0), the separate
                              parts, flash_args.txt
   firmware/SHA256SUMS.txt
@@ -31,7 +31,6 @@ import hashlib
 import io
 import json
 import os
-import posixpath
 import re
 import shutil
 import subprocess
@@ -51,16 +50,13 @@ EDITION_GUIDE = {"standard": "docs/SUPPLIER.md", "hud": "docs/SUPPLIER_HUD.md"}
 DOCS = ["docs/HARDWARE.md", "docs/EFFECTS.md", "docs/THIRD_PARTY.md", "LICENSE"]
 
 
-def run(cmd, cwd=None, capture=False):
+def run(cmd, cwd=None):
+    """Runs cmd quietly; shows its output only if it fails."""
     print("+ " + " ".join(cmd), flush=True)
-    if capture:
-        r = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        if r.returncode:
-            sys.stdout.write(r.stdout)
-            raise SystemExit("command failed: %s" % " ".join(cmd))
-        return r.stdout
-    subprocess.run(cmd, cwd=cwd, check=True)
-    return ""
+    r = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if r.returncode:
+        sys.stdout.write(r.stdout)
+        raise SystemExit("command failed: %s" % " ".join(cmd))
 
 
 def committed(path):
@@ -108,16 +104,13 @@ def main():
     ap.add_argument("--idf", default="idf.py", help="idf.py command")
     ap.add_argument("--esptool", default=None, help="esptool command (default: python -m esptool)")
     ap.add_argument("--studio", help="built Gmeter Studio page to include")
-    ap.add_argument("--guide", help="guide copied to README_FIRST.md (repository path; default: the edition's guide)")
     ap.add_argument("--no-zip", action="store_true")
     a = ap.parse_args()
 
     out = os.path.abspath(a.out or os.path.join(ROOT, "dist", "gmeter_supplier" if a.edition == "standard" else
                                                 "gmeter_" + a.edition))
-    guide = posixpath.normpath((a.guide or EDITION_GUIDE[a.edition]).replace("\\", "/"))
-    if not committed(guide):
-        raise SystemExit("guide %s is not in the committed source (HEAD)" % guide)
-    for d in DOCS:
+    guide = EDITION_GUIDE[a.edition]
+    for d in [guide] + DOCS:
         if not committed(d):
             raise SystemExit("%s is not in the committed source (HEAD)" % d)
     if shutil.which(a.idf) is None:
@@ -171,20 +164,18 @@ def main():
     os.makedirs(fw_root)
     info = []
     try:
-        for chip, extra in VARIANTS:
+        for i, (chip, extra) in enumerate(VARIANTS):
             defaults = ["sdkconfig.defaults"] + extra + EDITION_DEFAULTS[a.edition]
-            build = os.path.join(work, "build_%s_%s" % (chip, "_".join(os.path.basename(x).split(".")[0] for x in extra)
-                                                         or "default"))
+            build = os.path.join(work, "build_%d" % i)
             run([a.idf, "-C", project, "-B", build, "-DSDKCONFIG=" + os.path.join(build, "sdkconfig"),
                  "-DSDKCONFIG_DEFAULTS=" + ";".join(os.path.join(project, d) for d in defaults),
-                 "set-target", chip, "build"], capture=True)
+                 "set-target", chip, "build"])
             sdkconfig = os.path.join(build, "sdkconfig")
-            width = sdkconfig_value(sdkconfig, "CONFIG_GMETER_PANEL_W")
             height = sdkconfig_value(sdkconfig, "CONFIG_GMETER_PANEL_H")
             hud = sdkconfig_value(sdkconfig, "CONFIG_GMETER_EDITION_HUD") == "y"
             if (a.edition == "hud") != hud:
                 raise SystemExit("%s: the edition in sdkconfig does not match --edition %s" % (build, a.edition))
-            label = "%s_%sx%s%s" % (chip, width, height, "_hud" if hud else "")
+            label = "%s_128x%s%s" % (chip, height, "_hud" if hud else "")
             if label not in expected:
                 raise SystemExit("unexpected variant %s (expected one of %s)" % (label, ", ".join(sorted(expected))))
             dest = os.path.join(fw_root, label)
@@ -201,7 +192,7 @@ def main():
             for off, name in parts:
                 args += [off, name]
             run(esptool + ["--chip", chip, "merge-bin", "-o", full, "--flash-mode", "keep", "--flash-freq", "keep",
-                           "--flash-size", "keep"] + args, cwd=dest, capture=True)
+                           "--flash-size", "keep"] + args, cwd=dest)
             app_off, app_name = next((o, n) for o, n in parts if n == "gmeter.bin")
             with open(os.path.join(dest, "flash_args.txt"), "w") as f:
                 f.write("# esptool v5 commands (esptool.py v4: write_flash and erase_flash with underscores).\n\n")
@@ -248,20 +239,19 @@ def main():
         os.makedirs(os.path.join(out, "studio"))
         shutil.copy(a.studio, os.path.join(out, "studio", "gmeter_studio.html"))
     idf_version = subprocess.run([a.idf, "--version"], stdout=subprocess.PIPE, text=True).stdout.strip()
-    compilers = []
-    for cc in ("xtensa-esp-elf-gcc",):
-        try:
-            compilers.append(subprocess.run([cc, "--version"], stdout=subprocess.PIPE, text=True).stdout.splitlines()[0])
-        except (OSError, IndexError):
-            pass
+    try:
+        compiler = subprocess.run(["xtensa-esp-elf-gcc", "--version"], stdout=subprocess.PIPE,
+                                  text=True).stdout.splitlines()[0]
+    except (OSError, IndexError):
+        compiler = None
     with open(os.path.join(out, "BUILD_INFO.txt"), "w") as f:
         f.write("Gmeter firmware package (%s edition)\n" % a.edition)
         f.write("commit     %s\n" % commit)
         f.write("guide      %s\n" % guide)
         f.write("built      %s UTC\n" % datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M"))
         f.write("framework  %s\n" % idf_version)
-        for line in compilers:
-            f.write("compiler   %s\n" % line)
+        if compiler:
+            f.write("compiler   %s\n" % compiler)
         f.write("\n")
         f.write("\n".join(info) + "\n")
 

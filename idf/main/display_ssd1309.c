@@ -19,7 +19,7 @@ static inline void delay_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 
 // Init sequences (sent with D/C low). Contrast (0x81) and remap (0xA0/0xA1,
 // 0xC0/0xC8) are patched per panel at runtime.
-#if GM_PANEL_MODEL == 0
+#if CONFIG_GMETER_PANEL_MODEL == 0
 // WiseChip UG-2856KLBAG01 (128x56 transparent, SSD1309): the panel maker's
 // sequence plus horizontal addressing. VCC (12 V) is supplied by the breakout.
 static const uint8_t k_init[] = {
@@ -39,7 +39,7 @@ static const uint8_t k_init[] = {
     0xA4,        // follow RAM
     0xA6,        // non-inverted
 };
-#elif GM_PANEL_MODEL == 1
+#elif CONFIG_GMETER_PANEL_MODEL == 1
 // Generic 128x64 SSD1309 module (u8g2 "noname" values).
 static const uint8_t k_init[] = {
     0xFD, 0x12, 0xAE, 0xD5, 0xA0, 0xA8, 0x3F, 0xD3, 0x00, 0x40, 0x20, 0x00,
@@ -59,8 +59,7 @@ static DMA_ATTR uint8_t s_cmd[sizeof(k_init) + 8];
 static DMA_ATTR uint8_t s_zeros[128];
 
 // ---- bus access ---------------------------------------------------------------------------
-// The equivalent of Arduino's beginTransaction()/endTransaction(): one task at
-// a time drives the bus, D/C and the chip selects.
+// One task at a time drives the bus, D/C and the chip selects.
 static void begin_transaction(panel_stack_t* d) {
   xSemaphoreTake(d->lock, portMAX_DELAY);
   if (!d->stalled) spi_device_acquire_bus(d->spi, portMAX_DELAY);
@@ -72,9 +71,8 @@ static void end_transaction(panel_stack_t* d) {
 }
 
 // Sends n bytes from DMA-capable memory and waits for the end of the transfer
-// by polling, not with the interrupt-driven spi_device_transmit: the transfer
-// blocks like the Arduino driver's, and Espressif's QEMU only completes polled
-// SPI transactions.
+// by polling, not with the interrupt-driven spi_device_transmit: Espressif's
+// QEMU only completes polled SPI transactions.
 //
 // The wait is bounded. The longest real transfer (1 KB at 1 MHz) takes about
 // 8 ms, and an SPI master needs nothing from the panels to finish, so on a
@@ -122,7 +120,7 @@ static void set_window(panel_stack_t* d, int panel, uint8_t last_page) {
 // inversion. Every command's argument bytes are skipped explicitly so a
 // parameter that happens to equal an opcode is never rewritten.
 static size_t build_init(const panel_stack_t* d, int panel, uint8_t* out, bool include_display_off) {
-  const bool flipped = (GM_PANEL_FLIP_MASK >> panel) & 1;
+  const bool flipped = (CONFIG_GMETER_PANEL_FLIP_MASK >> panel) & 1;
   size_t n = 0;
   for (size_t i = 0; i < sizeof(k_init); ++i) {
     const uint8_t op = k_init[i];
@@ -160,42 +158,36 @@ static void init_panel(panel_stack_t* d, int panel) {
   set_window(d, panel, (uint8_t)(GM_PAGES - 1));
 }
 
+// Display on (0xAF) for every panel.
+static void display_on(panel_stack_t* d) {
+  begin_transaction(d);
+  for (int p = 0; p < PANEL_COUNT; ++p) command1(d, p, 0xAF);
+  end_transaction(d);
+}
+
 // ---- public API ---------------------------------------------------------------------------
 void panel_stack_begin(panel_stack_t* d) {
   d->lock = xSemaphoreCreateMutex();
-  d->inverted = false;
-  d->stalled = false;
-  d->last_transfer_us = 0;
   uint64_t outputs = (1ull << BOARD_OLED_DC) | (1ull << BOARD_OLED_RESET);
   for (int i = 0; i < PANEL_COUNT; ++i) {
     cs_high(i);  // level first, so no chip select glitches low when it becomes an output
     outputs |= 1ull << k_cs_pins[i];
-    d->contrast[i] = 0x8F;
   }
   gpio_set_level((gpio_num_t)BOARD_OLED_DC, 0);
-  gpio_config_t io;
-  memset(&io, 0, sizeof(io));
-  io.pin_bit_mask = outputs;
-  io.mode = GPIO_MODE_OUTPUT;
+  const gpio_config_t io = {.pin_bit_mask = outputs, .mode = GPIO_MODE_OUTPUT};
   ESP_ERROR_CHECK(gpio_config(&io));
 
   // Write-only bus: SCK and MOSI on the host's IO_MUX pins, no MISO, chip
   // select and D/C driven by hand (eight panels share the bus).
-  spi_bus_config_t bus;
-  memset(&bus, 0, sizeof(bus));
-  bus.mosi_io_num = BOARD_SPI_MOSI;
-  bus.miso_io_num = -1;
-  bus.sclk_io_num = BOARD_SPI_SCK;
-  bus.quadwp_io_num = -1;
-  bus.quadhd_io_num = -1;
-  bus.max_transfer_sz = GM_BYTES_PER_LAYER;
+  const spi_bus_config_t bus = {.mosi_io_num = BOARD_SPI_MOSI,
+                                .miso_io_num = -1,
+                                .sclk_io_num = BOARD_SPI_SCK,
+                                .quadwp_io_num = -1,
+                                .quadhd_io_num = -1,
+                                .max_transfer_sz = GM_BYTES_PER_LAYER};
   ESP_ERROR_CHECK(spi_bus_initialize(BOARD_SPI_HOST, &bus, SPI_DMA_CH_AUTO));
-  spi_device_interface_config_t dev;
-  memset(&dev, 0, sizeof(dev));
-  dev.mode = 0;
-  dev.clock_speed_hz = GM_SPI_HZ;
-  dev.spics_io_num = -1;
-  dev.queue_size = 1;
+  const spi_device_interface_config_t dev = {
+      .mode = 0, .clock_speed_hz = CONFIG_GMETER_SPI_HZ, .spics_io_num = -1, .queue_size = 1};
   ESP_ERROR_CHECK(spi_bus_add_device(BOARD_SPI_HOST, &dev, &d->spi));
   // D/C sits on the bus's default MISO pin (VSPI: GPIO19, S3 FSPI: GPIO13).
   // The bus was set up without MISO, so it stays ours; drive it again anyway
@@ -218,7 +210,7 @@ void panel_stack_reinit(panel_stack_t* d) {
   for (int p = 0; p < PANEL_COUNT; ++p) init_panel(d, p);
   end_transaction(d);
   delay_ms(100);  // panel VCC settle before turning pixels on
-  panel_stack_set_display_on(d, true);
+  display_on(d);
 }
 
 void panel_stack_refresh(panel_stack_t* d) {
@@ -247,17 +239,6 @@ void panel_stack_write_frame(panel_stack_t* d, const gm_frame_t* frame) {
   d->last_transfer_us = (uint32_t)(esp_timer_get_time() - t0);
 }
 
-void panel_stack_clear(panel_stack_t* d) {
-  // Stream one blank row per page instead of keeping a whole blank frame
-  // (7 KB of static DRAM) around.
-  begin_transaction(d);
-  for (int p = 0; p < PANEL_COUNT; ++p) {
-    set_window(d, p, (uint8_t)(GM_PAGES - 1));
-    for (int page = 0; page < GM_PAGES; ++page) data(d, p, s_zeros, sizeof(s_zeros));
-  }
-  end_transaction(d);
-}
-
 void panel_stack_set_contrast(panel_stack_t* d, int panel, uint8_t value) {
   if (panel < 0 || panel >= PANEL_COUNT) return;
   d->contrast[panel] = value;
@@ -282,12 +263,6 @@ void panel_stack_set_inverted(panel_stack_t* d, bool on) {
   end_transaction(d);
 }
 
-void panel_stack_set_display_on(panel_stack_t* d, bool on) {
-  begin_transaction(d);
-  for (int p = 0; p < PANEL_COUNT; ++p) command1(d, p, on ? 0xAF : 0xAE);
-  end_transaction(d);
-}
-
 void panel_stack_test_pattern(panel_stack_t* d, int panel) {
   // Diagnostic only: borrow a frame from the heap rather than holding 7 KB of
   // static DRAM for the life of the firmware.
@@ -295,7 +270,7 @@ void panel_stack_test_pattern(panel_stack_t* d, int panel) {
   if (!f) return;
   gm_frame_clear(f);
   if (panel >= 0 && panel < PANEL_COUNT) {
-    const int layer = GM_PANELS_REVERSED ? (PANEL_COUNT - 1 - panel) : panel;
+    const int layer = panel_stack_panel_for_layer(panel);  // the mapping is its own inverse
     gm_frame_rect(f, layer, 0, 0, GM_W - 1, GM_H - 1);
     gm_frame_rect(f, layer, 2, 2, GM_W - 3, GM_H - 3);
     char label[16];

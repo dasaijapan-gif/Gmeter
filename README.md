@@ -171,8 +171,7 @@ derivation.
 - Reviewed by an adversarial multi-agent pass; the confirmed findings (among
   them a mirrored lateral axis in the calibration, a render/CLI race on the
   engine and an IMU dropout that froze the display) are fixed, with
-  regression tests where they are testable on a PC. A calibration saved by
-  firmware before that fix is corrected automatically on boot.
+  regression tests where they are testable on a PC.
 - Firmware: ESP-IDF v5 in C; builds for every variant, runs in Espressif's
   emulator, and its core matches the C++ core bit for bit. The panel init
   sequence and the sensor still need a real board. Register values, timing
