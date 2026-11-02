@@ -3,7 +3,7 @@
 ## Japanese glyphs (`idf/components/gmeter_core/src/gm_jp_glyphs.c`)
 
 The kanji and kana bitmaps used by the `hud`, `atfield` and `sync` effects
-were rasterized by `tools/make_glyphs.py` from:
+were rasterized by `tools/make_glyphs.py` (in the Gmeter repository) from:
 
 - **Noto Serif JP** (Black weight), large 24 px glyphs
 - **Noto Sans JP** (Bold weight), small 14 px glyphs

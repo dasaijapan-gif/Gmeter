@@ -214,9 +214,9 @@ void gm_anim_init(gm_anim_t* a, const gm_anim_asset_t* asset) {
   gm_params_add(p, "frames_g", &a->m.frames_per_g, -64.0f, 64.0f, "frames scrubbed per g");
   gm_params_add(p, "echo", &a->m.echo, 0.0f, 4.0f, "ghost layers (single-slice art)");
   gm_params_add(p, "mirror", &a->m.mirror, 0.0f, 1.0f, "mirror an empty left/right clip");
-  // A hand-written user_animation.h does not get Gmeter Studio's limits: bring
-  // the tunables into their parameter ranges and every clip's frame rate into
-  // 0.001..1000 fps (a lower or NaN rate becomes 0, which gm_anim_resolve_clip
+  // A hand-written user_animation.h may hold any values: bring the tunables
+  // into their parameter ranges and every positive clip frame rate into
+  // 0.001..1000 fps (a rate <= 0 or NaN becomes 0, which gm_anim_resolve_clip
   // treats like any rate <= 0), so the playback arithmetic stays in range.
   for (int i = 0; i < gm_params_count(p); ++i) {
     const gm_param_t* t = gm_params_at(p, i);
@@ -224,7 +224,7 @@ void gm_anim_init(gm_anim_t* a, const gm_anim_asset_t* asset) {
   }
   for (int s = 0; s < GM_ANIM_STATE_COUNT; ++s) {
     gm_anim_clip_t* c = &a->asset.clips[s];
-    c->fps = c->fps >= 0.001f ? gm_minf(c->fps, 1000.0f) : 0.0f;
+    c->fps = c->fps > 0.0f ? gm_clampf(c->fps, 0.001f, 1000.0f) : 0.0f;
   }
   anim_reset(&a->base);
 }

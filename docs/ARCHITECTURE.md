@@ -119,9 +119,10 @@ deactivate). The estimator has its own mutex between `imu_task` and the CLI.
 Floats are never touched in an ISR.
 
 Memory (128x56x8, classic ESP32): about 74 KB of static RAM, mostly the
-engine's two frames at 7 KB each, slosh ~11.5 KB and particles ~23 KB; the
-three transfer buffers and the display driver's scratch frames come from
-DMA-capable heap at start-up. Smoke needs 57.6 KB of heap only while active
+engine's two frames at 7 KB each, slosh ~11.5 KB and particles ~23 KB. The
+three transfer buffers (DMA-capable) and the built-in animation's 9 KB of
+artwork come from the heap at start-up; `test` borrows one more frame from it
+while it shows a pattern. Smoke needs 57.6 KB of heap only while active
 (16x8x8 grid on classic ESP32). On an S3, 32x8x8 (~109 KB) is the next grid
 that tiles a 128x56 panel; it doubles the solver cost, so measure the step time
 first. At 128x64 the frames are 8 KB each and particles ~25 KB.
@@ -166,7 +167,7 @@ In the firmware `CONFIG_GMETER_PANEL_H` sets the panel height through
 4. A Wi-Fi tuning page (the parameter tables already expose every tunable by
    name).
 5. More effects: a wireframe box that shears with g, a "needle" through the
-   depth. Authored animations already come from Gmeter Studio exports
+   depth. Authored artwork already plays through `anim`
    (`idf/main/user_animation.h`).
 6. Optional gyro use (yaw rate) to separate hills from braking and to spin
    the smoke.

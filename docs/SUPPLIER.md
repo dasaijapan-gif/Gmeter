@@ -225,19 +225,19 @@ describes it in full; in short:
 
 Pins are in `source/gmeter/main/board_config.h`. To lower the SPI speed for
 long wires, set **Gmeter > Panels > SPI clock** to 8000000 in menuconfig and
-rebuild. To add custom artwork, save an animation header exported from Gmeter
-Studio (a separate web page, not part of this package) as
-`source/gmeter/main/user_animation.h` and rebuild.
+rebuild. To add custom artwork, save its animation header as
+`source/gmeter/main/user_animation.h` and rebuild (`source/gmeter/README.md`,
+section 6, and `docs/EFFECTS.md` describe the header).
 
 ## 7. What has been tested
 
 | Check | Result |
 | --- | --- |
 | Builds with ESP-IDF v5.5.6 (all three variants) | Pass, no compiler warnings |
-| Memory, classic ESP32 | 74 KB of the 181 KB static RAM, 313 KB of the 2 MB app partition |
+| Memory, classic ESP32 | 74 KB of the 181 KB static RAM, 321 KB of the 2 MB app partition |
 | Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; every command of section 5 | Pass: no crash or reset once running, about 60 fps |
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
-| The effects, calibration and g-force maths, tested on a PC at 128x56 and 128x64 | Pass: 59 behaviour tests (physics, calibration, burn-in protection, parameter ranges) and 110 reference cases that compare every frame and value with recorded output |
+| The effects, calibration and g-force maths, tested on a PC at 128x56 and 128x64 | Pass: 60 behaviour tests (physics, calibration, burn-in protection, parameter ranges) and 110 reference cases that compare every frame and value with recorded output |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 5. |
 
 ## 8. Troubleshooting

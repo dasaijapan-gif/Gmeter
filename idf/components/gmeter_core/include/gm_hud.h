@@ -75,7 +75,6 @@ void gm_hud_init(gm_hud_t* h);
 
 static inline gm_vec3_t gm_hud_ball_position(const gm_hud_t* h) { return gm_spring3_pos(&h->ball); }
 static inline gm_vec3_t gm_hud_tip_position(const gm_hud_t* h) { return h->tip; }
-static inline gm_drive_state_t gm_hud_state(const gm_hud_t* h) { return gm_gstate_state(&h->tracker); }
 const char* gm_hud_title_text(const gm_hud_t* h);
 // Start the orbit at step 0..3 (e.g. a random one at power-on, so short trips
 // do not always use the same position).

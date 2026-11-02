@@ -88,10 +88,11 @@ shockwaves through the stack) and `sync` (sync-graph traces).
 unit: `get` lists the current effect's parameters and `set <name> <value>`
 changes one until the next power-off.
 
-The `anim` effect plays artwork drawn in Gmeter Studio, a separate web page
-with a 3D preview of the stack (not part of this repository). Save the header
-it exports as `idf/main/user_animation.h` and rebuild; without it the built-in
-demo animation plays.
+The `anim` effect plays custom artwork compiled into the firmware: a header
+`idf/main/user_animation.h` that defines `kUserAnimation`, a `gm_anim_asset_t`
+(`docs/EFFECTS.md` describes the format, which headers exported by Gmeter
+Studio already use). Rebuild after adding it; without it the built-in demo
+animation plays.
 
 Serial commands worth knowing: `mode slosh`, `get`, `set damping 0.3`,
 `contrast all 128`, `ramp 60 255`, `test 3` (then `test off`), `status`, `cycle 20`,
@@ -127,7 +128,7 @@ defines it; `docs/ARCHITECTURE.md` has the derivation.
   engine and an IMU dropout that froze the display) are fixed, with
   regression tests where they are testable on a PC.
 - Firmware: all six variants build without compiler warnings; the classic
-  ESP32 build uses about 74 KB of its 181 KB of static RAM and 313 KB of the
+  ESP32 build uses about 74 KB of its 181 KB of static RAM and 321 KB of the
   2 MB app partition. Both chips boot in Espressif's emulator and run every
   effect with no IMU attached. The panel init sequence and the sensor still
   need a real board. Register values, timing and init sequences come from the

@@ -17,11 +17,10 @@ idf_component_register(SRCS "app_main.c" "console_io.c" "display_ssd1309.c" "imu
 # slowdown, so make it an error (as in the core component).
 target_compile_options(${COMPONENT_LIB} PRIVATE -Wdouble-promotion -Werror=double-promotion -fno-math-errno)
 
-# Artwork exported from Gmeter Studio, a separate web page
-# (main/user_animation.h, see app_main.c). Its presence is checked when CMake
-# configures, so adding or deleting the file re-runs CMake and rebuilds
-# app_main.c (a compile-time __has_include would miss a file that appears after
-# the first build).
+# Custom artwork for the anim effect (main/user_animation.h, see app_main.c).
+# Its presence is checked when CMake configures, so adding or deleting the file
+# re-runs CMake and rebuilds app_main.c (a compile-time __has_include would
+# miss a file that appears after the first build).
 file(GLOB gm_user_animation CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/user_animation.h")
 if(gm_user_animation)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE GM_HAVE_USER_ANIMATION=1)

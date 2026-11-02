@@ -1,7 +1,6 @@
-// Properties of the core on its own, carried over from the assertions of the
-// former differential tests that did not compare with another implementation:
-// the effect contract (names, parameter tables, burn-in), smoke's grid
-// lifecycle, the built-in artwork, the HUD's orbit, the registries.
+// Properties of the core on its own: the effect contract (names, parameter
+// tables, burn-in), smoke's grid lifecycle, the built-in artwork, the HUD's
+// orbit, the registries.
 //
 // Core functions used here that the firmware (idf/main) does not call;
 // a change that removes one must replace it here:

@@ -3,7 +3,6 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stddef.h>
 
 #include "gm_effect.h"
 
@@ -53,9 +52,9 @@ typedef struct {
 
 // Sets the defaults and registers the tunables; allocates nothing. Reset (the
 // engine resets an effect when it becomes active) or the first update after
-// init or deactivate allocates the eight grids, gm_smoke_memory_bytes() in
-// all, with malloc. If that fails the effect stays unallocated: update does
-// nothing and render draws nothing.
+// init or deactivate allocates the eight grids of GM_SMOKE_N floats with
+// malloc. If that fails the effect stays unallocated: update does nothing and
+// render draws nothing.
 void gm_smoke_init(gm_smoke_t* s);
 // Frees the grids (the effect's destructor; deactivate also frees them). Safe
 // to call more than once; call it before gm_smoke_init on an effect that may
@@ -68,7 +67,6 @@ static inline float gm_smoke_density(const gm_smoke_t* s, int i, int j, int k) {
   return s->d ? s->d[gm_smoke_idx(i, j, k)] : 0.0f;
 }
 float gm_smoke_total_density(const gm_smoke_t* s);
-static inline size_t gm_smoke_memory_bytes(void) { return sizeof(float) * GM_SMOKE_N * 8; }
 
 #ifdef __cplusplus
 }

@@ -35,10 +35,9 @@
 #include "serial_cli.h"
 #include "storage.h"
 
-// Artwork exported from Gmeter Studio (a separate web page): save the header
-// as main/user_animation.h and it replaces the built-in demo animation. Its C
-// branch is compiled here; main/CMakeLists.txt defines GM_HAVE_USER_ANIMATION
-// when the file exists.
+// Custom artwork: a main/user_animation.h that defines kUserAnimation, a
+// gm_anim_asset_t (see gm_anim.h), replaces the built-in demo animation.
+// main/CMakeLists.txt defines GM_HAVE_USER_ANIMATION when the file exists.
 #if defined(GM_HAVE_USER_ANIMATION)
 #include "user_animation.h"
 #define GM_USER_ANIMATION (&kUserAnimation)

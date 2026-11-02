@@ -172,6 +172,10 @@ static int record(const char* filter) {
       have[i] = true;
     }
   }
+  if (filter && !ran) {
+    fprintf(stderr, "no case matches %s (--list)\n", filter);
+    return 2;
+  }
   FILE* f = fopen(GM_GOLDEN_FILE, "w");
   if (!f) {
     perror(GM_GOLDEN_FILE);
@@ -297,6 +301,10 @@ int main(int argc, char** argv) {
       printf("FAIL %s: recorded, but there is no such case (gm_tests --record)\n", s_recorded[i].name);
     }
 
+  if (filter && !run && !cases && !mismatches) {  // a mistyped filter must not pass
+    fprintf(stderr, "no test or case matches %s (--list)\n", filter);
+    return 2;
+  }
   printf("\n%d tests, %d checks, %d failures; %d reference cases, %d mismatches (GM_PANEL_H=%d, %.1f s + %.1f s)\n",
          run, s_checks, s_failures, cases, mismatches, GM_PANEL_H, t_tests, seconds_since(t0) - t_tests);
   return s_failures || mismatches ? 1 : 0;

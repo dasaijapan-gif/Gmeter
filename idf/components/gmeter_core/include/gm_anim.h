@@ -19,8 +19,8 @@
 // playback up with g, scrub frames with g, and ghost a flat sprite onto
 // neighbouring layers.
 //
-// Assets are plain aggregates so Gmeter Studio can export them as a header;
-// see main/user_animation.h in the firmware. The field order is part of that
+// Assets are plain aggregates, so artwork is a header of initialisers (see
+// main/user_animation.h in the firmware). The field order is part of that
 // header format: append new fields at the end only.
 #pragma once
 
@@ -121,8 +121,10 @@ typedef struct {
   float prev_vert;
 } gm_anim_t;
 
-// Copies the asset (not its artwork bits). Mapping values outside their
-// parameter ranges and absurd clip frame rates are clamped in the copy.
+// Copies the asset (not its artwork bits). In the copy, mapping values are
+// clamped to their parameter ranges and clip frame rates to 0.001..1000 fps;
+// a rate <= 0 or NaN becomes 0, which plays at 1 fps (12 fps when an empty
+// idle clip plays every frame).
 void gm_anim_init(gm_anim_t* a, const gm_anim_asset_t* asset);
 static inline const gm_anim_asset_t* gm_anim_asset(const gm_anim_t* a) { return &a->asset; }
 

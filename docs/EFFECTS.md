@@ -145,10 +145,10 @@ state-driven or multi-slice artwork use the `anim` effect.
 
 ## anim (`gm_anim_t`): authored artwork interpreted by g-force
 
-Plays artwork drawn in Gmeter Studio, or a built-in demo. A `gm_anim_asset_t`
-holds frames of pixel art (`width` x `height`, up to 128 x 56) with `depth`
-slices per frame that sit on consecutive panels, so artwork can be
-volumetric. Clips map car states to frame ranges:
+Plays custom artwork compiled into the firmware, or a built-in demo. A
+`gm_anim_asset_t` holds frames of pixel art (`width` x `height`, up to
+128 x 56) with `depth` slices per frame that sit on consecutive panels, so
+artwork can be volumetric. Clips map car states to frame ranges:
 
 | State | Chosen when |
 | --- | --- |
@@ -181,16 +181,41 @@ single-slice sprite can be ghosted onto neighbouring layers (`echo`).
 | `fps_g`, `scrub_axis`, `frames_g` | 0, -1, 0 | g-driven playback |
 | `echo`, `mirror` | 0, 1 | depth ghosting, left/right mirroring |
 
-Assets are plain aggregates. Gmeter Studio (a separate web page with a 3D
-preview of the stack, not part of this repository) exports one as a header:
-save it as `idf/main/user_animation.h` (`main/user_animation.h` in the
-supplier's source) and rebuild. The build picks it up automatically
-(`idf/main/CMakeLists.txt` checks for the file) and compiles the header's C
-branch; without it the built-in demo plays (a breathing ring, chevrons per
-direction and a starburst on bumps). The effect clamps a hand-edited
-header's tunables to the ranges `set` allows and its clip frame rates to at
-most 1000 fps. On the car, `anim brake` pins a clip and `anim auto` returns to
-g-force control.
+Assets are plain aggregates, so custom artwork is a C header: save it as
+`idf/main/user_animation.h` (`main/user_animation.h` in the supplier's
+source) and rebuild. The build picks it up automatically
+(`idf/main/CMakeLists.txt` checks for the file); without it the built-in demo
+plays (a breathing ring, chevrons per direction and a starburst on bumps).
+The header defines the bitmap and a `gm_anim_asset_t` named `kUserAnimation`
+(`gm_anim.h` documents every field); headers exported by Gmeter Studio have
+this form:
+
+```c
+#pragma once
+#include <stdint.h>
+#include "gm_anim.h"
+
+// [frame][slice][row][byte]: 1 bit per pixel, MSB = leftmost, rows padded to whole bytes
+static const uint8_t kUserAnimationBits[33 * 3 * 24 * 4] = { /* ... */ };
+
+static const gm_anim_asset_t kUserAnimation = {
+    "my_animation", 32, 24, 3, 33, kUserAnimationBits,  // name, width, height, slices, frames, bits
+    {   // one clip per state: first frame, frame count, fps, loop
+        {0, 8, 8.0f, 1},    // idle
+        {8, 6, 12.0f, 1},   // accelerate
+        {14, 6, 12.0f, 1},  // brake
+        {0, 0, 12.0f, 1},   // left: no frames, so the right clip mirrored
+        {20, 6, 12.0f, 1},  // right
+        {26, 6, 18.0f, 0},  // bump: plays once
+    },
+    GM_ANIM_MAPPING_DEFAULT,  // or the 13 tunables in gm_anim_mapping_t's order
+};
+```
+
+The effect clamps a hand-edited header's tunables to the ranges `set` allows
+and its clip frame rates to 0.001 to 1000 fps (a clip with a rate of 0 or less
+plays at 1 fps). On the car, `anim brake` pins a clip and `anim auto` returns
+to g-force control.
 
 ## NGE-inspired effects: hud, atfield, sync
 
@@ -199,8 +224,8 @@ Evangelion: hard-edged frames, hazard stripes, large condensed kanji and
 octagonal shockwaves. The panels emit light blue only, so the style comes
 from shape, type and motion, not colour. The Japanese text uses bitmaps
 rendered from Noto Serif JP Black and Noto Sans JP Bold (see
-`docs/THIRD_PARTY.md`); `tools/make_glyphs.py` regenerates them if you want
-more characters.
+`docs/THIRD_PARTY.md`); `tools/make_glyphs.py` in the Gmeter repository
+regenerates them if you want more characters.
 
 ### hud (`gm_hud_t`)
 
@@ -278,7 +303,8 @@ g as a percentage of 1 g.
 3. Add a static instance to `idf/main/app_main.c`, initialise it in
    `build_objects` and append `&fx.base` to the `effects` array (at the end:
    `save` stores the effect's index).
-4. Test it in `idf/test`: behaviour tests in `test_behaviour.c`, and the
+4. Test it in `idf/test` (in the Gmeter repository, not in the supplier
+   package): behaviour tests in `test_behaviour.c`, and the
    effect in `test_golden.c`'s effect list so every demo drive, fuzzing and
    the engine's handling of non-finite g reach it. The engine hands it finite
    g within 16 g per axis. Then re-record at both panel heights and justify

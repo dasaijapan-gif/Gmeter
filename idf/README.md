@@ -129,11 +129,14 @@ harmless.
 
 ## 6. Custom artwork
 
-Animations are drawn in Gmeter Studio, a separate web page with a 3D preview
-of the panel stack. Save the header it exports as `main/user_animation.h` and
-rebuild: the `anim` effect then plays your artwork instead of the built-in
-demo (`mode anim`, then `status` shows its name). Delete the file to go back
-to the demo.
+The `anim` effect plays artwork compiled into the firmware. Put it in
+`main/user_animation.h`, a header that defines `kUserAnimation`: a
+`gm_anim_asset_t` (`components/gmeter_core/include/gm_anim.h`) with the pixel
+data, a frame range for each driving state and the motion settings
+(`docs/EFFECTS.md` describes it; headers exported by Gmeter Studio have this
+form). Rebuild: the `anim` effect then plays your artwork instead of the
+built-in demo (`mode anim`, then `status` shows its name). Delete the file to
+go back to the demo.
 
 ## 7. Start-up output
 

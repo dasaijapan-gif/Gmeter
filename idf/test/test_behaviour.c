@@ -599,8 +599,9 @@ TEST(anim_render_slices_and_bounds) {
   CHECK(lit(f) > 20);
 }
 
-// fixtures/user_animation.h is a header exactly as Gmeter Studio exports it
-// for main/user_animation.h; compiling it here pins the format.
+// fixtures/user_animation.h is a header exactly as Gmeter Studio exported it
+// for main/user_animation.h (C compiles only its C branch); compiling it here
+// pins the format, so such headers keep working.
 TEST(anim_studio_export_compiles_and_plays) {
   CHECK(gm_anim_asset_valid(&kUserAnimation));
   CHECK(gm_anim_asset_total_bytes(&kUserAnimation) == (int)sizeof(kUserAnimationBits));
@@ -809,6 +810,42 @@ TEST(anim_one_shot_clip_holds_its_last_frame) {
   gm_frame_clear(&s_f);
   gm_effect_render(&a.base, &s_f);
   CHECK(lit(&s_f) == 1);  // frame 2 is one pixel, and no echo
+}
+
+TEST(anim_slow_clip_rate_stays_slow) {
+  // A hand-written rate below 0.001 fps is raised to 0.001 fps, not dropped to
+  // the 1 fps (or 12 fps play-all) used for rates <= 0.
+  static const uint8_t bits[3 * 8] = {0x80, 0, 0, 0, 0, 0, 0, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 0x20, 0, 0, 0, 0, 0, 0, 0};
+  gm_anim_asset_t asset = gm_anim_asset_empty();
+  asset.name = "slow";
+  asset.width = 8;
+  asset.height = 8;
+  asset.depth = 1;
+  asset.frames = 3;
+  asset.bits = bits;
+  asset.clips[GM_ANIM_IDLE] = (gm_anim_clip_t){0, 3, 0.0005f, 1};
+  static gm_anim_t a;
+  gm_anim_init(&a, &asset);
+  bool mirror = false;
+  CHECK(gm_anim_resolve_clip(&a, GM_ANIM_IDLE, &mirror).fps == 0.001f);
+  gm_effect_reset(&a.base);
+  gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
+  ctx.dt = 1.0f / 60.0f;
+  int moved = 0;
+  for (int i = 0; i < 600; ++i) {
+    gm_effect_update(&a.base, &ctx);
+    moved += gm_anim_current_frame(&a) != 0;
+  }
+  CHECK(moved == 0);
+  asset.clips[GM_ANIM_IDLE].count = 0;  // empty idle: play every frame at idle's rate
+  gm_anim_init(&a, &asset);
+  CHECK(gm_anim_resolve_clip(&a, GM_ANIM_IDLE, &mirror).fps == 0.001f);
+  asset.clips[GM_ANIM_IDLE].fps = NAN;  // like a rate <= 0: play-all at 12 fps
+  gm_anim_init(&a, &asset);
+  CHECK(gm_anim_resolve_clip(&a, GM_ANIM_IDLE, &mirror).fps == 12.0f);
+  asset.clips[GM_ANIM_IDLE] = (gm_anim_clip_t){0, 3, -2.0f, 1};  // a usable clip with a rate <= 0: 1 fps
+  gm_anim_init(&a, &asset);
+  CHECK(gm_anim_resolve_clip(&a, GM_ANIM_IDLE, &mirror).fps == 1.0f);
 }
 
 TEST(jp_ascii_knockout_clears_exactly_the_glyph) {

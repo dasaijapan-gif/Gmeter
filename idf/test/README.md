@@ -35,8 +35,8 @@ Run both heights before committing a change to the core. Each run takes a
 few seconds. `-DGM_SANITIZE=ON` builds with AddressSanitizer and
 UndefinedBehaviorSanitizer, including its check of every float-to-int
 conversion (the digests must not change).
-`gm_tests <text>` runs only the tests and cases whose names contain the text;
-`gm_tests --list` lists them.
+`gm_tests <text>` runs only the tests and cases whose names contain the text
+(and fails when nothing matches); `gm_tests --list` lists them.
 
 The digests depend on the compiler flags in `CMakeLists.txt` (`-O2
 -ffp-contract=off -fno-math-errno`) and on the host's `sinf`, `cosf`, `expf`

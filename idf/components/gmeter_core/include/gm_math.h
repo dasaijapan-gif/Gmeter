@@ -112,17 +112,12 @@ static inline float gm_rng_symmetric(gm_rng_t* r) { return gm_rng_uniform(r) * 2
 
 // ---- second-order low-pass ----------------------------------------------------------
 // Butterworth biquad, direct form I. Used to smooth accelerometer data; see
-// gm_estimator. gm_lowpass_init makes a pass-through filter.
+// gm_estimator.
 typedef struct {
   float b0, b1, b2, a1, a2;
   float x1, x2, y1, y2;
 } gm_lowpass_t;
 
-static inline void gm_lowpass_init(gm_lowpass_t* f) {
-  f->b0 = 1.0f;
-  f->b1 = f->b2 = f->a1 = f->a2 = 0.0f;
-  f->x1 = f->x2 = f->y1 = f->y2 = 0.0f;
-}
 static inline void gm_lowpass_configure(gm_lowpass_t* f, float cutoff_hz, float sample_hz) {
   if (cutoff_hz <= 0.0f || sample_hz <= 0.0f || cutoff_hz >= sample_hz * 0.49f) {
     // Pass-through.
