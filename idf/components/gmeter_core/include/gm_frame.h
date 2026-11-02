@@ -31,7 +31,6 @@ typedef struct {
 extern const uint8_t gm_bayer8[8][8];
 
 static inline void gm_frame_clear(gm_frame_t* f) { memset(f->bits, 0, sizeof(f->bits)); }
-static inline void gm_frame_fill(gm_frame_t* f) { memset(f->bits, 0xFF, sizeof(f->bits)); }
 
 static inline bool gm_frame_in_bounds(int x, int y, int z) {
   return (unsigned)x < (unsigned)GM_W && (unsigned)y < (unsigned)GM_H && (unsigned)z < (unsigned)GM_D;
@@ -43,9 +42,6 @@ static inline void gm_frame_set(gm_frame_t* f, int x, int y, int z) {
 }
 static inline void gm_frame_reset(gm_frame_t* f, int x, int y, int z) {
   if (gm_frame_in_bounds(x, y, z)) f->bits[z][(y >> 3) * GM_W + x] &= (uint8_t)~(1u << (y & 7));
-}
-static inline bool gm_frame_get(const gm_frame_t* f, int x, int y, int z) {
-  return gm_frame_in_bounds(x, y, z) && ((f->bits[z][(y >> 3) * GM_W + x] >> (y & 7)) & 1u);
 }
 
 // Ordered-dither threshold: each layer uses a different offset into the 8x8
@@ -96,32 +92,18 @@ void gm_frame_clear_box(gm_frame_t* f, int x0, int y0, int x1, int y1);
 // past an edge are lost and the uncovered strip is cleared. Used for the HUD's
 // anti burn-in orbit, so it works on bytes, not pixel by pixel.
 void gm_frame_shift(gm_frame_t* f, int dx, int dy);
+// Dithered crossfade between a and b into f (t = 0 -> a, 1 -> b); f may be a or b.
+void gm_frame_crossfade(gm_frame_t* f, const gm_frame_t* a, const gm_frame_t* b, float t);
 
 // ---- world <-> voxel mapping -----------------------------------------------------------
 // World frame = car frame in pixel units, origin at the volume centre: x right,
 // y up, z forward (deeper). Layer k sits at z = (k - (D-1)/2) * pitch.
-static inline gm_vec3_t gm_voxel_to_world(float x, float y, float z) {
-  return gm_vec3(x - GM_W * 0.5f + 0.5f, GM_H * 0.5f - 0.5f - y, (z - (GM_D - 1) * 0.5f) * GM_LAYER_PITCH_PX);
-}
 static inline gm_vec3_t gm_world_to_voxel(gm_vec3_t w) {
   return gm_vec3(w.x + GM_W * 0.5f - 0.5f, GM_H * 0.5f - 0.5f - w.y, w.z / GM_LAYER_PITCH_PX + (GM_D - 1) * 0.5f);
 }
 static inline float gm_layer_z(int k) { return ((float)k - (GM_D - 1) * 0.5f) * GM_LAYER_PITCH_PX; }
 // Half-extents of the simulation box in world units.
 static inline gm_vec3_t gm_half_extent(void) { return gm_vec3(GM_W * 0.5f, GM_H * 0.5f, GM_DEPTH_PX * 0.5f); }
-
-// ---- raw access ------------------------------------------------------------------------
-static inline uint8_t* gm_frame_layer(gm_frame_t* f, int z) { return f->bits[z]; }
-static inline uint8_t* gm_frame_data(gm_frame_t* f) { return &f->bits[0][0]; }
-static inline const uint8_t* gm_frame_cdata(const gm_frame_t* f) { return &f->bits[0][0]; }
-
-// Combine: f |= o.
-void gm_frame_or(gm_frame_t* f, const gm_frame_t* o);
-// Dithered crossfade between a and b into f (t = 0 -> a, 1 -> b); f may be a or b.
-void gm_frame_crossfade(gm_frame_t* f, const gm_frame_t* a, const gm_frame_t* b, float t);
-
-int gm_frame_count_lit(const gm_frame_t* f);
-int gm_frame_count_lit_layer(const gm_frame_t* f, int z);
 
 #ifdef __cplusplus
 }

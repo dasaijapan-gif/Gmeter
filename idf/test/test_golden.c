@@ -13,7 +13,8 @@
 //                           16 g), random dt (0, tiny, odd, up to 2 s), parameters
 //                           set in range, at and past the limits, resets and
 //                           deactivate/activate cycles at random times
-//   nonfinite_<effect>      NaN, infinite and enormous g through the engine
+//   nonfinite_<effect>      NaN, infinite and enormous g through the engine, which
+//                           sanitises it
 //   engine_*                mode switches (also during a crossfade), auto-cycle,
 //                           readout, the not-live-data tag, burn-in, parameters
 //                           through the engine; standard and HUD edition
@@ -21,7 +22,8 @@
 //                           settings and calibration paths of app_main
 //   gstate_*, text_*, frame_ops, params_tables, scenario_presets, demo_assets
 //
-// Only finite g within +-16 g reaches the effects outside the nonfinite_ cases.
+// The engine hands the effects only finite g within +-16 g per axis; the cases
+// that drive an effect directly (fuzz_) keep to that range too.
 //
 // API this file relies on: what idf/main calls, the effect vtables (the
 // gm_effect_* wrappers in gm_effect.h), the parameter tables, the init and
@@ -31,21 +33,20 @@
 //   gm_engine_find_effect, gm_engine_effect_count, gm_engine_current, gm_engine_current_index,
 //   gm_engine_set_auto_cycle, gm_engine_set_readout, gm_engine_set_status_label,
 //   gm_engine_step, gm_engine_frame
-//   gm_effect_name, gm_effect_params, gm_effect_activate, gm_effect_deactivate,
-//   gm_effect_reset, gm_effect_update, gm_effect_render, gm_effect_burn_in_offset,
-//   GM_EFFECT_CTX_INIT (only .g and .dt are set)
+//   gm_effect_name, gm_effect_params, gm_effect_deactivate, gm_effect_reset (what the
+//   engine calls on activation), gm_effect_update, gm_effect_render,
+//   gm_effect_burn_in_offset, GM_EFFECT_CTX_INIT
 //   gm_params_count, gm_params_at, gm_params_get, gm_params_set
 //   gm_gball_init, gm_slosh_init, gm_particles_init, gm_smoke_init, gm_tunnel_init,
-//   gm_sprite_init (sheet, NULL), gm_sprite_demo_sheet, gm_anim_init, gm_anim_demo,
+//   gm_sprite_init, gm_sprite_demo_sheet, gm_anim_init, gm_anim_demo,
 //   gm_anim_force_state, gm_anim_state_name, gm_hud_init, gm_hud_set_orbit_step,
 //   gm_atfield_init, gm_sync_init, and the asset helpers gm_sprite_sheet_frame_bytes and
 //   gm_anim_asset_total_bytes
 //   gm_scenario_preset_count, gm_scenario_preset, gm_scenario_find, gm_scenario_name,
-//   gm_scenario_duration, gm_scenario_at (rng NULL)
+//   gm_scenario_duration, gm_scenario_at
 //   gm_estimator_init, gm_estimator_set_filter, gm_estimator_set_auto_zero,
 //   gm_estimator_set_calibration, gm_estimator_set_nominal_forward, gm_estimator_update,
-//   gm_estimator_reset, gm_estimator_begin_rest_calibration, gm_estimator_feed_rest_sample,
-//   gm_estimator_finish_rest_calibration, gm_estimator_calibrate_forward_from_braking,
+//   gm_estimator_reset, gm_estimator_calibrate_rest, gm_estimator_calibrate_forward_from_braking,
 //   gm_estimator_forward_trusted, gm_estimator_calibration, gm_calibration_none
 //   gm_frame_clear, gm_frame_rect, gm_frame_text, gm_frame_set
 //   gm_jp_draw, gm_jp_draw_vertical, gm_jp_measure, gm_jp_small, gm_jp_large
@@ -99,7 +100,7 @@ static void init_effect(int i, const gm_anim_asset_t* art) {
     case 2: gm_particles_init(&s_unit.particles); break;
     case 3: gm_smoke_init(&s_unit.smoke); break;
     case 4: gm_tunnel_init(&s_unit.tunnel); break;
-    case 5: gm_sprite_init(&s_unit.sprite, gm_sprite_demo_sheet(), NULL); break;
+    case 5: gm_sprite_init(&s_unit.sprite, gm_sprite_demo_sheet()); break;
     case 6: gm_anim_init(&s_unit.anim, art); break;
     case 7: gm_hud_init(&s_unit.hud); break;
     case 8: gm_atfield_init(&s_unit.atfield); break;
@@ -172,7 +173,7 @@ static gm_gforce_t dyn_g(float lat, float vert, float lon) {
 static gm_gforce_t demo_g(const gm_scenario_t* sc, int64_t us_since_boot) {
   const float dur = gm_scenario_duration(sc);
   const int64_t period = (int64_t)((dur + 1.0f) * 1e6f);
-  return gm_scenario_at(sc, (float)(us_since_boot % period) * 1e-6f, NULL);
+  return gm_scenario_at(sc, (float)(us_since_boot % period) * 1e-6f);
 }
 
 static const gm_scenario_t* drive_scenario(void) { return gm_scenario_preset(gm_scenario_preset_count() - 1); }
@@ -272,7 +273,7 @@ static gm_gforce_t gen_next(gen_t* s, trng_t* r, float dt) {
     case 5: g.proper = s->target; break;
     case 3:
       s->t += dt;
-      g = gm_scenario_at(s->sc, s->t, NULL);
+      g = gm_scenario_at(s->sc, s->t);
       break;
     case 4: break;
     default:
@@ -297,7 +298,7 @@ static void case_fuzz(gd_t* g, int arg) {
   const bool user_art = (arg >> 16) & 1;
   trng_t r = trng(0xF0225EEDull + (uint64_t)arg * 7919u);
   gm_effect_t* e = single_build(fx, user_art ? &kUserAnimation : gm_anim_demo());
-  gm_effect_activate(e);
+  gm_effect_reset(e);  // activation
   gen_t gen;
   memset(&gen, 0, sizeof(gen));
   for (int i = 0; i < 1500; ++i) {
@@ -309,11 +310,11 @@ static void case_fuzz(gd_t* g, int arg) {
     if (trng_chance(&r, 0.005f)) {
       gd_event(g, "deactivate, activate");
       gm_effect_deactivate(e);
-      gm_effect_activate(e);
+      gm_effect_reset(e);
     }
     if (trng_chance(&r, 0.003f)) {
       gd_event(g, "activate again");
-      gm_effect_activate(e);  // the engine does this when a fade is reversed
+      gm_effect_reset(e);  // the engine re-activates an effect when a fade is reversed
     }
     if (fx == fx_index("hud") && trng_chance(&r, 0.005f)) {
       const int step = trng_int(&r, 0, 7);
@@ -686,7 +687,7 @@ static void imu_sample(gd_t* g, sensor_t* s, gm_vec3_t proper, gm_vec3_t* accum,
 static void imu_drive(gd_t* g, sensor_t* s, const gm_scenario_t* sc, float seconds) {
   const int n = (int)(seconds * IMU_HZ);
   for (int i = 0; i < n; ++i) {
-    imu_sample(g, s, gm_scenario_at(sc, (float)i / (float)IMU_HZ, NULL).proper, NULL, NULL);
+    imu_sample(g, s, gm_scenario_at(sc, (float)i / (float)IMU_HZ).proper, NULL, NULL);
     if (i % 20 == 19) gd_step(g, "100 ms of samples");
   }
 }
@@ -706,14 +707,8 @@ static bool imu_capture(gd_t* g, sensor_t* s, gm_vec3_t proper, bool rest) {
   const int n = rest ? 400 : 300;  // 2 s or 1.5 s
   for (int i = 0; i < n; ++i) imu_sample(g, s, proper, &accum, &count);
   const gm_vec3_t mean = gm_vec3_div(accum, (float)count);
-  bool ok;
-  if (rest) {
-    gm_estimator_begin_rest_calibration(&s_imu.est);
-    for (int i = 0; i < 16; ++i) gm_estimator_feed_rest_sample(&s_imu.est, mean);
-    ok = gm_estimator_finish_rest_calibration(&s_imu.est);
-  } else {
-    ok = gm_estimator_calibrate_forward_from_braking(&s_imu.est, mean);
-  }
+  const bool ok = rest ? gm_estimator_calibrate_rest(&s_imu.est, mean)
+                       : gm_estimator_calibrate_forward_from_braking(&s_imu.est, mean);
   if (ok) s_imu.cal = gm_estimator_calibration(&s_imu.est);
   gd_bool(g, ok);
   fold_calibration(g);
@@ -745,7 +740,7 @@ static void case_estimator_filter(gd_t* g, int arg) {
       gm_estimator_reset(&s_imu.est);
     }
     if (trng_chance(&r, 0.0005f)) gm_estimator_set_nominal_forward(&s_imu.est, axis_vector(trng_int(&r, 0, 5)));
-    gm_vec3_t proper = gm_scenario_at(sc, (float)i / (float)IMU_HZ, NULL).proper;
+    gm_vec3_t proper = gm_scenario_at(sc, (float)i / (float)IMU_HZ).proper;
     if (i % 1000 < 6) proper = gm_vec3(5.0f, -6.0f, 4.5f);  // a knock that saturates the sensor
     imu_sample(g, &s, proper, NULL, NULL);
     if (i % 20 == 19) gd_step(g, "100 ms of samples");

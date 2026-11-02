@@ -42,8 +42,8 @@ static void splat_density(gm_particles_t* pe) {
   const int n = gm_particles_active_count(pe);
   for (int p = 0; p < n; ++p) {
     const gm_vec3_t g = grid_coord(pe->pos[p]);
-    const int i0 = gm_clampi(gm_to_int(g.x), 0, GX - 2), j0 = gm_clampi(gm_to_int(g.y), 0, GY - 2),
-              k0 = gm_clampi(gm_to_int(g.z), 0, GZ - 2);
+    const int i0 = gm_clampi((int)g.x, 0, GX - 2), j0 = gm_clampi((int)g.y, 0, GY - 2),
+              k0 = gm_clampi((int)g.z, 0, GZ - 2);
     const float fx = gm_clampf(g.x - (float)i0, 0.0f, 1.0f), fy = gm_clampf(g.y - (float)j0, 0.0f, 1.0f),
                 fz = gm_clampf(g.z - (float)k0, 0.0f, 1.0f);
     for (int dk = 0; dk < 2; ++dk) {
@@ -91,9 +91,9 @@ static void splat_density(gm_particles_t* pe) {
 static gm_vec3_t pressure_accel(const gm_particles_t* pe, gm_vec3_t world) {
   const gm_vec3_t g = grid_coord(world);
   // Grid coordinates are non-negative here, so truncation is a floor.
-  const int i = gm_clampi(gm_to_int(g.x + 0.5f), 1, GX - 2);
-  const int j = gm_clampi(gm_to_int(g.y + 0.5f), 1, GY - 2);
-  const int k = gm_clampi(gm_to_int(g.z + 0.5f), 1, GZ - 2);
+  const int i = gm_clampi((int)(g.x + 0.5f), 1, GX - 2);
+  const int j = gm_clampi((int)(g.y + 0.5f), 1, GY - 2);
+  const int k = gm_clampi((int)(g.z + 0.5f), 1, GZ - 2);
   const float(*p)[GY][GX] = pe->pressure_field;
   // Central differences in cell units, converted to per-pixel.
   const float dx = (p[k][j][i + 1] - p[k][j][i - 1]) * (0.5f / CELL);
@@ -172,8 +172,7 @@ static void particles_render(gm_effect_t* self, gm_frame_t* f) {
   const bool big = pe->dot_size >= 1.5f;
   for (int p = 0; p < n; ++p) {
     const gm_vec3_t v = gm_world_to_voxel(pe->pos[p]);
-    // A NaN position (after NaN or infinite g input) is off the panel.
-    const int x = gm_iround_safe(v.x), y = gm_iround_safe(v.y), z = gm_iround_safe(v.z);
+    const int x = gm_iround(v.x), y = gm_iround(v.y), z = gm_iround(v.z);
     gm_frame_set(f, x, y, z);
     if (big) {
       gm_frame_set(f, x + 1, y, z);
@@ -185,7 +184,6 @@ static void particles_render(gm_effect_t* self, gm_frame_t* f) {
 
 static const gm_effect_vtbl_t k_particles_vtbl = {
     .name = "particles",
-    .activate = NULL,  // reset
     .deactivate = NULL,
     .reset = particles_reset,
     .update = particles_update,

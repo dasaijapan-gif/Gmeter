@@ -2,16 +2,11 @@
 // Evangelion. See gm_hud.h for the layout and the anti burn-in orbit.
 #include "gm_hud.h"
 
-#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "gm_jp_text.h"
-
-// Anti burn-in orbit: right, down, left, up around a 2 x 2 pixel square.
-static const int k_orbit_x[4] = {0, 1, 1, 0};
-static const int k_orbit_y[4] = {0, 0, 1, 1};
 
 // Rectangle with 45-degree chamfered corners.
 static void chamfer_rect(gm_frame_t* f, int z, int x0, int y0, int x1, int y1, int c) {
@@ -40,13 +35,12 @@ static void hud_reset(gm_effect_t* self) {
   // The burn-in orbit keeps its place across re-activation.
 }
 
-int gm_hud_orbit_x(const gm_hud_t* h) { return k_orbit_x[h->orbit_step & 3]; }
-int gm_hud_orbit_y(const gm_hud_t* h) { return k_orbit_y[h->orbit_step & 3]; }
-
+// Anti burn-in orbit: right, down, left, up around a 2 x 2 pixel square.
 static void hud_burn_in_offset(const gm_effect_t* self, int* dx, int* dy) {
-  const gm_hud_t* h = (const gm_hud_t*)self;
-  *dx = gm_hud_orbit_x(h);
-  *dy = gm_hud_orbit_y(h);
+  static const int k_x[4] = {0, 1, 1, 0}, k_y[4] = {0, 0, 1, 1};
+  const int step = ((const gm_hud_t*)self)->orbit_step & 3;
+  *dx = k_x[step];
+  *dy = k_y[step];
 }
 
 static gm_vec3_t travel(const gm_hud_t* h) {
@@ -158,10 +152,7 @@ static void draw_frame(const gm_hud_t* h, gm_frame_t* f, float horiz) {
     gm_jp_draw_vertical(f, &gm_jp_small, 0, col_x, col_y, "警告", 1, 1.0f);
   // Bottom band: hazard stripes when over warn_g.
   if (warn) {
-    // (int)hazard. The hazard clock is NaN, infinite or huge only after absurd
-    // g input, where the conversion would be undefined; such values give
-    // INT_MIN instead. The bound keeps xx + y + off inside int too.
-    const int off = h->hazard >= -2147483648.0f && h->hazard < 2147483520.0f ? (int)h->hazard : INT_MIN;
+    const int off = (int)h->hazard;
     for (int y = H - 9; y <= H - 6; ++y)
       for (int xx = 12; xx < W - 12; ++xx)
         if (((xx + y + off) / 3) % 2 == 0) gm_frame_set(f, xx, y, 0);
@@ -274,10 +265,9 @@ static void hud_render(gm_effect_t* self, gm_frame_t* f) {
   }
 }
 
-// No activate / deactivate hooks: activating the HUD just resets it.
+// No deactivate hook: the HUD holds no buffers.
 static const gm_effect_vtbl_t k_hud_vtbl = {
     .name = "hud",
-    .activate = NULL,
     .deactivate = NULL,
     .reset = hud_reset,
     .update = hud_update,

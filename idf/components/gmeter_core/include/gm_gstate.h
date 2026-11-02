@@ -34,7 +34,6 @@ void gm_gstate_init(gm_gstate_t* s);
 // set on the update where a vertical spike starts.
 bool gm_gstate_update(gm_gstate_t* s, gm_gforce_t g, float dt, bool* bumped);
 static inline gm_drive_state_t gm_gstate_state(const gm_gstate_t* s) { return s->state; }
-static inline float gm_gstate_seconds_in_state(const gm_gstate_t* s) { return s->held; }
 // The state gm_gstate_update moves to from `current` for dynamic g `d` (any
 // value outside ACCELERATE..RIGHT counts as inactive). Also used by "anim".
 gm_drive_state_t gm_gstate_choose(int current, gm_vec3_t d, float enter_g);

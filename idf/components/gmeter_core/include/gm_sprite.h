@@ -27,30 +27,17 @@ static inline bool gm_sprite_sheet_pixel(const gm_sprite_sheet_t* s, int frame, 
 }
 
 typedef struct {
-  gm_vec3_t px_per_g;   // world displacement per g on each axis
-  float smoothing_hz;
-  int scrub_axis;       // -1 none, 0 lateral, 1 vertical, 2 longitudinal
-  float frames_per_g;   // frames of scrub per g on that axis
-  float idle_fps;       // autonomous playback
-  float fps_per_g;      // extra playback speed per g (horizontal magnitude)
-  float depth_echo;     // ghost copies on neighbouring layers (layers of falloff)
-  bool follow_inertia;
-} gm_sprite_mapping_t;
-
-#define GM_SPRITE_MAPPING_DEFAULT {{60.0f, 24.0f, 60.0f}, 2.0f, 2, 8.0f, 0.0f, 12.0f, 1.0f, true}
-
-typedef struct {
   gm_effect_t base;
   gm_sprite_sheet_t sheet;
+  // The tunables (see the parameter table set up by gm_sprite_init).
   float px_gx, px_gy, px_gz, hz, scrub_axis, frames_per_g, idle_fps, fps_per_g, echo, inertia;
   gm_spring3_t pos;
   float playhead;
   int frame_index;
 } gm_sprite_t;
 
-// `map` may be NULL for the defaults (GM_SPRITE_MAPPING_DEFAULT).
-void gm_sprite_init(gm_sprite_t* s, const gm_sprite_sheet_t* sheet, const gm_sprite_mapping_t* map);
-static inline void gm_sprite_set_sheet(gm_sprite_t* s, const gm_sprite_sheet_t* sheet) { s->sheet = *sheet; }
+// Copies the sheet descriptor (the bits are not copied) and sets the defaults.
+void gm_sprite_init(gm_sprite_t* s, const gm_sprite_sheet_t* sheet);
 static inline int gm_sprite_current_frame(const gm_sprite_t* s) { return s->frame_index; }
 static inline gm_vec3_t gm_sprite_position(const gm_sprite_t* s) { return gm_spring3_pos(&s->pos); }
 

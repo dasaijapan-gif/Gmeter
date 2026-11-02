@@ -61,9 +61,9 @@ keeps a braking-refined forward.
 
 Each layer is stored exactly as SSD1306/SSD1309 GDDRAM in horizontal
 addressing mode: `GM_PAGES = GM_H / 8` rows of 128 bytes, each byte holding
-eight vertically stacked pixels with bit 0 at the top. `gm_frame_layer(f, z)`
-is therefore DMA-ready: the display driver sends a window command and streams
-the bytes with no repacking.
+eight vertically stacked pixels with bit 0 at the top. A layer
+(`f->bits[z]`) is therefore DMA-ready: the display driver sends a window
+command and streams the bytes with no repacking.
 
 Primitives: dithered `gm_frame_plot(f, x, y, z, intensity)` (ordered Bayer 8x8
 with a per-layer offset so adjacent layers do not moire), lines, rectangles,
@@ -74,20 +74,22 @@ dithered `gm_frame_crossfade` used for mode transitions.
 
 An effect is a struct whose first member is `gm_effect_t`. Its vtable
 (`gm_effect_vtbl_t`) holds `update` (physics; may substep) and `render`, and
-optionally `reset`, `activate` / `deactivate` (heavy effects own their buffers
-only while shown) and `burn_in_offset`. Every tunable is registered in the
-effect's parameter table (`gm_params_add`), so the serial CLI (`get`, `set`)
-and a future web page can tune it by name. `docs/EFFECTS.md` describes each
-effect and its parameters.
+optionally `reset` (called whenever the effect becomes active), `deactivate`
+(heavy effects own their buffers only while shown) and `burn_in_offset`. Every
+tunable is registered in the effect's parameter table (`gm_params_add`), so
+the serial CLI (`get`, `set`) and a future web page can tune it by name.
+`docs/EFFECTS.md` describes each effect and its parameters.
 
 The engine (`gm_engine_t`) owns the active effect, runs a 0.4 s dithered
 crossfade on mode changes, optionally auto-cycles effects, and overlays the
-mode name or a numeric readout on the front layer. In the single-effect (HUD)
-edition, while the picture is not live sensor data, the firmware also has it
-draw a small tag at the front layer's bottom right: `DEMO`, `SERIAL`, or
-`NO SENSOR` when the IMU stops answering. Last of all it moves the whole
-frame by the effect's `burn_in_offset` (the HUD's anti-burn-in orbit; zero
-for the other effects).
+mode name or a numeric readout on the front layer. It is also where g enters
+the core: `gm_engine_step` clamps each axis to 16 g and replaces a sample with
+a NaN or infinite component by the previous one, so the effects only ever work
+with finite, bounded g. In the single-effect (HUD) edition, while the picture
+is not live sensor data, the firmware also has it draw a small tag at the
+front layer's bottom right: `DEMO`, `SERIAL`, or `NO SENSOR` when the IMU
+stops answering. Last of all it moves the whole frame by the effect's
+`burn_in_offset` (the HUD's anti-burn-in orbit; zero for the other effects).
 
 The HUD edition (menuconfig: Gmeter > Edition, or `idf/configs/hud.defaults`)
 boots into `hud` whatever was saved, turns auto-cycle off, and refuses
@@ -109,12 +111,12 @@ The tasks are in `idf/main/app_main.c`.
 Frames are triple-buffered: the renderer writes to the buffer that is neither
 displaying nor queued; if the display falls behind, the newest frame wins and
 `status` counts the drop. The g vector, source and buffer indices are shared
-under a spinlock. The engine and its effects are guarded by a FreeRTOS
-mutex: `render_task` holds it while stepping, and the CLI and mode button hold
-it while they change modes or parameters, so a mode switch can never race a
-step (smoke allocates and frees its buffers on activate/deactivate). The
-estimator has its own mutex between `imu_task` and the CLI. Floats are never
-touched in an ISR.
+under a spinlock. The engine and its effects are guarded by a FreeRTOS mutex:
+`render_task` holds it while stepping, and the CLI and mode button hold it
+while they change modes or parameters, so a mode switch can never race a step
+(smoke allocates its buffers when it becomes active and frees them on
+deactivate). The estimator has its own mutex between `imu_task` and the CLI.
+Floats are never touched in an ISR.
 
 Memory (128x56x8, classic ESP32): about 74 KB of static RAM, mostly the
 engine's two frames at 7 KB each, slosh ~11.5 KB and particles ~23 KB; the
@@ -144,13 +146,13 @@ Measure on target with `status` (step and SPI microseconds).
 | `GM_PANEL_H` | multiple of 8; 56 for the transparent panels, 64 for generic modules | menuconfig (Gmeter > Panels); `-DGM_PANEL_H=` for `idf/test` |
 | `GM_LAYERS` | 1..8 in the firmware (one chip-select pin per layer) | `gm_config.h` (8) |
 | `GM_LAYER_PITCH_PX` | panel spacing in mm / 0.274 | `gm_config.h` (16) |
-| `GM_SMOKE_NX`, `GM_SMOKE_NY` | NX divides the width, NY the height; the header default is 4x4-px cells | `idf/components/gmeter_core/CMakeLists.txt` (16 x 8) |
+| `GM_SMOKE_NX`, `GM_SMOKE_NY` | NX divides the width, NY the height | `gm_smoke.h` (16 x 8) |
 | Panel model, SPI clock, frame rate, flip mask, panel order | firmware only | menuconfig |
 
 In the firmware `CONFIG_GMETER_PANEL_H` sets the panel height through
-`gm_config.h`. `idf/test` compiles the core with the same geometry and smoke
-grid. `idf/main/board_config.h` checks the width and layer limits. Tests pass
-at 128x56 and 128x64.
+`gm_config.h`. `idf/test` compiles the core with the same geometry.
+`idf/main/board_config.h` checks the width and layer limits. Tests pass at
+128x56 and 128x64.
 
 ## Next steps
 

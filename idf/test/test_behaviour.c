@@ -16,6 +16,8 @@
 //   gm_lowpass_configure, gm_lowpass_reset, gm_lowpass_process, gm_spring_step,
 //   gm_rng_seed, gm_rng_symmetric, gm_gstate_* (thresholds set through the struct fields)
 // Everything else is part of the firmware's API (see test_golden.c).
+#include <float.h>
+
 #include "fixtures/user_animation.h"
 #include "test.h"
 
@@ -32,10 +34,10 @@ static gm_gforce_t dyn(float lat, float vert, float lon) {  // rest plus dynamic
 
 static bool finite3(gm_vec3_t v) { return isfinite(v.x) && isfinite(v.y) && isfinite(v.z); }
 
-// Runs an effect through a constant g for `seconds` (activating it first)
-// and renders the final frame into f.
+// Runs an effect through a constant g for `seconds` (resetting it first, as
+// activation does) and renders the final frame into f.
 static void run_effect(gm_effect_t* e, gm_gforce_t g, float seconds, float fps, gm_frame_t* f) {
-  gm_effect_activate(e);
+  gm_effect_reset(e);
   gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
   ctx.g = g;
   ctx.dt = 1.0f / fps;
@@ -78,7 +80,7 @@ static gm_vec3_t sensor_reading(gm_gforce_t g, const gm_mat3_t* m, gm_rng_t* rng
 
 // A scenario's g with road vibration (white noise on every axis).
 static gm_gforce_t noisy_scenario(const gm_scenario_t* sc, float t, gm_rng_t* rng, float noise_g) {
-  gm_gforce_t g = gm_scenario_at(sc, t, NULL);
+  gm_gforce_t g = gm_scenario_at(sc, t);
   const float nx = gm_rng_symmetric(rng);
   const float ny = gm_rng_symmetric(rng);
   const float nz = gm_rng_symmetric(rng);
@@ -274,10 +276,11 @@ TEST(estimator_calibration_recovers_car_frame) {
   gm_estimator_set_filter(&est, 4.0f, 200.0f);
   gm_rng_t rng;
   gm_rng_seed(&rng, 1);
-  gm_estimator_begin_rest_calibration(&est);
+  // `cal rest`: the mean of a noisy parked capture.
+  gm_vec3_t mean_rest = gm_vec3_zero();
   for (int i = 0; i < 200; ++i)
-    gm_estimator_feed_rest_sample(&est, sensor_reading(gm_gforce_rest(), &truth.sensor_to_car, &rng, 0.01f));
-  CHECK(gm_estimator_finish_rest_calibration(&est));
+    mean_rest = gm_vec3_add(mean_rest, sensor_reading(gm_gforce_rest(), &truth.sensor_to_car, &rng, 0.01f));
+  CHECK(gm_estimator_calibrate_rest(&est, gm_vec3_div(mean_rest, 200.0f)));
 
   // Feed a right turn + braking and confirm the filtered output converges.
   const gm_gforce_t g = gf(0.3f, 1.0f, -0.4f);
@@ -303,12 +306,10 @@ TEST(estimator_calibration_recovers_car_frame) {
 TEST(estimator_rejects_bad_rest) {
   static gm_estimator_t est;
   gm_estimator_init(&est);
-  gm_estimator_begin_rest_calibration(&est);
-  for (int i = 0; i < 20; ++i) gm_estimator_feed_rest_sample(&est, gm_vec3(0, 0.2f, 0));  // not 1 g
-  CHECK(!gm_estimator_finish_rest_calibration(&est));
-  gm_estimator_begin_rest_calibration(&est);
-  for (int i = 0; i < 3; ++i) gm_estimator_feed_rest_sample(&est, gm_vec3(0, 1, 0));  // too few
-  CHECK(!gm_estimator_finish_rest_calibration(&est));
+  CHECK(!gm_estimator_calibrate_rest(&est, gm_vec3(0, 0.2f, 0)));  // not 1 g
+  CHECK(!gm_estimator_calibrate_rest(&est, gm_vec3(0, 1.4f, 0)));
+  CHECK(!gm_estimator_calibrate_rest(&est, gm_vec3(NAN, NAN, NAN)));  // the mean of no samples
+  CHECK(!gm_estimator_calibration(&est).valid);
 }
 
 // ---- scenario --------------------------------------------------------------------------------------------
@@ -357,7 +358,7 @@ TEST(slosh_conserves_volume_and_tilts) {
   static gm_slosh_t slosh;
   gm_slosh_init(&slosh);
   gm_params_set(gm_effect_params(&slosh.base), "slope_gain", 1.0f);  // physical tilt for this check
-  gm_effect_activate(&slosh.base);
+  gm_effect_reset(&slosh.base);
   const float v0 = gm_slosh_total_volume(&slosh);
   gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
   ctx.g = gf(0.3f, 1.0f, 0.0f);  // right turn
@@ -383,7 +384,7 @@ TEST(slosh_conserves_volume_and_tilts) {
 TEST(slosh_stable_under_noisy_drive) {
   static gm_slosh_t slosh;
   gm_slosh_init(&slosh);
-  gm_effect_activate(&slosh.base);
+  gm_effect_reset(&slosh.base);
   const gm_scenario_t* drive = gm_scenario_find("drive");
   gm_rng_t rng;
   gm_rng_seed(&rng, 5);
@@ -447,7 +448,7 @@ TEST(smoke_runs_and_leans) {
   static gm_smoke_t s;
   gm_smoke_init(&s);
   CHECK(!gm_smoke_allocated(&s));
-  gm_effect_activate(&s.base);
+  gm_effect_reset(&s.base);
   CHECK(gm_smoke_allocated(&s));
   gm_frame_t* f = &s_f;
   run_effect(&s.base, gm_gforce_rest(), 2.0f, 30.0f, f);
@@ -470,7 +471,7 @@ TEST(tunnel_and_sprite_render) {
   run_effect(&t.base, gm_gforce_rest(), 1.0f, 60.0f, f);
   for (int z = 0; z < GM_D; ++z) CHECK(lit_layer(f, z) > 0);
   static gm_sprite_t sp;
-  gm_sprite_init(&sp, gm_sprite_demo_sheet(), NULL);
+  gm_sprite_init(&sp, gm_sprite_demo_sheet());
   CHECK(gm_sprite_demo_sheet()->frames == 12);
   run_effect(&sp.base, gm_gforce_rest(), 1.0f, 60.0f, f);
   CHECK(lit(f) > 10);
@@ -543,7 +544,7 @@ TEST(anim_demo_asset_and_states) {
   CHECK(demo->width == 32 && demo->height == 24 && demo->depth == 3 && demo->frames == 32);
   static gm_anim_t a;
   gm_anim_init(&a, demo);
-  gm_effect_activate(&a.base);
+  gm_effect_reset(&a.base);
   anim_drive(&a, dyn(0, 0, 0), 1.0f);
   CHECK(gm_anim_state(&a) == GM_ANIM_IDLE);
   CHECK(gm_anim_current_frame(&a) >= 0 && gm_anim_current_frame(&a) < 8);
@@ -583,7 +584,7 @@ TEST(anim_demo_asset_and_states) {
 TEST(anim_render_slices_and_bounds) {
   static gm_anim_t a;
   gm_anim_init(&a, gm_anim_demo());
-  gm_effect_activate(&a.base);
+  gm_effect_reset(&a.base);
   anim_drive(&a, dyn(0, 0, 0), 0.2f);
   gm_frame_t* f = &s_f;
   gm_frame_clear(f);
@@ -607,7 +608,7 @@ TEST(anim_studio_export_compiles_and_plays) {
     CHECK(kUserAnimation.clips[s].count == 0 || kUserAnimation.clips[s].start < kUserAnimation.frames);
   static gm_anim_t a;
   gm_anim_init(&a, &kUserAnimation);
-  gm_effect_activate(&a.base);
+  gm_effect_reset(&a.base);
   float v = 0.0f;
   CHECK(gm_params_get(gm_effect_params(&a.base), "enter_g", &v) && fabsf(v - kUserAnimation.mapping.enter_g) < 1e-6f);
   anim_drive(&a, dyn(0, 0, -0.6f), 1.0f);
@@ -630,7 +631,7 @@ TEST(anim_degenerate_assets) {
   asset.clips[GM_ANIM_BRAKE] = (gm_anim_clip_t){1, 50, 10.0f, 1};
   static gm_anim_t a;
   gm_anim_init(&a, &asset);
-  gm_effect_activate(&a.base);
+  gm_effect_reset(&a.base);
   bool mirror = false;
   const gm_anim_clip_t idle = gm_anim_resolve_clip(&a, GM_ANIM_IDLE, &mirror);
   CHECK(idle.start == 0 && idle.count == 2);
@@ -643,7 +644,7 @@ TEST(anim_degenerate_assets) {
   const gm_anim_asset_t none = gm_anim_asset_empty();
   static gm_anim_t b;
   gm_anim_init(&b, &none);
-  gm_effect_activate(&b.base);
+  gm_effect_reset(&b.base);
   anim_drive(&b, dyn(0.5f, 0, 0), 0.5f);
   gm_frame_clear(&s_f);
   gm_effect_render(&b.base, &s_f);
@@ -682,7 +683,7 @@ TEST(anim_even_slice_counts_reach_both_ends_of_the_stack) {
     asset.bits = bits;
     static gm_anim_t a;
     gm_anim_init(&a, &asset);
-    gm_effect_activate(&a.base);
+    gm_effect_reset(&a.base);
     int lo = 0, hi = 0;
     lit_layers(&a, dyn(0, 0, 0), 2.0f, &lo, &hi);
     CHECK(hi - lo == depth - 1);
@@ -697,7 +698,7 @@ TEST(anim_even_slice_counts_reach_both_ends_of_the_stack) {
 TEST(anim_hysteresis_keeps_state_when_stronger_axis_cannot_enter) {
   static gm_anim_t a;
   gm_anim_init(&a, gm_anim_demo());
-  gm_effect_activate(&a.base);
+  gm_effect_reset(&a.base);
   gm_params_set(gm_effect_params(&a.base), "enter_g", 0.5f);
   anim_drive(&a, dyn(0, 0, -0.6f), 1.0f);
   CHECK(gm_anim_state(&a) == GM_ANIM_BRAKE);
@@ -733,7 +734,7 @@ TEST(anim_bump_clip_past_the_end_never_fires) {
   asset.clips[GM_ANIM_BUMP] = (gm_anim_clip_t){2, 4, 10.0f, 0};  // starts one past the last frame
   static gm_anim_t a;
   gm_anim_init(&a, &asset);
-  gm_effect_activate(&a.base);
+  gm_effect_reset(&a.base);
   anim_drive(&a, dyn(0, 0, 0), 0.5f);
   anim_step(&a, dyn(0, 0.9f, 0));
   CHECK(gm_anim_state(&a) == GM_ANIM_IDLE);
@@ -759,13 +760,55 @@ TEST(anim_states_sharing_the_idle_clip_do_not_restart_it) {
   asset.mapping.hold_s = 0.0f;
   static gm_anim_t a;
   gm_anim_init(&a, &asset);
-  gm_effect_activate(&a.base);
+  gm_effect_reset(&a.base);
   anim_drive(&a, dyn(0, 0, 0), 0.55f);  // about frame 2 at 4 fps
   const int before = gm_anim_current_frame(&a);
   CHECK(before >= 1);
   anim_step(&a, dyn(0, 0, 0.6f));
   CHECK(gm_anim_state(&a) == GM_ANIM_ACCELERATE);
   CHECK(gm_anim_current_frame(&a) >= before);
+}
+
+// A one-shot clip held for a long time, as fast as a hand-written asset can
+// play (1000 fps, the most `fps_g` speed-up, 16 g) and scrubbed back as far as
+// `frames_g` allows, stays on its last frame: the clip timer stops growing
+// once the clip is long finished, so its frame number stays within int.
+TEST(anim_one_shot_clip_holds_its_last_frame) {
+  static const uint8_t bits[3 * 8] = {0x80, 0, 0, 0, 0, 0, 0, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 0x20, 0, 0, 0, 0, 0, 0, 0};
+  gm_anim_asset_t asset = gm_anim_asset_empty();
+  asset.name = "once";
+  asset.width = 8;
+  asset.height = 8;
+  asset.depth = 1;
+  asset.frames = 3;
+  asset.bits = bits;
+  asset.clips[GM_ANIM_IDLE] = (gm_anim_clip_t){0, 3, 5000.0f, 0};  // clamped to 1000 fps
+  asset.mapping.fps_per_g = 50.0f;                                // clamped to 8
+  asset.mapping.scrub_axis = 1.0f;
+  asset.mapping.frames_per_g = -100.0f;  // clamped to -64
+  asset.mapping.echo = NAN;              // the bottom of its range, 0
+  static gm_anim_t a;
+  gm_anim_init(&a, &asset);
+  float fps_g = 0.0f, frames_g = 0.0f, echo = 1.0f;
+  const gm_param_table_t* t = gm_effect_params(&a.base);
+  CHECK(gm_params_get(t, "fps_g", &fps_g) && gm_params_get(t, "frames_g", &frames_g) &&
+        gm_params_get(t, "echo", &echo));
+  CHECK(fps_g == 8.0f && frames_g == -64.0f && echo == 0.0f);
+  CHECK(gm_anim_asset(&a)->clips[GM_ANIM_IDLE].fps == 1000.0f);
+  gm_effect_reset(&a.base);
+  gm_anim_force_state(&a, GM_ANIM_IDLE);
+  gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
+  ctx.dt = 2.0f;
+  int wrong = 0;
+  for (int i = 0; i < 20000; ++i) {
+    ctx.g = gf(16.0f, (i & 1) ? 16.0f : -16.0f, 0.0f);
+    gm_effect_update(&a.base, &ctx);
+    wrong += gm_anim_current_frame(&a) != 2;
+  }
+  CHECK(wrong == 0);
+  gm_frame_clear(&s_f);
+  gm_effect_render(&a.base, &s_f);
+  CHECK(lit(&s_f) == 1);  // frame 2 is one pixel, and no echo
 }
 
 TEST(jp_ascii_knockout_clears_exactly_the_glyph) {
@@ -863,7 +906,7 @@ TEST(hud_orbits_one_pixel_and_keeps_the_frame_on_the_glass) {
   int dx = 0, dy = 0;
   gm_params_set(gm_effect_params(&hud.base), "orbit_min", 30.0f);
   gm_hud_set_orbit_step(&hud, 2);
-  gm_effect_activate(&hud.base);
+  gm_effect_reset(&hud.base);
   burn_in(&hud.base, &dx, &dy);
   CHECK(dx == 1 && dy == 1);
   gm_hud_set_orbit_step(&hud, 7);
@@ -896,6 +939,87 @@ TEST(hud_orbits_one_pixel_and_keeps_the_frame_on_the_glass) {
       ++off_frames;
   }
   CHECK(on_frames > 10 && off_frames > 10);
+}
+
+// All ten effects in an engine, in app_main's order.
+typedef struct {
+  gm_engine_t engine;
+  gm_gball_t ball;
+  gm_slosh_t slosh;
+  gm_particles_t particles;
+  gm_smoke_t smoke;
+  gm_tunnel_t tunnel;
+  gm_sprite_t sprite;
+  gm_anim_t anim;
+  gm_hud_t hud;
+  gm_atfield_t atfield;
+  gm_sync_t sync;
+} unit_t;
+
+static void unit_init(unit_t* u, int effect) {
+  gm_engine_init(&u->engine);
+  gm_gball_init(&u->ball);
+  gm_slosh_init(&u->slosh);
+  gm_particles_init(&u->particles);
+  gm_smoke_init(&u->smoke);
+  gm_tunnel_init(&u->tunnel);
+  gm_sprite_init(&u->sprite, gm_sprite_demo_sheet());
+  gm_anim_init(&u->anim, gm_anim_demo());
+  gm_hud_init(&u->hud);
+  gm_atfield_init(&u->atfield);
+  gm_sync_init(&u->sync);
+  gm_effect_t* const fx[] = {&u->ball.base,   &u->slosh.base, &u->particles.base, &u->smoke.base,   &u->tunnel.base,
+                             &u->sprite.base, &u->anim.base,  &u->hud.base,       &u->atfield.base, &u->sync.base};
+  for (int i = 0; i < 10; ++i) gm_engine_add_effect(&u->engine, fx[i]);
+  gm_engine_set_effect(&u->engine, effect, false);
+  gm_engine_set_readout(&u->engine, true);
+}
+
+// g enters the core through gm_engine_step, which sanitises it: a sample with
+// a NaN or infinite component counts as the previous sample (rest before the
+// first), and each axis is clamped to +-GM_ENGINE_MAX_G. So feeding bad
+// samples must give exactly the frames that feeding their substitutes gives,
+// on every effect and with the g readout on. (The sanitizer build of these
+// tests also checks that no float-to-int conversion goes out of range.)
+TEST(engine_sanitises_bad_g) {
+  static unit_t bad, good;
+  static const float k_bad[] = {NAN,     INFINITY, -INFINITY, 1e30f, -1e30f, FLT_MAX,
+                                -FLT_MAX, 3e9f,     -2.5e7f,   16.5f, -40.0f};
+  const gm_scenario_t* sc = gm_scenario_find("drive");
+  for (int fx = 0; fx < 10; ++fx) {
+    unit_init(&bad, fx);
+    unit_init(&good, fx);
+    trng_t r = trng(0x5A11ull + (uint64_t)fx);
+    gm_gforce_t held = gm_gforce_rest();
+    int differ = 0, replaced = 0, clamped = 0;
+    for (int i = 0; i < 900; ++i) {
+      gm_gforce_t in = gm_scenario_at(sc, (float)i / 60.0f);
+      if (i < 5 || i % 60 >= 40) {  // bad samples from power-on, then in bursts
+        const int mask = trng_int(&r, 1, 7);
+        const int nbad = (int)(sizeof(k_bad) / sizeof(k_bad[0]));
+        if (mask & 1) in.proper.x = k_bad[trng_int(&r, 0, nbad - 1)];
+        if (mask & 2) in.proper.y = k_bad[trng_int(&r, 0, nbad - 1)];
+        if (mask & 4) in.proper.z = k_bad[trng_int(&r, 0, nbad - 1)];
+      }
+      gm_gforce_t sub = held;
+      if (finite3(in.proper)) {
+        const float m = GM_ENGINE_MAX_G;
+        sub.proper =
+            gm_vec3(gm_clampf(in.proper.x, -m, m), gm_clampf(in.proper.y, -m, m), gm_clampf(in.proper.z, -m, m));
+        clamped += memcmp(&sub, &in, sizeof(sub)) != 0;
+      } else {
+        ++replaced;
+      }
+      held = sub;
+      gm_engine_step(&bad.engine, in, 1.0f / 60.0f);
+      gm_engine_step(&good.engine, sub, 1.0f / 60.0f);
+      differ += memcmp(gm_engine_frame(&bad.engine), gm_engine_frame(&good.engine), sizeof(gm_frame_t)) != 0;
+    }
+    CHECK(replaced > 50 && clamped > 20);
+    CHECK(differ == 0);
+    gm_effect_deactivate(&bad.smoke.base);  // frees the smoke grids
+    gm_effect_deactivate(&good.smoke.base);
+  }
 }
 
 TEST(engine_status_label_marks_non_live_data) {
@@ -993,7 +1117,7 @@ TEST(engine_burn_in_offset_moves_overlays_and_only_the_hud) {
   gm_slosh_init(&slosh);
   gm_particles_init(&particles);
   gm_smoke_init(&smoke);
-  gm_sprite_init(&sprite, gm_sprite_demo_sheet(), NULL);
+  gm_sprite_init(&sprite, gm_sprite_demo_sheet());
   gm_anim_init(&anim, gm_anim_demo());
   gm_atfield_init(&atfield);
   gm_sync_init(&sync);
@@ -1011,7 +1135,7 @@ TEST(hud_warning_column_clears_the_hazard_stripes) {
   // empty row must separate them (on 56-row panels they used to touch).
   static gm_hud_t hud;
   gm_hud_init(&hud);
-  gm_effect_activate(&hud.base);
+  gm_effect_reset(&hud.base);
   gm_params_set(gm_effect_params(&hud.base), "warn_g", 0.1f);
   gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
   ctx.dt = 1.0f / 60.0f;
@@ -1041,9 +1165,7 @@ TEST(calibration_matches_a_physical_right_handed_sensor) {
   gm_estimator_init(&est);
   gm_estimator_set_nominal_forward(&est, gm_vec3(0, 1, 0));
   gm_estimator_set_filter(&est, 0.0f, 200.0f);  // pass-through for exact numbers
-  gm_estimator_begin_rest_calibration(&est);
-  for (int i = 0; i < 50; ++i) gm_estimator_feed_rest_sample(&est, gm_vec3(0, 0, 1));
-  CHECK(gm_estimator_finish_rest_calibration(&est));
+  CHECK(gm_estimator_calibrate_rest(&est, gm_vec3(0, 0, 1)));  // parked: the mean of the capture
   CHECK(gm_estimator_forward_trusted(&est));
   gm_gforce_t g = gm_gforce_rest();
   for (int i = 0; i < 5; ++i) g = gm_estimator_update(&est, gm_vec3(0.5f, 0, 1));  // right turn: pushed toward +X
@@ -1057,9 +1179,7 @@ TEST(calibration_matches_a_physical_right_handed_sensor) {
   gm_estimator_init(&up);
   gm_estimator_set_nominal_forward(&up, gm_vec3(0, 0, 1));
   gm_estimator_set_filter(&up, 0.0f, 200.0f);
-  gm_estimator_begin_rest_calibration(&up);
-  for (int i = 0; i < 50; ++i) gm_estimator_feed_rest_sample(&up, gm_vec3(0, 1, 0));
-  CHECK(gm_estimator_finish_rest_calibration(&up));
+  CHECK(gm_estimator_calibrate_rest(&up, gm_vec3(0, 1, 0)));
   for (int i = 0; i < 5; ++i) g = gm_estimator_update(&up, gm_vec3(-0.4f, 1, 0));  // right turn: toward chip -X
   CHECK_NEAR(gm_gforce_lateral(g), 0.4f, 1e-4f);
 }
@@ -1069,10 +1189,8 @@ TEST(calibration_vertical_hint_needs_braking) {
   gm_estimator_init(&est);
   gm_estimator_set_nominal_forward(&est, gm_vec3(0, 0, 1));  // default hint, but the board lies flat (+Z up)
   gm_estimator_set_filter(&est, 0.0f, 200.0f);
-  gm_estimator_begin_rest_calibration(&est);
-  for (int i = 0; i < 50; ++i) gm_estimator_feed_rest_sample(&est, gm_vec3(0.02f, 0.01f, 1.0f));
-  CHECK(gm_estimator_finish_rest_calibration(&est));  // up is known...
-  CHECK(!gm_estimator_forward_trusted(&est));         // ...but forward is not
+  CHECK(gm_estimator_calibrate_rest(&est, gm_vec3(0.02f, 0.01f, 1.0f)));  // up is known...
+  CHECK(!gm_estimator_forward_trusted(&est));                             // ...but forward is not
   CHECK(!gm_estimator_make_calibration(gm_vec3(0, 0, 1), gm_vec3(0.3f, 0, 1)).valid);  // 17 deg from vertical
   // A firm straight brake: chip +Y toward the windshield, so braking pushes -Y.
   CHECK(gm_estimator_calibrate_forward_from_braking(&est, gm_vec3(0.0f, -0.5f, 1.0f)));
@@ -1082,9 +1200,7 @@ TEST(calibration_vertical_hint_needs_braking) {
   CHECK_NEAR(gm_gforce_lateral(g), 0.5f, 0.03f);
   // A rejected rest capture keeps the previous calibration.
   const gm_mat3_t before = gm_estimator_calibration(&est).sensor_to_car;
-  gm_estimator_begin_rest_calibration(&est);
-  for (int i = 0; i < 50; ++i) gm_estimator_feed_rest_sample(&est, gm_vec3(0.5f, 1.3f, 0.2f));
-  CHECK(!gm_estimator_finish_rest_calibration(&est));
+  CHECK(!gm_estimator_calibrate_rest(&est, gm_vec3(0.5f, 1.3f, 0.2f)));
   CHECK_NEAR(gm_estimator_calibration(&est).sensor_to_car.m[2][1], before.m[2][1], 1e-6f);
 }
 
@@ -1107,13 +1223,13 @@ TEST(slosh_stays_stable_when_substeps_are_capped) {
   gm_params_set(t, "tank_m", 0.1f);    // fast waves
   gm_params_set(t, "substeps", 2.0f);  // tight cost cap
   gm_params_set(t, "damping", 0.0f);
-  gm_effect_activate(&slosh.base);
+  gm_effect_reset(&slosh.base);
   gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
   ctx.dt = 1.0f / 15.0f;
   const gm_scenario_t* drive = gm_scenario_find("slalom");
   float worst = 0.0f;
   for (float tt = 0.0f; tt < gm_scenario_duration(drive); tt += ctx.dt) {
-    ctx.g = gm_scenario_at(drive, tt, NULL);
+    ctx.g = gm_scenario_at(drive, tt);
     gm_effect_update(&slosh.base, &ctx);
     for (int z = 0; z < GM_SLOSH_NZ; ++z)
       for (int x = 0; x < GM_SLOSH_NX; ++x) worst = gm_maxf(worst, gm_slosh_height(&slosh, x, z));
@@ -1122,7 +1238,7 @@ TEST(slosh_stays_stable_when_substeps_are_capped) {
   CHECK(worst < GM_H * 1.6f);
   // Runtime fill change takes effect.
   gm_slosh_init(&s2);
-  gm_effect_activate(&s2.base);
+  gm_effect_reset(&s2.base);
   const float v0 = gm_slosh_total_volume(&s2);
   gm_params_set(gm_effect_params(&s2.base), "fill", 0.2f);
   const gm_effect_ctx_t c2 = GM_EFFECT_CTX_INIT;
@@ -1193,7 +1309,7 @@ TEST(jp_text_covers_every_string_the_effects_draw) {
 TEST(hud_follows_g_and_names_the_state) {
   static gm_hud_t hud;
   gm_hud_init(&hud);
-  gm_effect_activate(&hud.base);
+  gm_effect_reset(&hud.base);
   gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
   ctx.dt = 1.0f / 60.0f;
 #define RUN(lat, vert, lon, secs)                                                    \
@@ -1225,7 +1341,7 @@ TEST(hud_follows_g_and_names_the_state) {
 TEST(atfield_and_sync_react) {
   static gm_atfield_t at;
   gm_atfield_init(&at);
-  gm_effect_activate(&at.base);
+  gm_effect_reset(&at.base);
   gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
   ctx.dt = 1.0f / 60.0f;
   ctx.g = dyn(0.6f, 0, 0);
@@ -1242,7 +1358,7 @@ TEST(atfield_and_sync_react) {
 
   static gm_sync_t sync;
   gm_sync_init(&sync);
-  gm_effect_activate(&sync.base);
+  gm_effect_reset(&sync.base);
   ctx.g = dyn(0.5f, 0, -0.5f);
   for (int i = 0; i < 120; ++i) gm_effect_update(&sync.base, &ctx);
   gm_frame_clear(&s_f);

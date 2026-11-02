@@ -20,8 +20,10 @@
 // engine overlays included, moves one pixel around a 2 x 2 square (right,
 // down, left, up). That spreads the wear of the frame, rulers and character
 // edges, which never move otherwise, over neighbouring OLED pixels; the
-// inside of strokes wider than 1 px still stays lit. The orbit keeps its
-// place when the effect is re-activated; gm_hud_set_orbit_step picks the start.
+// inside of strokes wider than 1 px still stays lit. The offset is the
+// effect's burn-in offset (gm_effect_burn_in_offset), which the engine applies.
+// The orbit keeps its place when the effect is re-activated;
+// gm_hud_set_orbit_step picks the start.
 #pragma once
 
 #include <stdbool.h>
@@ -75,9 +77,6 @@ static inline gm_vec3_t gm_hud_ball_position(const gm_hud_t* h) { return gm_spri
 static inline gm_vec3_t gm_hud_tip_position(const gm_hud_t* h) { return h->tip; }
 static inline gm_drive_state_t gm_hud_state(const gm_hud_t* h) { return gm_gstate_state(&h->tracker); }
 const char* gm_hud_title_text(const gm_hud_t* h);
-// Current anti burn-in offset in pixels (0 or 1 on each axis).
-int gm_hud_orbit_x(const gm_hud_t* h);
-int gm_hud_orbit_y(const gm_hud_t* h);
 // Start the orbit at step 0..3 (e.g. a random one at power-on, so short trips
 // do not always use the same position).
 static inline void gm_hud_set_orbit_step(gm_hud_t* h, int step) {

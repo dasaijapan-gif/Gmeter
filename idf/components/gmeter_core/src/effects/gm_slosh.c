@@ -195,10 +195,7 @@ static void slosh_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   const float c = umax + sqrtf(gv * gm_maxf(hmax, 1.0f));
   const float inv_spacing = sqrtf(1.0f / (DX * DX) + 1.0f / (DZ * DZ));
   const float dt_max = 0.7f / (gm_maxf(c, 1e-3f) * inv_spacing);
-  // With absurd input (infinite velocities) the ratio is infinite or NaN:
-  // gm_to_int gives INT_MIN, clamped to one substep.
-  int n = gm_to_int(ceilf(ctx->dt / dt_max));
-  n = gm_clampi(n, 1, (int)s->max_substeps);
+  const int n = (int)gm_clampf(ceilf(ctx->dt / dt_max), 1.0f, s->max_substeps);
   s->last_substeps = n;
   const float dt = gm_minf(ctx->dt / (float)n, dt_max);
   for (int i = 0; i < n; ++i) {
@@ -223,14 +220,11 @@ static void slosh_render(gm_effect_t* self, gm_frame_t* f) {
       i0 = gm_clampi(i0, 0, NX - 1);
       const int i1 = gm_clampi(i0 + 1, 0, NX - 1);
       const float h = gm_lerpf(s->h[z][i0], s->h[z][i1], t) + bob;
-      // A NaN or huge h (only after absurd vertical g) gives INT_MIN.
-      const int y_surf = gm_iround_safe(bottom - h);
+      const int y_surf = gm_iround(bottom - h);
       if (h < 0.5f) continue;
       for (int k = 0; k < thick; ++k) gm_frame_set(f, px, y_surf + k, z);
       if (style == 1) {
-        // Rows above the panel draw nothing, so start at row 0 at the earliest
-        // (a NaN or huge h, only after absurd vertical g, would otherwise mean
-        // up to ~2^31 iterations per column).
+        // Rows above the panel draw nothing, so start at row 0 at the earliest.
         for (int y = gm_maxi(y_surf + thick, 0); y <= GM_H - 1; ++y) gm_frame_plot(f, px, y, z, s->body_intensity);
       } else if (style == 2) {
         gm_frame_vline(f, z, px, y_surf + thick, GM_H - 1);
@@ -239,10 +233,9 @@ static void slosh_render(gm_effect_t* self, gm_frame_t* f) {
   }
 }
 
-// No activate / deactivate hooks (activating resets) and no burn-in offset.
+// No deactivate hook and no burn-in offset.
 static const gm_effect_vtbl_t k_slosh_vtbl = {
     .name = "slosh",
-    .activate = NULL,
     .deactivate = NULL,
     .reset = slosh_reset,
     .update = slosh_update,

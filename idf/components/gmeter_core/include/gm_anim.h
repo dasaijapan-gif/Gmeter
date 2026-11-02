@@ -121,12 +121,9 @@ typedef struct {
   float prev_vert;
 } gm_anim_t;
 
+// Copies the asset (not its artwork bits). Mapping values outside their
+// parameter ranges and absurd clip frame rates are clamped in the copy.
 void gm_anim_init(gm_anim_t* a, const gm_anim_asset_t* asset);
-
-// Swap artwork at runtime. When apply_mapping is true the asset's mapping
-// overwrites the current tunables; reset_motion false keeps the current
-// position, state and clip time (live editing).
-void gm_anim_set_asset(gm_anim_t* a, const gm_anim_asset_t* asset, bool apply_mapping, bool reset_motion);
 static inline const gm_anim_asset_t* gm_anim_asset(const gm_anim_t* a) { return &a->asset; }
 
 // -1 = choose the state from g-force (normal); 0..5 = hold that state (preview).

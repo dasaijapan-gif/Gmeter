@@ -102,9 +102,9 @@ static void gball_render(gm_effect_t* self, gm_frame_t* f) {
   if (b->hud > 0.5f) {
     char buf[12];
     const float hg = gm_gforce_horizontal(b->last_g);
-    snprintf(buf, sizeof(buf), "%d.%02dG", gm_to_int(hg), gm_to_int(hg * 100.0f) % 100);
+    snprintf(buf, sizeof(buf), "%d.%02dG", (int)hg, (int)(hg * 100.0f) % 100);
     gm_frame_text(f, 0, 1, GM_H - 6, buf);
-    snprintf(buf, sizeof(buf), "P%d.%02d", gm_to_int(b->peak_g), gm_to_int(b->peak_g * 100.0f) % 100);
+    snprintf(buf, sizeof(buf), "P%d.%02d", (int)b->peak_g, (int)(b->peak_g * 100.0f) % 100);
     gm_frame_text(f, 0, GM_W - 1 - 4 * 5, GM_H - 6, buf);
     // Longitudinal bar along the top edge: braking fills to the right of
     // centre (ball recedes), acceleration to the left (ball approaches).
@@ -117,10 +117,9 @@ static void gball_render(gm_effect_t* self, gm_frame_t* f) {
   }
 }
 
-// No activate / deactivate hooks (activating resets) and no burn-in offset.
+// No deactivate hook and no burn-in offset.
 static const gm_effect_vtbl_t k_gball_vtbl = {
     .name = "ball",
-    .activate = NULL,
     .deactivate = NULL,
     .reset = gball_reset,
     .update = gball_update,

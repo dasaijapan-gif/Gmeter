@@ -1,12 +1,10 @@
-// Scripted g-force profiles (demo mode and tests) and a simulated raw sensor.
+// Scripted g-force profiles for the demo mode.
 #include "gm_scenario.h"
 
-#include <math.h>
 #include <string.h>
 
 gm_vec3_t gm_scenario_dynamic_at(const gm_scenario_t* s, float t) {
   if (s->count == 0) return gm_vec3_zero();
-  if (s->loop_after > 0.0f && t > s->loop_after) t = fmodf(t, s->loop_after);
   if (t <= s->keys[0].t) return s->keys[0].dynamic;
   if (t >= s->keys[s->count - 1].t) return s->keys[s->count - 1].dynamic;
   int i = 0;
@@ -18,33 +16,8 @@ gm_vec3_t gm_scenario_dynamic_at(const gm_scenario_t* s, float t) {
   return gm_vec3_lerp(a->dynamic, b->dynamic, u);
 }
 
-gm_gforce_t gm_scenario_at(const gm_scenario_t* s, float t, gm_rng_t* rng) {
-  gm_gforce_t g = GM_GFORCE_REST_INIT;
-  g.proper = gm_vec3_add(gm_gforce_rest_proper(), gm_scenario_dynamic_at(s, t));
-  if (rng && s->noise_g > 0.0f) {
-    // Draw x, y, z in this order (C leaves the order of function arguments open).
-    const float nx = gm_rng_symmetric(rng);
-    const float ny = gm_rng_symmetric(rng);
-    const float nz = gm_rng_symmetric(rng);
-    g.proper = gm_vec3_add(g.proper, gm_vec3_scale(gm_vec3(nx, ny, nz), s->noise_g));
-  }
-  return g;
-}
-
-gm_vec3_t gm_simulate_raw_sensor(gm_gforce_t g, const gm_mat3_t* sensor_to_car, gm_rng_t* rng, float noise_g) {
-  // sensor_to_car is orthonormal, so its transpose maps car -> sensor.
-  const gm_vec3_t c = g.proper;
-  const float (*m)[3] = sensor_to_car->m;
-  gm_vec3_t s = gm_vec3(m[0][0] * c.x + m[1][0] * c.y + m[2][0] * c.z,
-                        m[0][1] * c.x + m[1][1] * c.y + m[2][1] * c.z,
-                        m[0][2] * c.x + m[1][2] * c.y + m[2][2] * c.z);
-  if (noise_g > 0.0f) {
-    const float nx = gm_rng_symmetric(rng);
-    const float ny = gm_rng_symmetric(rng);
-    const float nz = gm_rng_symmetric(rng);
-    s = gm_vec3_add(s, gm_vec3_scale(gm_vec3(nx, ny, nz), noise_g));
-  }
-  return s;
+gm_gforce_t gm_scenario_at(const gm_scenario_t* s, float t) {
+  return gm_gforce_from_proper(gm_vec3_add(gm_gforce_rest_proper(), gm_scenario_dynamic_at(s, t)));
 }
 
 // ---- presets ---------------------------------------------------------------------------
@@ -78,15 +51,11 @@ static const gm_gkey_t k_drive[] = {
     {19.5f, {0, 0.05f, 0.1f}},  {20.0f, {0, 0, 0}},          {21.0f, {0, 0, 0}}};
 
 #define GM_COUNT(a) ((int)(sizeof(a) / sizeof((a)[0])))
-// Vibration noise is 0.015 g unless a preset says otherwise; no preset loops.
 static const gm_scenario_t k_presets[] = {
-    {"idle", k_idle, GM_COUNT(k_idle), 0.01f, 0.0f},
-    {"launch", k_launch, GM_COUNT(k_launch), 0.015f, 0.0f},
-    {"brake", k_brake, GM_COUNT(k_brake), 0.015f, 0.0f},
-    {"slalom", k_slalom, GM_COUNT(k_slalom), 0.015f, 0.0f},
-    {"corner", k_corner, GM_COUNT(k_corner), 0.015f, 0.0f},
-    {"bump", k_bump, GM_COUNT(k_bump), 0.02f, 0.0f},
-    {"drive", k_drive, GM_COUNT(k_drive), 0.015f, 0.0f},
+    {"idle", k_idle, GM_COUNT(k_idle)},       {"launch", k_launch, GM_COUNT(k_launch)},
+    {"brake", k_brake, GM_COUNT(k_brake)},    {"slalom", k_slalom, GM_COUNT(k_slalom)},
+    {"corner", k_corner, GM_COUNT(k_corner)}, {"bump", k_bump, GM_COUNT(k_bump)},
+    {"drive", k_drive, GM_COUNT(k_drive)},
 };
 
 int gm_scenario_preset_count(void) { return GM_COUNT(k_presets); }

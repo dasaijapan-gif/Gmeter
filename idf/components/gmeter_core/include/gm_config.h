@@ -41,7 +41,6 @@ static_assert(GM_LAYERS >= 1 && GM_LAYERS <= 32, "unsupported layer count");
 #define GM_PAGES (GM_H / 8)  // SSD130x pages per panel
 static_assert(GM_PAGES <= 8, "at most 64 rows per panel (gm_frame_shift packs a column into 64 bits)");
 #define GM_BYTES_PER_LAYER (GM_W * GM_PAGES)
-#define GM_BYTES_PER_FRAME (GM_BYTES_PER_LAYER * GM_D)
 
 // Depth of the volume in pixel units (layer 0 and layer GM_D-1 sit half a
 // pitch inside the box so every layer owns an equal slab).

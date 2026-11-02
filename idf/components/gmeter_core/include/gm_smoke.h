@@ -11,11 +11,13 @@
 extern "C" {
 #endif
 
+// Cells per layer: 16 x 8 fits the ESP32's budget (about 58 KB of heap while
+// the effect is active). NX must divide the panel width and NY its height.
 #ifndef GM_SMOKE_NX
-#define GM_SMOKE_NX 32
+#define GM_SMOKE_NX 16
 #endif
 #ifndef GM_SMOKE_NY
-#define GM_SMOKE_NY (GM_PANEL_H / 4)
+#define GM_SMOKE_NY 8
 #endif
 
 #define GM_SMOKE_NZ GM_D
@@ -49,10 +51,11 @@ typedef struct {
   gm_rng_t rng;
 } gm_smoke_t;
 
-// Sets the defaults and registers the tunables; allocates nothing. Activate
-// (or the first update after init or deactivate) allocates the eight grids,
-// gm_smoke_memory_bytes() in all, with malloc. If that fails the effect stays
-// unallocated: update does nothing and render draws nothing.
+// Sets the defaults and registers the tunables; allocates nothing. Reset (the
+// engine resets an effect when it becomes active) or the first update after
+// init or deactivate allocates the eight grids, gm_smoke_memory_bytes() in
+// all, with malloc. If that fails the effect stays unallocated: update does
+// nothing and render draws nothing.
 void gm_smoke_init(gm_smoke_t* s);
 // Frees the grids (the effect's destructor; deactivate also frees them). Safe
 // to call more than once; call it before gm_smoke_init on an effect that may

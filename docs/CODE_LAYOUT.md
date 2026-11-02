@@ -31,7 +31,7 @@ gmeter/
 
 | File | Lines | What it does |
 | --- | ---: | --- |
-| `app_main.c` | 722 | Starts everything. Three FreeRTOS tasks: IMU sampling (core 0), rendering (core 1) and SPI display output (core 0), with a triple-buffered frame hand-off. Also calibration, demo/serial g sources, the HUD edition start-up and its `DEMO` / `SERIAL` / `NO SENSOR` tag, the BOOT button and the functions behind the serial commands. |
+| `app_main.c` | 721 | Starts everything. Three FreeRTOS tasks: IMU sampling (core 0), rendering (core 1) and SPI display output (core 0), with a triple-buffered frame hand-off. Also calibration, demo/serial g sources, the HUD edition start-up and its `DEMO` / `SERIAL` / `NO SENSOR` tag, the BOOT button and the functions behind the serial commands. |
 | `Kconfig.projbuild` | 115 | The **Gmeter** menu in `idf.py menuconfig`: edition, panel type and size, SPI clock, upside-down panels, chip-select order, frame rate. |
 | `board_config.h` | 59 | Pin map for the classic ESP32 and the ESP32-S3. Edit this to change wiring. |
 | `display_ssd1309.h/.c` | 72 / 285 | Driver for eight SSD1309 panels on one SPI bus (ESP-IDF `spi_master`) with separate chip selects: init sequence, frame transfer, contrast ramp, soft and hard refresh, test pattern. |
@@ -42,7 +42,7 @@ gmeter/
 | `CMakeLists.txt` | 27 | The `main` component. |
 | `user_animation.h` | (optional) | Artwork exported from Gmeter Studio. If present, it replaces the built-in demo animation. |
 
-### Core: `idf/components/gmeter_core/` (3577 lines of C, 1581 of headers)
+### Core: `idf/components/gmeter_core/` (3243 lines of C, 1507 of headers)
 
 Plain C (C17) with no ESP-IDF dependency, so it also builds on a PC for the
 tests. Headers in `include/`, sources in `src/`. Every name starts with `gm_`.
@@ -55,8 +55,8 @@ tests. Headers in `include/`, sources in `src/`. Every name starts with `gm_`.
 | `gm_gforce.h` | The car frame used everywhere: x right, y up, z forward. |
 | `gm_estimator.h/.c` | Turns raw accelerometer samples into filtered g-force in the car frame; rest and braking calibration. |
 | `gm_frame.h/.c` | The 3D frame buffer (one bit per pixel per layer, in the panels' own memory layout) and drawing: lines, spheres, text, and a whole-frame pixel shift. |
-| `gm_effect.h` | The interface every effect implements: a struct with a vtable (name, update, render, reset, activate, deactivate, burn-in offset) and a table of named parameters. |
-| `gm_engine.h/.c` | Runs the active effect, switches effects with a dithered crossfade, draws the optional g readout and the not-live-data tag, then applies the effect's burn-in offset. |
+| `gm_effect.h` | The interface every effect implements: a struct with a vtable (name, update, render, reset, deactivate, burn-in offset) and a table of named parameters. |
+| `gm_engine.h/.c` | Runs the active effect on a sanitised g (finite, at most 16 g per axis), switches effects with a dithered crossfade, draws the optional g readout and the not-live-data tag, then applies the effect's burn-in offset. |
 | `gm_params.c` | Named, range-checked parameters (declared in `gm_effect.h`), so every effect can be tuned over serial. |
 | `gm_scenario.h/.c` | Recorded drives used as demo input: idle, launch, brake, slalom, corner, bump, and the combined `drive` used by default. |
 | `gm_gstate.h/.c` | Classifies g-force into idle, accelerate, brake, left, right and bump. |

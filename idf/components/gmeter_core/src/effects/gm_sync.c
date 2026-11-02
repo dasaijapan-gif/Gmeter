@@ -5,21 +5,10 @@
 // readout of the combined horizontal g as a percentage of 1 g.
 #include "gm_sync.h"
 
-#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "gm_jp_text.h"
-
-// Row of a trace sample: cy - gm_iround(v * gain), clamped to the band. When
-// v * gain is NaN, infinite or beyond the int range, which only absurd g input
-// produces, the int conversion and subtraction would overflow (undefined
-// behaviour); such samples land on the top edge of the band instead.
-static int trace_row(float v, float gain, int cy, int half) {
-  const float r = floorf(v * gain + 0.5f);  // gm_iround(v * gain) before the conversion to int
-  if (!(r > -2147483648.0f && r < 2147483648.0f)) return cy - half;
-  return gm_clampi(cy - (int)r, cy - half, cy + half);
-}
 
 static void sync_reset(gm_effect_t* self) {
   gm_sync_t* s = (gm_sync_t*)self;
@@ -74,7 +63,7 @@ static void sync_render(gm_effect_t* self, gm_frame_t* f) {
       const int age = x1 - x;
       if (age >= GM_SYNC_HIST) break;
       const float v = s->hist[b][(s->head - 1 - age + 2 * GM_SYNC_HIST) % GM_SYNC_HIST];
-      const int y = trace_row(v, s->gain, cy, half);
+      const int y = gm_clampi(cy - gm_iround(v * s->gain), cy - half, cy + half);
       if (prev_x >= 0)
         gm_frame_line(f, z, prev_x, prev_y, x, y);
       else
@@ -91,15 +80,14 @@ static void sync_render(gm_effect_t* self, gm_frame_t* f) {
     const int col_x = W - 1 - gm_jp_small.glyphs[0].width;
     const int used = gm_jp_draw_vertical(f, &gm_jp_small, 0, col_x, 0, "同期率", 0, 1.0f);
     char buf[8];
-    snprintf(buf, sizeof(buf), "%d", gm_to_int(s->sync_pct + 0.5f));
+    snprintf(buf, sizeof(buf), "%d", (int)(s->sync_pct + 0.5f));
     gm_frame_text(f, 0, W - 4 * (int)strlen(buf), gm_mini(H - 6, used + 2), buf);
   }
 }
 
-// No activate / deactivate hooks (activating resets) and no burn-in offset.
+// No deactivate hook and no burn-in offset.
 static const gm_effect_vtbl_t k_sync_vtbl = {
     .name = "sync",
-    .activate = NULL,
     .deactivate = NULL,
     .reset = sync_reset,
     .update = sync_update,

@@ -244,12 +244,6 @@ int gm_frame_text(gm_frame_t* f, int z, int x, int y, const char* s) {
   return cursor - x;
 }
 
-void gm_frame_or(gm_frame_t* f, const gm_frame_t* o) {
-  uint8_t* d = gm_frame_data(f);
-  const uint8_t* s = gm_frame_cdata(o);
-  for (int i = 0; i < GM_BYTES_PER_FRAME; ++i) d[i] |= s[i];
-}
-
 void gm_frame_crossfade(gm_frame_t* f, const gm_frame_t* a, const gm_frame_t* b, float t) {
   if (t <= 0.0f) {
     if (f != a) memcpy(f->bits, a->bits, sizeof(f->bits));
@@ -313,16 +307,4 @@ void gm_frame_clear_box(gm_frame_t* f, int x0, int y0, int x1, int y1) {
       uint8_t* row = f->bits[z] + (y >> 3) * GM_W;
       for (int x = x0; x <= x1; ++x) row[x] &= mask;
     }
-}
-
-int gm_frame_count_lit_layer(const gm_frame_t* f, int z) {
-  int n = 0;
-  for (int i = 0; i < GM_BYTES_PER_LAYER; ++i) n += __builtin_popcount(f->bits[z][i]);
-  return n;
-}
-
-int gm_frame_count_lit(const gm_frame_t* f) {
-  int n = 0;
-  for (int z = 0; z < GM_D; ++z) n += gm_frame_count_lit_layer(f, z);
-  return n;
 }

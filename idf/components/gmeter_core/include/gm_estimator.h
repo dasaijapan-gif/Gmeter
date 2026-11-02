@@ -30,11 +30,9 @@ static inline gm_calibration_t gm_calibration_none(void) {
 typedef struct {
   gm_calibration_t cal;
   gm_vec3_t nominal_forward;
-  gm_vec3_t rest_accum;
-  int rest_count;
   bool forward_trusted;
 
-  float cutoff_hz, sample_hz;
+  float sample_hz;
   gm_lowpass_t lp_x, lp_y, lp_z;
   bool primed;
 
@@ -43,9 +41,6 @@ typedef struct {
   gm_vec3_t bias;       // subtracted from horizontal axes
   gm_vec3_t slow_mean;  // for stillness detection
   float motion_level;
-
-  gm_vec3_t raw_car;
-  gm_gforce_t g;
 } gm_estimator_t;
 
 // Defaults: 4 Hz filter at 200 Hz, no calibration, forward hint sensor +X.
@@ -54,14 +49,9 @@ void gm_estimator_init(gm_estimator_t* e);
 // ---- filtering ------------------------------------------------------------------------
 // cutoff_hz: ~3-5 Hz keeps real g changes (<2 Hz) and drops vibration.
 void gm_estimator_set_filter(gm_estimator_t* e, float cutoff_hz, float sample_hz);
-static inline float gm_estimator_cutoff_hz(const gm_estimator_t* e) { return e->cutoff_hz; }
-static inline float gm_estimator_sample_hz(const gm_estimator_t* e) { return e->sample_hz; }
 
 // Feed one raw sample (sensor frame, in g). Returns the filtered car-frame g.
 gm_gforce_t gm_estimator_update(gm_estimator_t* e, gm_vec3_t raw_sensor_g);
-static inline gm_gforce_t gm_estimator_current(const gm_estimator_t* e) { return e->g; }
-// Unfiltered car-frame proper acceleration from the last sample.
-static inline gm_vec3_t gm_estimator_raw_car(const gm_estimator_t* e) { return e->raw_car; }
 
 // ---- calibration ---------------------------------------------------------------------
 // Nominal sensor axis that points toward the front of the car when the sensor
@@ -70,17 +60,14 @@ static inline gm_vec3_t gm_estimator_raw_car(const gm_estimator_t* e) { return e
 static inline void gm_estimator_set_nominal_forward(gm_estimator_t* e, gm_vec3_t sensor_axis) {
   e->nominal_forward = sensor_axis;
 }
-static inline gm_vec3_t gm_estimator_nominal_forward(const gm_estimator_t* e) { return e->nominal_forward; }
 
-// Step 1: average samples while the car is parked on level-ish ground.
-// Succeeds even when the forward hint is vertical (then forward_trusted is
-// false and a braking capture is required).
-void gm_estimator_begin_rest_calibration(gm_estimator_t* e);
-void gm_estimator_feed_rest_sample(gm_estimator_t* e, gm_vec3_t raw_sensor_g);
-static inline int gm_estimator_rest_sample_count(const gm_estimator_t* e) { return e->rest_count; }
-// Builds the rotation from the averaged rest vector and the nominal forward
-// axis. Returns false if too few samples or the axes are degenerate.
-bool gm_estimator_finish_rest_calibration(gm_estimator_t* e);
+// Step 1: pass the average raw sample taken while the car is parked on
+// level-ish ground. Builds the rotation from that rest vector and the nominal
+// forward axis. Returns false, keeping the previous calibration, when the
+// average is not about 1 g or the axes are degenerate. Succeeds even when the
+// forward hint is vertical (then forward_trusted is false and a braking
+// capture is required).
+bool gm_estimator_calibrate_rest(gm_estimator_t* e, gm_vec3_t mean_raw_at_rest);
 
 // Step 2 (optional): refine the forward axis empirically. Pass the average raw
 // sample collected during a firm brake from a straight line; the horizontal

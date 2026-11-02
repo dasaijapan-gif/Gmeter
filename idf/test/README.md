@@ -9,7 +9,7 @@ Two kinds of tests:
 - **Behaviour tests** (`test_behaviour.c`, `test_properties.c`): properties
   with tolerances, such as filter response, calibration physics, slosh volume
   conservation, particles settling, the HUD's burn-in orbit, the parameter
-  tables and smoke's grid lifecycle.
+  tables, smoke's grid lifecycle and the engine's sanitising of bad g.
 - **Reference outputs** (`test_golden.c`): about a hundred cases that drive
   the core the way the firmware does (every effect on every demo scenario
   through the engine, fuzzing through the effect vtables, non-finite g,
@@ -33,7 +33,8 @@ cmake --build /tmp/gm64 && /tmp/gm64/gm_tests
 
 Run both heights before committing a change to the core. Each run takes a
 few seconds. `-DGM_SANITIZE=ON` builds with AddressSanitizer and
-UndefinedBehaviorSanitizer (the digests must not change).
+UndefinedBehaviorSanitizer, including its check of every float-to-int
+conversion (the digests must not change).
 `gm_tests <text>` runs only the tests and cases whose names contain the text;
 `gm_tests --list` lists them.
 
@@ -69,7 +70,9 @@ Re-record at both heights (56 and 64), re-record only the cases the change is
 meant to affect, and justify every re-record in the commit message: which
 cases, and why their output changed.
 
-Cases named `nonfinite_*` feed NaN, infinite and enormous g through the
-engine; they record today's handling of input that a working sensor never
-produces. Every other case keeps g finite and within 16 g (the engine cases
-within 9 g, what the serial `g` command can inject).
+Cases named `nonfinite_*` feed NaN, infinite and enormous g, input that a
+working sensor never produces, through the engine, which sanitises it: a
+sample with a non-finite component counts as the previous sample and each
+axis is clamped to 16 g. Every other case keeps g finite and within 16 g (the
+engine cases within 9 g, what the serial `g` command can inject), where the
+sanitising changes nothing.

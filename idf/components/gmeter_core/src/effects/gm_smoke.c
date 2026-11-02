@@ -3,13 +3,11 @@
 // force, so it leans back under acceleration, surges toward the windshield
 // under braking and smears sideways in corners.
 //
-// Grid resolution is a compile-time choice: GM_SMOKE_NX x GM_SMOKE_NY cells
-// per layer and one cell per layer in depth. NX must divide the panel width
-// and NY the panel height. The default is 4x4-pixel cells (32x14 at 128x56,
-// 32x16 at 128x64); the ESP32 build uses 16x8 (components/gmeter_core/
-// CMakeLists.txt) to stay within the time and memory budget. wind/buoyancy/
-// emit_r are in cell units, so tune on the same grid the device uses. Buffers
-// are heap-allocated only while active.
+// Grid resolution is a compile-time choice (gm_smoke.h): GM_SMOKE_NX x
+// GM_SMOKE_NY cells per layer, 16 x 8 to stay within the ESP32's time and
+// memory budget, and one cell per layer in depth. wind/buoyancy/emit_r are in
+// cell units, so they suit that grid. Buffers are heap-allocated only while
+// active.
 #include "gm_smoke.h"
 
 #include <stdlib.h>
@@ -54,18 +52,15 @@ static void smoke_allocate(gm_smoke_t* s) {
   if (!ok) gm_smoke_deinit(s);
 }
 
+// Allocates the grids unless the effect still holds them, then clears them.
 static void smoke_reset(gm_effect_t* self) {
   gm_smoke_t* s = (gm_smoke_t*)self;
-  if (!s->d) return;
+  smoke_allocate(s);
+  if (!s->d) return;  // out of memory
   float** grids[] = GRIDS(s);
   for (int i = 0; i < 8; ++i) memset(*grids[i], 0, sizeof(float) * N);
   s->accum = 0.0f;
   s->since_step = 0.0f;
-}
-
-static void smoke_activate(gm_effect_t* self) {
-  smoke_allocate((gm_smoke_t*)self);
-  smoke_reset(self);
 }
 
 static void smoke_deactivate(gm_effect_t* self) { gm_smoke_deinit((gm_smoke_t*)self); }
@@ -180,7 +175,7 @@ static void project(const gm_smoke_t* s, float* u, float* v, float* w, float* p,
 
 static void smoke_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   gm_smoke_t* s = (gm_smoke_t*)self;
-  if (!s->d) smoke_activate(self);
+  if (!s->d) smoke_reset(self);
   if (!s->d) return;  // out of memory
   // Run the solver at rate_hz regardless of the render rate (the dithered
   // rasterisation hides the lower physics rate). The schedule keeps its
@@ -273,7 +268,6 @@ static void smoke_render(gm_effect_t* self, gm_frame_t* f) {
 
 static const gm_effect_vtbl_t k_smoke_vtbl = {
     .name = "smoke",
-    .activate = smoke_activate,
     .deactivate = smoke_deactivate,
     .reset = smoke_reset,
     .update = smoke_update,

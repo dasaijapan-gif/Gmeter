@@ -2,6 +2,7 @@
 // and overlays optional HUD text.
 #include "gm_engine.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -10,8 +11,8 @@ void gm_engine_init(gm_engine_t* e) {
   e->current = -1;
   e->outgoing = -1;
   e->crossfade_t = 1.0f;
-  e->crossfade_seconds = 0.4f;
-  e->show_mode_name = true;
+  const gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;  // at rest until the first step
+  e->ctx = ctx;
 }
 
 bool gm_engine_add_effect(gm_engine_t* e, gm_effect_t* fx) {
@@ -19,7 +20,7 @@ bool gm_engine_add_effect(gm_engine_t* e, gm_effect_t* fx) {
   e->effects[e->count++] = fx;
   if (e->current < 0) {
     e->current = 0;
-    gm_effect_activate(fx);
+    gm_effect_reset(fx);  // activation
   }
   return true;
 }
@@ -33,31 +34,31 @@ int gm_engine_find_effect(const gm_engine_t* e, const char* name) {
 void gm_engine_set_effect(gm_engine_t* e, int index, bool crossfade) {
   if (index < 0 || index >= e->count || index == e->current) return;
   if (e->outgoing >= 0 && e->outgoing != index) gm_effect_deactivate(e->effects[e->outgoing]);
-  e->outgoing = crossfade && e->crossfade_seconds > 0.0f ? e->current : -1;
+  e->outgoing = crossfade ? e->current : -1;
   if (!crossfade && e->current >= 0) gm_effect_deactivate(e->effects[e->current]);
   e->current = index;
-  gm_effect_activate(e->effects[e->current]);
+  gm_effect_reset(e->effects[e->current]);  // activation
   e->crossfade_t = e->outgoing >= 0 ? 0.0f : 1.0f;
   e->since_switch = 0.0f;
-}
-
-bool gm_engine_set_effect_by_name(gm_engine_t* e, const char* name, bool crossfade) {
-  const int i = gm_engine_find_effect(e, name);
-  if (i < 0) return false;
-  gm_engine_set_effect(e, i, crossfade);
-  return true;
 }
 
 void gm_engine_next_effect(gm_engine_t* e) {
   if (e->count) gm_engine_set_effect(e, (e->current + 1) % e->count, true);
 }
 
+// The g the effects see (see gm_engine_step in gm_engine.h).
+static gm_gforce_t sanitize(gm_gforce_t g, gm_gforce_t previous) {
+  const gm_vec3_t p = g.proper;
+  if (!isfinite(p.x) || !isfinite(p.y) || !isfinite(p.z)) return previous;
+  const float m = GM_ENGINE_MAX_G;
+  return gm_gforce_from_proper(gm_vec3(gm_clampf(p.x, -m, m), gm_clampf(p.y, -m, m), gm_clampf(p.z, -m, m)));
+}
+
 void gm_engine_step(gm_engine_t* e, gm_gforce_t g, float dt) {
   dt = gm_clampf(dt, 1.0f / 1000.0f, 1.0f / 15.0f);
+  g = sanitize(g, e->ctx.g);
   e->ctx.g = g;
   e->ctx.dt = dt;
-  e->ctx.time += dt;
-  ++e->ctx.frame;
   e->since_switch += dt;
 
   if (e->auto_cycle > 0.0f && e->since_switch >= e->auto_cycle && e->count > 1) gm_engine_next_effect(e);
@@ -74,7 +75,7 @@ void gm_engine_step(gm_engine_t* e, gm_gforce_t g, float dt) {
   gm_effect_t* old = e->outgoing >= 0 ? e->effects[e->outgoing] : NULL;
   if (old) {
     gm_effect_update(old, &e->ctx);
-    e->crossfade_t += dt / e->crossfade_seconds;
+    e->crossfade_t += dt / GM_ENGINE_CROSSFADE_S;
     gm_frame_clear(&e->scratch);
     gm_effect_render(old, &e->scratch);
     // Keep the outgoing effect at its own offset through the dissolve.
@@ -93,7 +94,7 @@ void gm_engine_step(gm_engine_t* e, gm_gforce_t g, float dt) {
     }
   }
 
-  if (e->show_mode_name && e->since_switch < 1.5f) {
+  if (e->since_switch < 1.5f) {  // the effect's name, briefly after a switch
     char buf[20];
     snprintf(buf, sizeof(buf), "%s", gm_effect_name(cur));
     gm_frame_clear_box(&e->out, 0, 0, 1 + 4 * (int)strlen(buf), 6);

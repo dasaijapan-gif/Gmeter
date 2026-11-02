@@ -86,11 +86,9 @@ weighted by density, so the plume behaves like a heavy gas that is thrown
 around while clear air stays put (a uniform body force in a closed box would
 be cancelled by the pressure solve). The solver runs at `rate` Hz independent
 of the frame rate; the dithered rasterisation hides the lower physics rate.
-Grid size is compile-time (`GM_SMOKE_NX/NY`, one cell per layer in depth):
-16 x 8 in the firmware (set in `idf/components/gmeter_core/CMakeLists.txt`)
-and in the host tests; without it the header defaults to 4x4-pixel cells
-(32 x 14 at 128x56). The wind, buoyancy and emitter radius
-are in cell units, so tune on the device's grid. Buffers are allocated only
+Grid size is compile-time (`GM_SMOKE_NX/NY` in `gm_smoke.h`, one cell per
+layer in depth): 16 x 8 cells per layer. The wind, buoyancy and emitter
+radius are in cell units, so they suit that grid. Buffers are allocated only
 while the effect is active.
 
 | Param | Default | Meaning |
@@ -189,8 +187,10 @@ save it as `idf/main/user_animation.h` (`main/user_animation.h` in the
 supplier's source) and rebuild. The build picks it up automatically
 (`idf/main/CMakeLists.txt` checks for the file) and compiles the header's C
 branch; without it the built-in demo plays (a breathing ring, chevrons per
-direction and a starburst on bumps). On the car, `anim brake` pins a clip and
-`anim auto` returns to g-force control.
+direction and a starburst on bumps). The effect clamps a hand-edited
+header's tunables to the ranges `set` allows and its clip frame rates to at
+most 1000 fps. On the car, `anim brake` pins a clip and `anim auto` returns to
+g-force control.
 
 ## NGE-inspired effects: hud, atfield, sync
 
@@ -268,10 +268,11 @@ g as a percentage of 1 g.
 
 1. Add `include/gm_<name>.h` with a struct whose first member is
    `gm_effect_t base`, and `src/effects/gm_<name>.c` with a vtable
-   (`gm_effect_vtbl_t`: name, update, render, and optionally reset,
-   activate, deactivate, burn_in_offset) and a `gm_<name>_init` function
-   that sets the defaults, sets the vtable with `gm_effect_init` and
-   registers tunables with `gm_params_add` on the table it returns.
+   (`gm_effect_vtbl_t`: name, update, render, and optionally reset, which
+   runs on every activation, deactivate and burn_in_offset) and a
+   `gm_<name>_init` function that sets the defaults, sets the vtable with
+   `gm_effect_init` and registers tunables with `gm_params_add` on the table
+   it returns.
 2. Do physics in world units (`gm_half_extent()` gives the box) and draw
    with `gm_frame_sphere/point/line3` (world) or the 2D primitives (voxel).
 3. Add a static instance to `idf/main/app_main.c`, initialise it in
@@ -279,7 +280,8 @@ g as a percentage of 1 g.
    `save` stores the effect's index).
 4. Test it in `idf/test`: behaviour tests in `test_behaviour.c`, and the
    effect in `test_golden.c`'s effect list so every demo drive, fuzzing and
-   non-finite g reach it. Then re-record at both panel heights and justify
+   the engine's handling of non-finite g reach it. The engine hands it finite
+   g within 16 g per axis. Then re-record at both panel heights and justify
    each changed digest (`idf/test/README.md`).
 5. Tune it on the unit with `set`, then put the values in its defaults.
 

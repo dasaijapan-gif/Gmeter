@@ -83,7 +83,7 @@ static void build_objects(void) {
   gm_particles_init(&s_particles);
   gm_smoke_init(&s_smoke);
   gm_tunnel_init(&s_tunnel);
-  gm_sprite_init(&s_sprite, gm_sprite_demo_sheet(), NULL);
+  gm_sprite_init(&s_sprite, gm_sprite_demo_sheet());
   gm_anim_init(&s_anim, GM_USER_ANIMATION);
   gm_hud_init(&s_hud);
   gm_atfield_init(&s_atfield);
@@ -162,7 +162,7 @@ static gm_gforce_t current_g(int64_t us_since_boot, const char** label) {
       // Wrap in integer microseconds so the demo stays smooth after days of uptime.
       const float dur = gm_scenario_duration(sc);
       const int64_t period = (int64_t)((dur + 1.0f) * 1e6f);
-      g = gm_scenario_at(sc, (float)(us_since_boot % period) * 1e-6f, NULL);
+      g = gm_scenario_at(sc, (float)(us_since_boot % period) * 1e-6f);
       break;
     }
   }
@@ -246,9 +246,7 @@ static void imu_task(void* arg) {
         bool ok = false;
         const gm_vec3_t mean = gm_vec3_div(s_cal_accum, (float)s_cal_count);
         if (cs == CAL_REST) {
-          gm_estimator_begin_rest_calibration(&s_estimator);
-          for (int i = 0; i < 16; ++i) gm_estimator_feed_rest_sample(&s_estimator, mean);
-          ok = gm_estimator_finish_rest_calibration(&s_estimator);
+          ok = gm_estimator_calibrate_rest(&s_estimator, mean);
           if (!ok)
             s_cal_message = "rest calibration failed: the average was not about 1 g (was the car moving?)";
           else if (!gm_estimator_forward_trusted(&s_estimator))

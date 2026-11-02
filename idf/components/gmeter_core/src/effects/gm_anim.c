@@ -11,10 +11,6 @@ static_assert(GM_ANIM_ACCELERATE == (int)GM_DRIVE_ACCELERATE && GM_ANIM_BRAKE ==
                   GM_ANIM_LEFT == (int)GM_DRIVE_LEFT && GM_ANIM_RIGHT == (int)GM_DRIVE_RIGHT,
               "anim states 1-4 are gm_gstate's driving states (see gm_gstate_choose)");
 
-// a + b with two's-complement wrap-around instead of undefined overflow. It
-// only overflows when the clip time is NaN or absurd while g scrubs frames.
-static int wrap_add(int a, int b) { return (int)((unsigned)a + (unsigned)b); }
-
 const char* gm_anim_state_name(int state) {
   static const char* const k_names[GM_ANIM_STATE_COUNT] = {"idle", "accelerate", "brake", "left", "right", "bump"};
   return state >= 0 && state < GM_ANIM_STATE_COUNT ? k_names[state] : "?";
@@ -42,15 +38,6 @@ static void anim_reset(gm_effect_t* self) {
   a->frame = 0;
   a->mirror = false;
   a->prev_vert = 0.0f;
-}
-
-void gm_anim_set_asset(gm_anim_t* a, const gm_anim_asset_t* asset, bool apply_mapping, bool reset_motion) {
-  a->asset = *asset;
-  if (apply_mapping) a->m = asset->mapping;
-  if (reset_motion)
-    anim_reset(&a->base);
-  else
-    a->frame = a->asset.frames > 0 ? gm_clampi(a->frame, 0, a->asset.frames - 1) : 0;
 }
 
 static bool anim_usable(const gm_anim_t* a, const gm_anim_clip_t* c) {
@@ -136,12 +123,12 @@ static void anim_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   a->mirror = clip_mirror;
   const float speed = 1.0f + a->m.fps_per_g * sqrtf(dyn.x * dyn.x + dyn.z * dyn.z);
   a->clip_time += ctx->dt * speed;
-  int idx = gm_to_int(a->clip_time * clip.fps);
+  int idx = (int)(a->clip_time * clip.fps);
   const bool loop = clip.loop != 0 && a->state != GM_ANIM_BUMP;
-  const int axis = gm_iround_safe(a->m.scrub_axis);
+  const int axis = gm_iround(a->m.scrub_axis);
   if (axis >= 0 && axis <= 2 && a->m.frames_per_g != 0.0f) {
     const float v = axis == 0 ? dyn.x : (axis == 1 ? dyn.y : dyn.z);
-    idx = wrap_add(idx, gm_iround_safe(v * a->m.frames_per_g));
+    idx += gm_iround(v * a->m.frames_per_g);
   }
   const int count = clip.count > 0 ? clip.count : 1;
   if (loop) {
@@ -151,8 +138,10 @@ static void anim_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
     idx = gm_clampi(idx, 0, count - 1);
   }
   a->frame = clip.start + idx;
-  // Keep the clip timer bounded on long loops.
-  if (loop && a->clip_time * clip.fps > 1.0e5f) a->clip_time = fmodf(a->clip_time, (float)count / clip.fps);
+  // Keep the clip timer bounded: a loop wraps round; a one-shot clip stops at
+  // 1e5 frames, which is past its last frame even with the most scrubbing.
+  if (a->clip_time * clip.fps > 1.0e5f)
+    a->clip_time = loop ? fmodf(a->clip_time, (float)count / clip.fps) : 1.0e5f / clip.fps;
 
   // ---- motion -----------------------------------------------------------------------
   const gm_vec3_t drive = a->m.inertia > 0.5f ? gm_gforce_inertial(ctx->g) : dyn;
@@ -173,18 +162,14 @@ static void anim_render(gm_effect_t* self, gm_frame_t* f) {
   const gm_anim_asset_t* as = &a->asset;
   if (!gm_anim_asset_valid(as)) return;
   const gm_vec3_t v = gm_world_to_voxel(gm_spring3_pos(&a->pos));
-  const int x0 = gm_iround_safe(v.x - as->width * 0.5f + 0.5f);
-  const int y0 = gm_iround_safe(v.y - as->height * 0.5f + 0.5f);
+  const int x0 = gm_iround(v.x - as->width * 0.5f + 0.5f);
+  const int y0 = gm_iround(v.y - as->height * 0.5f + 0.5f);
   const int depth = as->depth;
   // Slice 0 is the front-most; centre the stack of slices on the position.
   // Art with more slices than panels stays centred; out-of-range layers are skipped.
   const int first =
-      gm_clampi(gm_iround_safe(v.z - (depth - 1) * 0.5f), gm_mini(0, GM_D - depth), gm_maxi(0, GM_D - depth));
-  const int echo = depth == 1 ? gm_iround_safe(a->m.echo) : 0;
-  // A negative echo draws nothing: the layer loop below would run zero times
-  // (and for a NaN or huge echo from a hand-written asset, INT_MIN, -echo
-  // would overflow).
-  if (echo < 0) return;
+      gm_clampi(gm_iround(v.z - (depth - 1) * 0.5f), gm_mini(0, GM_D - depth), gm_maxi(0, GM_D - depth));
+  const int echo = depth == 1 ? gm_iround(a->m.echo) : 0;  // 0..4 (the parameter's range)
   const int w = as->width;
   for (int s = 0; s < depth; ++s) {
     const int layer = first + s;
@@ -200,10 +185,9 @@ static void anim_render(gm_effect_t* self, gm_frame_t* f) {
   }
 }
 
-// No activate / deactivate hooks (activating resets) and no burn-in offset.
+// No deactivate hook and no burn-in offset.
 static const gm_effect_vtbl_t k_anim_vtbl = {
     .name = "anim",
-    .activate = NULL,
     .deactivate = NULL,
     .reset = anim_reset,
     .update = anim_update,
@@ -230,6 +214,18 @@ void gm_anim_init(gm_anim_t* a, const gm_anim_asset_t* asset) {
   gm_params_add(p, "frames_g", &a->m.frames_per_g, -64.0f, 64.0f, "frames scrubbed per g");
   gm_params_add(p, "echo", &a->m.echo, 0.0f, 4.0f, "ghost layers (single-slice art)");
   gm_params_add(p, "mirror", &a->m.mirror, 0.0f, 1.0f, "mirror an empty left/right clip");
+  // A hand-written user_animation.h does not get Gmeter Studio's limits: bring
+  // the tunables into their parameter ranges and every clip's frame rate into
+  // 0.001..1000 fps (a lower or NaN rate becomes 0, which gm_anim_resolve_clip
+  // treats like any rate <= 0), so the playback arithmetic stays in range.
+  for (int i = 0; i < gm_params_count(p); ++i) {
+    const gm_param_t* t = gm_params_at(p, i);
+    *t->value = gm_clampf(*t->value, t->min, t->max);
+  }
+  for (int s = 0; s < GM_ANIM_STATE_COUNT; ++s) {
+    gm_anim_clip_t* c = &a->asset.clips[s];
+    c->fps = c->fps >= 0.001f ? gm_minf(c->fps, 1000.0f) : 0.0f;
+  }
   anim_reset(&a->base);
 }
 

@@ -58,7 +58,6 @@ static void tunnel_render(gm_effect_t* self, gm_frame_t* f) {
 
 static const gm_effect_vtbl_t k_tunnel_vtbl = {
     .name = "tunnel",
-    .activate = NULL,  // reset
     .deactivate = NULL,
     .reset = tunnel_reset,
     .update = tunnel_update,

@@ -45,7 +45,7 @@ static gm_effect_t* fresh_effect(int i) {
     case 2: gm_particles_init(&s_fx.particles); break;
     case 3: gm_smoke_init(&s_fx.smoke); break;
     case 4: gm_tunnel_init(&s_fx.tunnel); break;
-    case 5: gm_sprite_init(&s_fx.sprite, gm_sprite_demo_sheet(), NULL); break;
+    case 5: gm_sprite_init(&s_fx.sprite, gm_sprite_demo_sheet()); break;
     case 6: gm_anim_init(&s_fx.anim, gm_anim_demo()); break;
     case 7: gm_hud_init(&s_fx.hud); break;
     case 8: gm_atfield_init(&s_fx.atfield); break;
@@ -106,7 +106,7 @@ TEST(effects_render_fresh) {
     gm_frame_clear(&s_f);
     gm_effect_render(e, &s_f);
     if (i == 4) CHECK(lit(&s_f) > 0);  // the tunnel is always drawn
-    gm_effect_activate(e);
+    gm_effect_reset(e);
     gm_frame_clear(&s_f);
     gm_effect_render(e, &s_f);
     if (i == 3) CHECK(lit(&s_f) == 0);  // smoke starts empty
@@ -137,22 +137,23 @@ TEST(effects_initial_state) {
   gm_effect_deactivate(e);
 }
 
-// Activate allocates zeroed grids, deactivate frees them, a second activate
-// keeps the grids and clears them, an update while deactivated (the engine
-// keeps updating an effect that fades out) allocates again.
+// Reset (what the engine calls on activation) allocates zeroed grids,
+// deactivate frees them, a second reset keeps the grids and clears them, an
+// update while deactivated (the engine keeps updating an effect that fades
+// out) allocates again.
 TEST(smoke_grid_lifecycle) {
   gm_smoke_t* s = &s_fx.smoke;
   fresh_effect(3);
   CHECK(!gm_smoke_allocated(s));
   CHECK(gm_smoke_total_density(s) == 0.0f && gm_smoke_density(s, 3, 3, 3) == 0.0f);
-  gm_effect_activate(&s->base);
+  gm_effect_reset(&s->base);
   CHECK(gm_smoke_allocated(s));
   CHECK(gm_smoke_total_density(s) == 0.0f);
   gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
   for (int i = 0; i < 180; ++i) gm_effect_update(&s->base, &ctx);
   CHECK(gm_smoke_total_density(s) > 0.0f);
   const float* d_before = s->d;
-  gm_effect_activate(&s->base);  // already allocated: same grids, cleared
+  gm_effect_reset(&s->base);  // already allocated: same grids, cleared
   CHECK(s->d == d_before);
   CHECK(gm_smoke_total_density(s) == 0.0f);
   gm_effect_deactivate(&s->base);
@@ -162,8 +163,10 @@ TEST(smoke_grid_lifecycle) {
   gm_effect_render(&s->base, &s_f);
   CHECK(lit(&s_f) == 0);
   gm_effect_deactivate(&s->base);  // twice is harmless
-  gm_effect_reset(&s->base);       // reset without grids does nothing
   CHECK(!gm_smoke_allocated(s));
+  gm_effect_reset(&s->base);  // activated again: fresh, zeroed grids
+  CHECK(gm_smoke_allocated(s) && gm_smoke_total_density(s) == 0.0f);
+  gm_effect_deactivate(&s->base);
   gm_effect_update(&s->base, &ctx);
   CHECK(gm_smoke_allocated(s));
   gm_effect_deactivate(&s->base);
@@ -237,14 +240,13 @@ TEST(hud_orbit_steps) {
     int dx = -1, dy = -1;
     gm_effect_burn_in_offset(&h->base, &dx, &dy);
     CHECK(dx == kx[steps[i] & 3] && dy == ky[steps[i] & 3]);
-    gm_effect_activate(&h->base);
-    gm_effect_reset(&h->base);
+    gm_effect_reset(&h->base);  // activation
     gm_effect_burn_in_offset(&h->base, &dx, &dy);
     CHECK(dx == kx[steps[i] & 3] && dy == ky[steps[i] & 3]);
   }
   // 0.01 min = 0.6 s per step: in order, about every 36 frames.
   fresh_effect(7);
-  gm_effect_activate(&h->base);
+  gm_effect_reset(&h->base);
   gm_params_set(gm_effect_params(&h->base), "orbit_min", 0.01f);
   gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
   int step = 0, changes = 0;
@@ -362,7 +364,7 @@ TEST(slosh_substeps_stay_within_the_cap) {
     fresh_effect(1);
     gm_params_set(gm_effect_params(&s->base), "substeps", caps[c]);
     gm_params_set(gm_effect_params(&s->base), "tank_m", 0.2f);
-    gm_effect_activate(&s->base);
+    gm_effect_reset(&s->base);
     gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
     bool ok = true;
     for (int i = 0; i < 300; ++i) {
@@ -386,11 +388,11 @@ TEST(effects_always_drawn_on_the_demo_scenarios) {
     for (int i = 0; i < gm_scenario_preset_count(); ++i) {
       const gm_scenario_t* sc = gm_scenario_preset(i);
       gm_effect_t* e = fresh_effect(which[w]);
-      gm_effect_activate(e);
+      gm_effect_reset(e);
       gm_effect_ctx_t ctx = GM_EFFECT_CTX_INIT;
       int blank = 0;
       for (int f = 0; f < (int)(gm_scenario_duration(sc) * 60.0f); ++f) {
-        ctx.g = gm_scenario_at(sc, (float)f / 60.0f, NULL);
+        ctx.g = gm_scenario_at(sc, (float)f / 60.0f);
         gm_effect_update(e, &ctx);
         gm_frame_clear(&s_f);
         gm_effect_render(e, &s_f);

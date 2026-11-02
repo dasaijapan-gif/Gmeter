@@ -234,10 +234,10 @@ Studio (a separate web page, not part of this package) as
 | Check | Result |
 | --- | --- |
 | Builds with ESP-IDF v5.5.6 (all three variants) | Pass, no compiler warnings |
-| Memory, classic ESP32 | 74 KB of the 181 KB static RAM, 324 KB of the 2 MB app partition |
+| Memory, classic ESP32 | 74 KB of the 181 KB static RAM, 313 KB of the 2 MB app partition |
 | Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; every command of section 5 | Pass: no crash or reset once running, about 60 fps |
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
-| The effects, calibration and g-force maths, tested on a PC at 128x56 and 128x64 | Pass: 57 behaviour tests (physics, calibration, burn-in protection, parameter ranges) and 110 reference cases that compare every frame and value with recorded output |
+| The effects, calibration and g-force maths, tested on a PC at 128x56 and 128x64 | Pass: 59 behaviour tests (physics, calibration, burn-in protection, parameter ranges) and 110 reference cases that compare every frame and value with recorded output |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 5. |
 
 ## 8. Troubleshooting

@@ -9,7 +9,6 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stdint.h>
 
 #include "gm_frame.h"
 #include "gm_gforce.h"
@@ -49,24 +48,25 @@ bool gm_params_get(const gm_param_table_t* t, const char* name, float* out);
 
 // ---- effects --------------------------------------------------------------------------
 typedef struct {
-  gm_gforce_t g;   // filtered g-force, car frame
-  float dt;        // seconds since the previous update (clamped by the engine)
-  float time;      // seconds since the engine started
-  uint32_t frame;  // frame counter
+  // Filtered g-force, car frame. The engine sanitises it: finite, and each
+  // axis within +-GM_ENGINE_MAX_G (16 g).
+  gm_gforce_t g;
+  float dt;  // seconds since the previous update (clamped by the engine)
 } gm_effect_ctx_t;
 
-#define GM_EFFECT_CTX_INIT {GM_GFORCE_REST_INIT, 1.0f / 60.0f, 0.0f, 0u}
+#define GM_EFFECT_CTX_INIT {GM_GFORCE_REST_INIT, 1.0f / 60.0f}
 
 typedef struct gm_effect gm_effect_t;
 
 typedef struct {
   const char* name;
-  // Called when the effect becomes active / inactive. Heavy effects allocate
-  // their grids in activate and free them in deactivate so several big
-  // effects can coexist on a small heap. NULL activate means "call reset".
-  void (*activate)(gm_effect_t* self);
-  void (*deactivate)(gm_effect_t* self);  // may be NULL
-  void (*reset)(gm_effect_t* self);       // may be NULL
+  // Called when the effect stops being shown (may be NULL). Heavy effects free
+  // their grids here and allocate them again in reset, so several big effects
+  // can coexist on a small heap.
+  void (*deactivate)(gm_effect_t* self);
+  // Back to the start state; the engine calls it whenever the effect becomes
+  // active (may be NULL).
+  void (*reset)(gm_effect_t* self);
   // Advance the simulation. May be called more than once per rendered frame.
   void (*update)(gm_effect_t* self, const gm_effect_ctx_t* ctx);
   // Draw into a cleared frame.
@@ -92,12 +92,6 @@ static inline gm_param_table_t* gm_effect_init(gm_effect_t* e, const gm_effect_v
 static inline const char* gm_effect_name(const gm_effect_t* e) { return e->vt->name; }
 static inline void gm_effect_reset(gm_effect_t* e) {
   if (e->vt->reset) e->vt->reset(e);
-}
-static inline void gm_effect_activate(gm_effect_t* e) {
-  if (e->vt->activate)
-    e->vt->activate(e);
-  else
-    gm_effect_reset(e);
 }
 static inline void gm_effect_deactivate(gm_effect_t* e) {
   if (e->vt->deactivate) e->vt->deactivate(e);

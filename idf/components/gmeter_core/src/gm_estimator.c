@@ -6,7 +6,6 @@
 #include <string.h>
 
 void gm_estimator_set_filter(gm_estimator_t* e, float cutoff_hz, float sample_hz) {
-  e->cutoff_hz = cutoff_hz;
   e->sample_hz = sample_hz;
   gm_lowpass_configure(&e->lp_x, cutoff_hz, sample_hz);
   gm_lowpass_configure(&e->lp_y, cutoff_hz, sample_hz);
@@ -27,7 +26,6 @@ void gm_estimator_reset(gm_estimator_t* e) {
   e->primed = false;
   e->bias = gm_vec3_zero();
   e->motion_level = 1.0f;
-  e->g = gm_gforce_rest();
 }
 
 gm_calibration_t gm_estimator_make_calibration(gm_vec3_t up_sensor, gm_vec3_t forward_hint_sensor) {
@@ -59,21 +57,9 @@ gm_calibration_t gm_estimator_make_up_only_calibration(gm_vec3_t up_sensor) {
   return gm_estimator_make_calibration(up_sensor, axes[best]);
 }
 
-void gm_estimator_begin_rest_calibration(gm_estimator_t* e) {
-  e->rest_accum = gm_vec3_zero();
-  e->rest_count = 0;
-}
-
-void gm_estimator_feed_rest_sample(gm_estimator_t* e, gm_vec3_t raw) {
-  e->rest_accum = gm_vec3_add(e->rest_accum, raw);
-  ++e->rest_count;
-}
-
-bool gm_estimator_finish_rest_calibration(gm_estimator_t* e) {
-  if (e->rest_count < 8) return false;
+bool gm_estimator_calibrate_rest(gm_estimator_t* e, gm_vec3_t mean) {
   // Validate before committing anything, so a rejected capture leaves the
   // previous calibration untouched.
-  const gm_vec3_t mean = gm_vec3_div(e->rest_accum, (float)e->rest_count);
   const float mag = gm_vec3_length(mean);
   if (mag < 0.7f || mag > 1.3f) return false;
   gm_calibration_t c = gm_estimator_make_calibration(mean, e->nominal_forward);
@@ -106,25 +92,25 @@ bool gm_estimator_calibrate_forward_from_braking(gm_estimator_t* e, gm_vec3_t me
 }
 
 gm_gforce_t gm_estimator_update(gm_estimator_t* e, gm_vec3_t raw) {
-  e->raw_car = gm_mat3_apply(&e->cal.sensor_to_car, raw);
+  const gm_vec3_t raw_car = gm_mat3_apply(&e->cal.sensor_to_car, raw);
   if (!e->primed) {
-    gm_lowpass_reset(&e->lp_x, e->raw_car.x);
-    gm_lowpass_reset(&e->lp_y, e->raw_car.y);
-    gm_lowpass_reset(&e->lp_z, e->raw_car.z);
-    e->slow_mean = e->raw_car;
+    gm_lowpass_reset(&e->lp_x, raw_car.x);
+    gm_lowpass_reset(&e->lp_y, raw_car.y);
+    gm_lowpass_reset(&e->lp_z, raw_car.z);
+    e->slow_mean = raw_car;
     e->primed = true;
   }
-  const float fx = gm_lowpass_process(&e->lp_x, e->raw_car.x);
-  const float fy = gm_lowpass_process(&e->lp_y, e->raw_car.y);
-  const float fz = gm_lowpass_process(&e->lp_z, e->raw_car.z);
+  const float fx = gm_lowpass_process(&e->lp_x, raw_car.x);
+  const float fy = gm_lowpass_process(&e->lp_y, raw_car.y);
+  const float fz = gm_lowpass_process(&e->lp_z, raw_car.z);
   gm_vec3_t f = gm_vec3(fx, fy, fz);
 
   if (e->auto_zero) {
     // Stillness detector: exponential average of |raw - slow mean|.
     const float dt = 1.0f / e->sample_hz;
     const float a_slow = dt / (dt + 2.0f);  // ~2 s mean
-    e->slow_mean = gm_vec3_lerp(e->slow_mean, e->raw_car, a_slow);
-    const float dev = gm_vec3_length(gm_vec3_sub(e->raw_car, e->slow_mean));
+    e->slow_mean = gm_vec3_lerp(e->slow_mean, raw_car, a_slow);
+    const float dev = gm_vec3_length(gm_vec3_sub(raw_car, e->slow_mean));
     e->motion_level = gm_lerpf(e->motion_level, dev, dt / (dt + 1.0f));
     if (e->motion_level < 0.01f) {  // < 0.01 g of jitter: parked
       const float a = dt / (dt + e->auto_zero_tau);
@@ -134,6 +120,5 @@ gm_gforce_t gm_estimator_update(gm_estimator_t* e, gm_vec3_t raw) {
     f.x -= e->bias.x;
     f.z -= e->bias.z;
   }
-  e->g.proper = f;
-  return e->g;
+  return gm_gforce_from_proper(f);
 }

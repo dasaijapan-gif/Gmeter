@@ -29,11 +29,11 @@ except ImportError:  # pragma: no cover
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "idf" / "components" / "gmeter_core" / "src" / "gm_jp_glyphs.c"
 
-# Every character the effects draw. Large: state words (title-card style).
-LARGE_TEXT = "待機加速制動左右旋回衝撃警告危険"
-# Small: labels, status columns and captions.
-SMALL_TEXT = "横縦上下同期率正常異常重力警告危険限界活動使徒接近反応全開待機中加速制動旋回衝撃左右" \
-             "パターン青フィールド第号機"
+# Every character the effects draw, and no more. Large: the HUD's state words
+# (title-card style).
+LARGE_TEXT = "待機加速制動左右旋回衝撃危険"
+# Small: labels, status columns and captions (hud, atfield, sync).
+SMALL_TEXT = "横縦正常警告" "フィールド全開" "上下同期率"
 
 FONTS = {
     # name: (package option, weight, pixel size, horizontal condense, threshold 0..255)

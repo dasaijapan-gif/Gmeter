@@ -127,7 +127,7 @@ defines it; `docs/ARCHITECTURE.md` has the derivation.
   engine and an IMU dropout that froze the display) are fixed, with
   regression tests where they are testable on a PC.
 - Firmware: all six variants build without compiler warnings; the classic
-  ESP32 build uses about 74 KB of its 181 KB of static RAM and 324 KB of the
+  ESP32 build uses about 74 KB of its 181 KB of static RAM and 313 KB of the
   2 MB app partition. Both chips boot in Espressif's emulator and run every
   effect with no IMU attached. The panel init sequence and the sensor still
   need a real board. Register values, timing and init sequences come from the
