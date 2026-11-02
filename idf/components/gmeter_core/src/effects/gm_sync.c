@@ -11,12 +11,10 @@
 
 #include "gm_jp_text.h"
 
-// Row of a trace sample: cy - gm_iround(v * gain), clamped to the band. The
-// C++ writes exactly that, and its int conversion and subtraction overflow
-// (undefined behaviour) when v * gain is NaN, infinite or beyond the int
-// range, which only absurd g input produces; built for x86 such samples land
-// on the top edge of the band. This gives the rows of such a build for every
-// input, without the undefined behaviour.
+// Row of a trace sample: cy - gm_iround(v * gain), clamped to the band. When
+// v * gain is NaN, infinite or beyond the int range, which only absurd g input
+// produces, the int conversion and subtraction would overflow (undefined
+// behaviour); such samples land on the top edge of the band instead.
 static int trace_row(float v, float gain, int cy, int half) {
   const float r = floorf(v * gain + 0.5f);  // gm_iround(v * gain) before the conversion to int
   if (!(r > -2147483648.0f && r < 2147483648.0f)) return cy - half;

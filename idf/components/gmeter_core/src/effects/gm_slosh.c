@@ -228,9 +228,9 @@ static void slosh_render(gm_effect_t* self, gm_frame_t* f) {
       if (h < 0.5f) continue;
       for (int k = 0; k < thick; ++k) gm_frame_set(f, px, y_surf + k, z);
       if (style == 1) {
-        // The C++ starts at y_surf + thick; rows above the panel draw nothing,
-        // so start at row 0 (a NaN or huge h, only after absurd vertical g,
-        // would otherwise mean up to ~2^31 iterations per column).
+        // Rows above the panel draw nothing, so start at row 0 at the earliest
+        // (a NaN or huge h, only after absurd vertical g, would otherwise mean
+        // up to ~2^31 iterations per column).
         for (int y = gm_maxi(y_surf + thick, 0); y <= GM_H - 1; ++y) gm_frame_plot(f, px, y, z, s->body_intensity);
       } else if (style == 2) {
         gm_frame_vline(f, z, px, y_surf + thick, GM_H - 1);

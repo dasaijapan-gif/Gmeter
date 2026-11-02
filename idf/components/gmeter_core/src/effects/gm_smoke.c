@@ -8,8 +8,8 @@
 // and NY the panel height. The default is 4x4-pixel cells (32x14 at 128x56,
 // 32x16 at 128x64); the ESP32 build uses 16x8 (components/gmeter_core/
 // CMakeLists.txt) to stay within the time and memory budget. wind/buoyancy/
-// emit_r are in cell units, so tune on the same grid the device uses (Gmeter
-// Studio builds 16x8). Buffers are heap-allocated only while active.
+// emit_r are in cell units, so tune on the same grid the device uses. Buffers
+// are heap-allocated only while active.
 #include "gm_smoke.h"
 
 #include <stdlib.h>

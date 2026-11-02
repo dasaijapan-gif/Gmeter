@@ -16,8 +16,7 @@ This package contains:
 | --- | --- |
 | `firmware/` | Ready-to-flash files. You do not need to compile anything. |
 | `source/gmeter/` | The complete source code of the firmware: an ESP-IDF project written in C (`.c` and `.h` files), if you want to build it yourself. |
-| `docs/` | Hardware notes, effect descriptions, code layout and licences. |
-| `studio/` | Gmeter Studio: open `gmeter_studio.html` in Chrome or Edge and choose the `hud` effect to see the display in 3D on a PC. The 3D view needs an internet connection; offline it shows a flat preview. |
+| `docs/` | Hardware notes, effect descriptions and licences. |
 
 ## 1. What the HUD shows
 
@@ -310,7 +309,7 @@ and rebuild.
 | Boots straight into the HUD in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; `mode`, `cycle` and `anim` refused | Pass: no crash or reset once running, about 60 fps |
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
 | The one-pixel move keeps the whole border on the glass; the warning blink still works after 8 simulated days | Pass (PC unit tests) |
-| The HUD and the g-force maths compute exactly what the PC tools (Gmeter Studio, simulator) compute | Pass: 153 tests on a PC, about 19 million checks per panel size, bit-identical at 128x56 and 128x64 |
+| The HUD, calibration and g-force maths, tested on a PC at 128x56 and 128x64 | Pass: 57 behaviour tests (physics, calibration, burn-in protection, parameter ranges) and 110 reference cases, including the HUD edition's start-up, that compare every frame and value with recorded output |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 6. |
 
 ## 10. Troubleshooting

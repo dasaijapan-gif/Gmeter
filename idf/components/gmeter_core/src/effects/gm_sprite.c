@@ -1,5 +1,5 @@
-// G-mapped authored animation. Takes any 1-bit sprite sheet (export one from
-// a PNG/GIF with tools/img2sprite.py) and lets the g-force drive it: position
+// G-mapped authored animation. Takes any 1-bit sprite sheet (the firmware
+// uses the built-in demo sheet) and lets the g-force drive it: position
 // in the volume (including which layer it sits on), which frame is shown
 // (scrubbing by g on a chosen axis) and how fast it plays. This is the
 // generic hook for "make my animation react to g".
@@ -54,9 +54,9 @@ static void sprite_render(gm_effect_t* self, gm_frame_t* f) {
   const int y0 = gm_iround_safe(v.y - sh->height * 0.5f + 0.5f);
   const int layer = gm_clampi(gm_iround_safe(v.z), 0, GM_D - 1);
   const int echo = gm_iround_safe(s->echo);
-  // A negative echo draws nothing: the layer loop below runs zero times (and
-  // for a NaN or huge echo from a mapping, INT_MIN, -echo would overflow; an
-  // x86 build of the C++ draws nothing there either).
+  // A negative echo draws nothing: the layer loop below would run zero times
+  // (and for a NaN or huge echo from a mapping, INT_MIN, -echo would
+  // overflow).
   if (echo < 0) return;
   for (int dl = -echo; dl <= echo; ++dl) {
     const int z = layer + dl;

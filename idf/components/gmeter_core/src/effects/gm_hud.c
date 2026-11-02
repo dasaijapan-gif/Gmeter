@@ -159,9 +159,8 @@ static void draw_frame(const gm_hud_t* h, gm_frame_t* f, float horiz) {
   // Bottom band: hazard stripes when over warn_g.
   if (warn) {
     // (int)hazard. The hazard clock is NaN, infinite or huge only after absurd
-    // g input; the C++ conversion is then undefined (INT_MIN when built for
-    // x86), so give INT_MIN without the undefined behaviour. The bound keeps
-    // xx + y + off inside int too.
+    // g input, where the conversion would be undefined; such values give
+    // INT_MIN instead. The bound keeps xx + y + off inside int too.
     const int off = h->hazard >= -2147483648.0f && h->hazard < 2147483520.0f ? (int)h->hazard : INT_MIN;
     for (int y = H - 9; y <= H - 6; ++y)
       for (int xx = 12; xx < W - 12; ++xx)

@@ -20,7 +20,7 @@ static void particles_reset(gm_effect_t* self) {
   gm_rng_seed(&p->rng, 777u);
   for (int i = 0; i < GM_PARTICLES_MAX; ++i) {
     // Start as a loose cloud in the lower half so it visibly settles.
-    // (Separate statements: the C++ braced initialiser draws x, y, z in order.)
+    // (Separate statements, so x, y and z are drawn in that order.)
     const float x = gm_rng_range(&p->rng, -he.x * 0.8f, he.x * 0.8f);
     const float y = gm_rng_range(&p->rng, -he.y * 0.9f, 0.0f);
     const float z = gm_rng_range(&p->rng, -he.z * 0.8f, he.z * 0.8f);
@@ -136,7 +136,7 @@ static void substep(gm_particles_t* pe, float dt, gm_vec3_t g_eff) {
   for (int p = 0; p < n; ++p) {
     gm_vec3_t a = gm_vec3_add(gravity, pressure_accel(pe, pe->pos[p]));
     if (pe->jitter > 0.0f) {
-      // (Separate statements: the C++ braced initialiser draws x, y, z in order.)
+      // (Separate statements, so x, y and z are drawn in that order.)
       const float jx = gm_rng_symmetric(&pe->rng);
       const float jy = gm_rng_symmetric(&pe->rng);
       const float jz = gm_rng_symmetric(&pe->rng);

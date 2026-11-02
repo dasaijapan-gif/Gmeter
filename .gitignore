@@ -1,5 +1,4 @@
 build/
-host/build*/
 *.o
 *.a
 *.bin
@@ -7,12 +6,4 @@ host/build*/
 __pycache__/
 *.pyc
 .vscode/
-out/
 dist/
-frames*.json
-frames*.gz
-
-# generated demo page
-gmeter_viewer*.html
-gmeter_studio*.html
-*.wasm

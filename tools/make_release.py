@@ -8,7 +8,6 @@ idf.py and ESP-IDF's Python (with esptool) are on PATH.
 
   python3 tools/make_release.py                          # standard edition: dist/gmeter_supplier + .zip
   python3 tools/make_release.py --edition hud --out dist/gmeter_hud
-  python3 tools/make_release.py --studio gmeter_studio.html
 
 Layout of the result:
 
@@ -20,10 +19,9 @@ Layout of the result:
                              parts, flash_args.txt
   firmware/SHA256SUMS.txt
   source/gmeter/             the ESP-IDF project (idf/ of the repository, without
-                             the host tests): C sources, menuconfig options,
-                             partition table
+                             the host tests in idf/test): C sources, menuconfig
+                             options, partition table
   docs/                      hardware and effect notes, licences
-  studio/                    Gmeter Studio, if --studio is given
 """
 import argparse
 import datetime
@@ -103,7 +101,6 @@ def main():
     ap.add_argument("--out", help="output folder (default dist/gmeter_supplier, or dist/gmeter_hud)")
     ap.add_argument("--idf", default="idf.py", help="idf.py command")
     ap.add_argument("--esptool", default=None, help="esptool command (default: python -m esptool)")
-    ap.add_argument("--studio", help="built Gmeter Studio page to include")
     ap.add_argument("--no-zip", action="store_true")
     a = ap.parse_args()
 
@@ -149,10 +146,8 @@ def main():
         else:
             t.extractall(src_parent)
     project = os.path.join(src_parent, "gmeter")
-    # The host tests (host_test compares the C core with the C++ core of the
-    # PC tools, test holds the C tests of the core) are for development only.
-    for tests in ("host_test", "test"):
-        shutil.rmtree(os.path.join(project, tests), ignore_errors=True)
+    # The host tests of the core (idf/test) are for development only.
+    shutil.rmtree(os.path.join(project, "test"), ignore_errors=True)
     shipped = set()
     for dirpath, _, files in os.walk(project):
         for name in files:
@@ -228,16 +223,13 @@ def main():
         if not os.listdir(dirpath) and dirpath != project:
             os.rmdir(dirpath)
 
-    # 3. Docs, guide, Studio, build info.
+    # 3. Docs, guide, build info.
     docs = os.path.join(out, "docs")
     os.makedirs(docs)
     for d in DOCS + [guide]:
         with open(os.path.join(docs, os.path.basename(d)), "wb") as f:
             f.write(subprocess.run(["git", "show", "HEAD:" + d], cwd=ROOT, stdout=subprocess.PIPE, check=True).stdout)
     shutil.copy(os.path.join(docs, os.path.basename(guide)), os.path.join(out, "README_FIRST.md"))
-    if a.studio:
-        os.makedirs(os.path.join(out, "studio"))
-        shutil.copy(a.studio, os.path.join(out, "studio", "gmeter_studio.html"))
     idf_version = subprocess.run([a.idf, "--version"], stdout=subprocess.PIPE, text=True).stdout.strip()
     try:
         compiler = subprocess.run(["xtensa-esp-elf-gcc", "--version"], stdout=subprocess.PIPE,

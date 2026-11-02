@@ -1,25 +1,19 @@
 # Effects
 
-The firmware's effects are C, in `idf/components/gmeter_core/src/effects/`
-(one `gm_<name>.c` per effect, its state and tunables in
-`include/gm_<name>.h`). Gmeter Studio and the PC simulator use the original
-C++ versions in `lib/gmeter_core/src/gmeter/effects/`; the tests in
-`idf/host_test` check that both produce the same frames bit for bit. The
-class names in the headings below are the C++ names; the C struct is
-`gm_<name>_t`. Each effect reads the filtered g-force from its context,
-advances its own state and draws into a cleared voxel frame. Units are pixels and seconds; 1 g of acceleration
-is turned into pixels per second squared through a "virtual tank width"
-(`tank_m`), so a 35 mm display can slosh like a one-metre tank instead of
-buzzing at 5 Hz.
+The effects are C, in `idf/components/gmeter_core/src/effects/` (one
+`gm_<name>.c` per effect, its state and tunables in `include/gm_<name>.h`; the
+headings below name each effect's struct). Each effect reads the filtered
+g-force from its context, advances its own state and draws into a cleared
+voxel frame. Units are pixels and seconds; 1 g of acceleration is turned into
+pixels per second squared through a "virtual tank width" (`tank_m`), so a
+35 mm display can slosh like a one-metre tank instead of buzzing at 5 Hz.
 
-Tune at runtime with `set <param> <value>` over serial, `--param` in the
-simulator, or the sliders in Gmeter Studio. `get` lists the current effect's
-parameters with ranges. Values set over serial are RAM-only; `save` does not
-store them, so make lasting changes in the effect's defaults (in its
-`gm_<name>_init` function for the firmware, and in the C++ constructor too if
-Studio and the simulator should match).
+Tune on the unit over serial: `get` lists the current effect's parameters
+with ranges and `set <param> <value>` changes one. Values set over serial are
+RAM-only; `save` does not store them, so make lasting changes in the effect's
+defaults (its `gm_<name>_init` function) and rebuild.
 
-## ball (`GBallEffect`)
+## ball (`gm_gball_t`)
 
 The classic g-meter dot, in 3D. A critically damped spring (exact closed-form
 update, stable at any frame rate) follows the inertial vector: lateral g moves
@@ -38,7 +32,7 @@ readout, peak hold and a longitudinal bar along the top edge.
 | `inertia` | 1 | 1: moves like a loose object; 0: like an acceleration arrow |
 | `hud`, `rings` | 1, 1 | front-layer overlays |
 
-## slosh (`SloshEffect`)
+## slosh (`gm_slosh_t`)
 
 A liquid height field on the horizontal plane (64 cells across, one per layer
 in depth) integrated with the nonlinear shallow-water equations in flux form on
@@ -65,7 +59,7 @@ sees a 1 Hz low-passed vertical g, while raw vertical jerk drives a whole-body
 | `body_i`, `surface_px` | 0.12, 1 | body dither density, surface thickness |
 | `substeps` | 12 | cost cap on substeps per frame; if the waves need more, that frame runs in slow motion rather than going unstable |
 
-## particles (`ParticleEffect`)
+## particles (`gm_particles_t`)
 
 Up to 400 particles under effective gravity, with wall bounces and drag. A
 coarse density grid (8 x 8 px cells, one per layer) is splatted trilinearly;
@@ -83,7 +77,7 @@ tunnels through a wall.
 | `jitter` | 15 | random agitation keeping the pile alive |
 | `dot`, `substeps` | 1 px, 2 | particle size, physics substeps |
 
-## smoke (`SmokeEffect`)
+## smoke (`gm_smoke_t`)
 
 A low-resolution 3D "stable fluids" solver (semi-Lagrangian advection,
 Gauss-Seidel pressure projection). An emitter at the centre of the volume
@@ -93,10 +87,11 @@ around while clear air stays put (a uniform body force in a closed box would
 be cancelled by the pressure solve). The solver runs at `rate` Hz independent
 of the frame rate; the dithered rasterisation hides the lower physics rate.
 Grid size is compile-time (`GM_SMOKE_NX/NY`, one cell per layer in depth):
-16 x 8 on the ESP32 builds and in Gmeter Studio; the plain host build defaults
-to 4x4-pixel cells (32 x 14 at 128x56). The wind, buoyancy and emitter radius
-are in cell units, so tune on the device's grid. Buffers are allocated only while
-the effect is active.
+16 x 8 in the firmware (set in `idf/components/gmeter_core/CMakeLists.txt`)
+and in the host tests; without it the header defaults to 4x4-pixel cells
+(32 x 14 at 128x56). The wind, buoyancy and emitter radius
+are in cell units, so tune on the device's grid. Buffers are allocated only
+while the effect is active.
 
 | Param | Default | Meaning |
 | --- | --- | --- |
@@ -108,7 +103,7 @@ the effect is active.
 | `rate` | 30 Hz (20-120) | physics steps per second; each step advances by the real time since the last one |
 | `gain`, `swirl` | 1.5, 2 | brightness, emitter turbulence |
 
-## tunnel (`TunnelEffect`)
+## tunnel (`gm_tunnel_t`)
 
 One dashed ring per layer, shrinking toward the back. Ring centres are
 displaced in proportion to depth by the inertial vector, so the whole tunnel
@@ -124,7 +119,7 @@ them toward the windshield). Cheap, and a good test of depth perception.
 | `pulse`, `pulse_g` | 0.3 /s, 2.5 /s/g | depth pulses |
 | `hz` | 2.5 | smoothing |
 
-## sprite (`SpriteEffect`): make your own animation react to g
+## sprite (`gm_sprite_t`): a sprite sheet that reacts to g
 
 Takes any 1-bit sprite sheet and lets the g-force drive it:
 
@@ -145,19 +140,17 @@ Takes any 1-bit sprite sheet and lets the g-force drive it:
 | `echo` | 1 layer | ghost copies on neighbouring layers (0-4) |
 | `inertia` | 1 | 1: thrown like a loose object; 0: follows the acceleration |
 
-Export artwork with `tools/img2sprite.py anim.gif -o my_sprite.hpp
---name kMySprite --width 24` and construct `SpriteEffect(kMySprite, mapping)`
-(C++; in the firmware, fill a `gm_sprite_sheet_t` with the same width,
-height, frame count and bits and pass it to `gm_sprite_init`).
-A procedurally generated 16 x 16, 12-frame demo sprite is built in. For
-state-driven, multi-slice artwork use the `anim` effect and Gmeter Studio.
+The firmware shows a procedurally generated 16 x 16, 12-frame demo sprite.
+`gm_sprite_init` takes any `gm_sprite_sheet_t` (width, height, frame count and
+1-bit rows); `idf/main/app_main.c` passes the demo sheet. For your own,
+state-driven or multi-slice artwork use the `anim` effect.
 
-## anim (`AnimationEffect`): authored artwork interpreted by g-force
+## anim (`gm_anim_t`): authored artwork interpreted by g-force
 
-The effect behind Gmeter Studio. An `AnimationAsset` holds frames of pixel
-art (`width` x `height`, up to 128 x 56) with `depth` slices per frame that sit
-on consecutive panels, so artwork can be volumetric. Clips map car states to
-frame ranges:
+Plays artwork drawn in Gmeter Studio, or a built-in demo. A `gm_anim_asset_t`
+holds frames of pixel art (`width` x `height`, up to 128 x 56) with `depth`
+slices per frame that sit on consecutive panels, so artwork can be
+volumetric. Clips map car states to frame ranges:
 
 | State | Chosen when |
 | --- | --- |
@@ -190,12 +183,14 @@ single-slice sprite can be ghosted onto neighbouring layers (`echo`).
 | `fps_g`, `scrub_axis`, `frames_g` | 0, -1, 0 | g-driven playback |
 | `echo`, `mirror` | 0, 1 | depth ghosting, left/right mirroring |
 
-Assets are plain aggregates. Gmeter Studio exports them as
-`main/user_animation.h` (in the repository `idf/main/user_animation.h`), a
-header that compiles as C for the firmware and as C++ for the simulator; both
-pick it up automatically (`__has_include`); without it the built-in demo plays (a
-breathing ring, chevrons per direction and a starburst on bumps). On the car,
-`anim brake` pins a clip and `anim auto` returns to g-force control.
+Assets are plain aggregates. Gmeter Studio (a separate web page with a 3D
+preview of the stack, not part of this repository) exports one as a header:
+save it as `idf/main/user_animation.h` (`main/user_animation.h` in the
+supplier's source) and rebuild. The build picks it up automatically
+(`idf/main/CMakeLists.txt` checks for the file) and compiles the header's C
+branch; without it the built-in demo plays (a breathing ring, chevrons per
+direction and a starburst on bumps). On the car, `anim brake` pins a clip and
+`anim auto` returns to g-force control.
 
 ## NGE-inspired effects: hud, atfield, sync
 
@@ -207,7 +202,7 @@ rendered from Noto Serif JP Black and Noto Sans JP Bold (see
 `docs/THIRD_PARTY.md`); `tools/make_glyphs.py` regenerates them if you want
 more characters.
 
-### hud (`HudEffect`)
+### hud (`gm_hud_t`)
 
 | Where | What |
 | --- | --- |
@@ -227,10 +222,10 @@ more characters.
 | `enter_g`, `hold_s`, `bump_g` | 0.25, 0.4 s, 0.3 | state word selection |
 | `orbit_min` | 2 min | minutes per one-pixel burn-in step (0 = off) |
 
-The HUD is meant to stay on for hours (the `-hud` firmware builds show nothing
-else), so it slows OLED burn-in: every `orbit_min` minutes the whole picture
-moves one pixel around a 2 x 2 square (right, down, left, up). The effect
-reports the offset through `Effect::burnInOffset()` and the Engine applies it
+The HUD is meant to stay on for hours (the HUD edition shows nothing else),
+so it slows OLED burn-in: every `orbit_min` minutes the whole picture moves
+one pixel around a 2 x 2 square (right, down, left, up). The effect reports
+the offset through its vtable's `burn_in_offset` and the engine applies it
 last, so its overlays (the readout and the DEMO / NO SENSOR tag) move too. The
 frame is drawn one pixel inside the glass on the right and bottom, so it stays
 fully visible at every step. This spreads the wear of 1-px lines and stroke
@@ -240,7 +235,7 @@ random step at power-on, so short trips do not all use the same position. The
 blink clock wraps every minute, so the blink timing stays exact after days of
 uptime.
 
-### atfield (`AtFieldEffect`)
+### atfield (`gm_atfield_t`)
 
 Concentric double octagons spread from the point where the g-force pushes (the
 wall a loose object would hit) as a spherical wavefront, so each panel shows
@@ -256,7 +251,7 @@ in the stack when idle. A.T.フィールド appears after strong ripples, and �
 | `rate_g`, `min_g`, `step_g` | 2.5, 0.15, 0.25 | emission per g, threshold, strong-ripple steps |
 | `idle`, `double`, `label`, `bump_g` | 1, 1, 1, 0.3 | heartbeat, inner octagon, captions, bump threshold |
 
-### sync (`SyncEffect`)
+### sync (`gm_sync_t`)
 
 Lateral, longitudinal and vertical g scroll right to left as three
 oscilloscope traces, labelled 横, 縦 and 上下, each in its own band and on its
@@ -271,8 +266,6 @@ g as a percentage of 1 g.
 
 ## Writing a new effect
 
-In the firmware (C):
-
 1. Add `include/gm_<name>.h` with a struct whose first member is
    `gm_effect_t base`, and `src/effects/gm_<name>.c` with a vtable
    (`gm_effect_vtbl_t`: name, update, render, and optionally reset,
@@ -281,13 +274,14 @@ In the firmware (C):
    registers tunables with `gm_params_add` on the table it returns.
 2. Do physics in world units (`gm_half_extent()` gives the box) and draw
    with `gm_frame_sphere/point/line3` (world) or the 2D primitives (voxel).
-3. Add a static instance to `idf/main/app_main.c` and pass `&fx.base` to
-   `gm_engine_add_effect`.
-
-To preview it in Gmeter Studio or the simulator, write the C++ version as
-well (subclass `gm::Effect` in `lib/gmeter_core`, add it to
-`host/sim_main.cpp` and `host/web/wasm_api.cpp`) and add a differential test
-in `idf/host_test` that compares the two.
+3. Add a static instance to `idf/main/app_main.c`, initialise it in
+   `build_objects` and append `&fx.base` to the `effects` array (at the end:
+   `save` stores the effect's index).
+4. Test it in `idf/test`: behaviour tests in `test_behaviour.c`, and the
+   effect in `test_golden.c`'s effect list so every demo drive, fuzzing and
+   non-finite g reach it. Then re-record at both panel heights and justify
+   each changed digest (`idf/test/README.md`).
+5. Tune it on the unit with `set`, then put the values in its defaults.
 
 Rules of thumb for eight additive layers: outlines beat solid fills (eight
 filled layers wash out), keep the front layer for anything that must be read,

@@ -18,7 +18,6 @@ This package contains:
 | `firmware/` | Ready-to-flash files. You do not need to compile anything. |
 | `source/gmeter/` | The complete source code of the firmware: an ESP-IDF project written in C (`.c` and `.h` files), if you want to build it yourself. |
 | `docs/` | Hardware notes, effect descriptions and licences. |
-| `studio/` | Gmeter Studio: open `gmeter_studio.html` in Chrome or Edge to see the animations in 3D on a PC. The 3D view needs an internet connection; offline it shows a flat preview. |
 
 ## 1. Which file to flash
 
@@ -226,8 +225,9 @@ describes it in full; in short:
 
 Pins are in `source/gmeter/main/board_config.h`. To lower the SPI speed for
 long wires, set **Gmeter > Panels > SPI clock** to 8000000 in menuconfig and
-rebuild. To add custom artwork, draw it in Gmeter Studio, copy the C header it
-makes, save it as `source/gmeter/main/user_animation.h` and rebuild.
+rebuild. To add custom artwork, save an animation header exported from Gmeter
+Studio (a separate web page, not part of this package) as
+`source/gmeter/main/user_animation.h` and rebuild.
 
 ## 7. What has been tested
 
@@ -237,7 +237,7 @@ makes, save it as `source/gmeter/main/user_animation.h` and rebuild.
 | Memory, classic ESP32 | 74 KB of the 181 KB static RAM, 324 KB of the 2 MB app partition |
 | Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; every command of section 5 | Pass: no crash or reset once running, about 60 fps |
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
-| The effects and g-force maths compute exactly what the PC tools (Gmeter Studio, simulator) compute | Pass: 153 tests on a PC, about 19 million checks per panel size, bit-identical at 128x56 and 128x64 |
+| The effects, calibration and g-force maths, tested on a PC at 128x56 and 128x64 | Pass: 57 behaviour tests (physics, calibration, burn-in protection, parameter ranges) and 110 reference cases that compare every frame and value with recorded output |
 | Real panels and a real MPU-6050 | **Not yet tested.** Please report the results of section 5. |
 
 ## 8. Troubleshooting

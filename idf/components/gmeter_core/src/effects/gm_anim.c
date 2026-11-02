@@ -11,8 +11,8 @@ static_assert(GM_ANIM_ACCELERATE == (int)GM_DRIVE_ACCELERATE && GM_ANIM_BRAKE ==
                   GM_ANIM_LEFT == (int)GM_DRIVE_LEFT && GM_ANIM_RIGHT == (int)GM_DRIVE_RIGHT,
               "anim states 1-4 are gm_gstate's driving states (see gm_gstate_choose)");
 
-// a + b wrapping around like the x86 C++ build (where an overflow is undefined).
-// It only overflows when the clip time is NaN or absurd while g scrubs frames.
+// a + b with two's-complement wrap-around instead of undefined overflow. It
+// only overflows when the clip time is NaN or absurd while g scrubs frames.
 static int wrap_add(int a, int b) { return (int)((unsigned)a + (unsigned)b); }
 
 const char* gm_anim_state_name(int state) {
@@ -181,9 +181,9 @@ static void anim_render(gm_effect_t* self, gm_frame_t* f) {
   const int first =
       gm_clampi(gm_iround_safe(v.z - (depth - 1) * 0.5f), gm_mini(0, GM_D - depth), gm_maxi(0, GM_D - depth));
   const int echo = depth == 1 ? gm_iround_safe(a->m.echo) : 0;
-  // A negative echo draws nothing: the layer loop below runs zero times (and
-  // for a NaN or huge echo from a hand-written asset, INT_MIN, -echo would
-  // overflow; an x86 build of the C++ draws nothing there either).
+  // A negative echo draws nothing: the layer loop below would run zero times
+  // (and for a NaN or huge echo from a hand-written asset, INT_MIN, -echo
+  // would overflow).
   if (echo < 0) return;
   const int w = as->width;
   for (int s = 0; s < depth; ++s) {

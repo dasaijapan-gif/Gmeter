@@ -3,29 +3,17 @@
 ## Data flow
 
 ```
- MPU-6050 ──200 Hz──> GForceEstimator ──> GForce ──60 fps──> Engine ──> VoxelFrame ──SPI──> 8 panels
- (sensor frame, g)     rotate to car frame   car frame        active effect     128x56x8 bits
-                       2nd-order low-pass    proper accel     update()+render()
-                       auto re-zero (opt.)
+ MPU-6050 ──200 Hz──> gm_estimator_t ────> gm_gforce_t ──60 fps──> gm_engine_t ──> gm_frame_t ──SPI──> 8 panels
+ (sensor frame, g)    rotate to car frame  car frame               active effect   128x56x8 bits
+                      2nd-order low-pass   proper accel            update+render
+                      auto re-zero (opt.)
 ```
 
-The core exists twice, with the same behaviour bit for bit: in C for the
-firmware (`idf/components/gmeter_core`, names such as `gm_estimator_t`,
-`gm_engine_t`, `gm_frame_t`, `gm_effect_t`) and in C++ for the PC tools
-(`lib/gmeter_core`, `GForceEstimator`, `Engine`, `VoxelFrame`, `Effect`, the
-names used below). `idf/host_test` runs both on the same input and compares
-every frame and number, so a change to one must be made to the other.
-
-The same chain runs in the browser: `host/web/wasm_api.cpp` exposes the
-engine, effects, scenarios, sensor model and animation loader as a small C API,
-`tools/build_studio.py` compiles it to WebAssembly (Zig's clang with libc++
-for wasm32-wasi, about 80 KB) and embeds it in `host/web/studio.html`, which
-renders the frames on a Three.js model of the panels.
-
-The same chain also runs on the PC: `host/sim_main.cpp` replaces the sensor with a
-`Scenario` (keyframed dynamic g) passed through `simulateRawSensor()`, which
-applies the inverse of a mounting rotation plus noise, so the estimator and
-calibration code are exercised exactly as on the car.
+The core (`idf/components/gmeter_core`, every name starts with `gm_`) is
+plain C with no ESP-IDF dependency; the application in `idf/main` feeds it
+sensor samples and sends its frames to the panels, and `idf/test` runs the
+same core on a PC. Without a sensor the firmware feeds the engine a recorded
+demo drive instead (`gm_scenario_t`, keyframed dynamic g).
 
 ## Frames and conventions
 
@@ -36,10 +24,10 @@ screen coordinates with depth, this frame is left-handed: right = forward x up
 sensor-to-car matrix has determinant -1.
 
 **Voxel frame**: x = column 0..127 (left to right), y = row 0..H-1 (top to
-bottom, screen convention), z = layer 0..7. `VoxelFrame::worldToVoxel` maps a
+bottom, screen convention), z = layer 0..7. `gm_world_to_voxel` maps a
 car-frame position in pixel units (origin at the volume centre, layers
-`kLayerPitchPx` apart) to voxel coordinates, so effects can do physics in one
-consistent unit (pixels) and never think about panel indices.
+`GM_LAYER_PITCH_PX` apart) to voxel coordinates, so effects can do physics in
+one consistent unit (pixels) and never think about panel indices.
 
 **Proper acceleration**: an accelerometer measures the specific force
 f = a_car - g_vec. At rest on level ground f = (0, +1, 0) g in the car frame.
@@ -47,18 +35,18 @@ f = a_car - g_vec. At rest on level ground f = (0, +1, 0) g in the car frame.
 | Quantity | Formula | At rest | Braking | Right turn |
 | --- | --- | --- | --- | --- |
 | `proper` | f | (0, 1, 0) | z < 0 | x > 0 |
-| `dynamic()` | f - (0,1,0) | 0 | z < 0 | x > 0 |
-| `inertial()` | -(f - (0,1,0)) | 0 | z > 0 (to windshield) | x < 0 (to the left) |
-| `effectiveGravity()` | -f | (0, -1, 0) | tilts toward +z | tilts toward -x |
+| `gm_gforce_dynamic` | f - (0,1,0) | 0 | z < 0 | x > 0 |
+| `gm_gforce_inertial` | -(f - (0,1,0)) | 0 | z > 0 (to windshield) | x < 0 (to the left) |
+| `gm_gforce_effective_gravity` | -f | (0, -1, 0) | tilts toward +z | tilts toward -x |
 
-Every effect uses `inertial()` (where a loose object goes) or
-`effectiveGravity()` (the body force on a fluid). A liquid surface settles
-perpendicular to `effectiveGravity()`, so its slope is a_horizontal / g_vertical.
-Note that on a hill the liquid tilts relative to the car; that is physically
-right for liquid and arguably wrong for a g-ball, and separating road grade
-from braking would need a gyro-based attitude estimate.
+Every effect uses `gm_gforce_inertial` (where a loose object goes) or
+`gm_gforce_effective_gravity` (the body force on a fluid). A liquid surface
+settles perpendicular to the effective gravity, so its slope is a_horizontal /
+g_vertical. Note that on a hill the liquid tilts relative to the car; that is
+physically right for liquid and arguably wrong for a g-ball, and separating
+road grade from braking would need a gyro-based attitude estimate.
 
-**Mounting calibration** (`GForceEstimator`): average the rest vector to get
+**Mounting calibration** (`gm_estimator_t`): average the rest vector to get
 "up" in the sensor frame; take a nominal forward axis (sensor +z by default,
 `cal fwd`), remove its component along "up" (Gram-Schmidt), and build the
 matrix with rows right = forward x up, up, forward. A hint within 30 degrees
@@ -72,33 +60,34 @@ keeps a braking-refined forward.
 ## Voxel frame layout
 
 Each layer is stored exactly as SSD1306/SSD1309 GDDRAM in horizontal
-addressing mode: `kPages = H/8` rows of 128 bytes, each byte holding eight
-vertically stacked pixels with bit 0 at the top. `VoxelFrame::layer(z)` is
-therefore DMA-ready: the display driver sends a window command and streams the
-bytes with no repacking. The host viewer decodes the same layout.
+addressing mode: `GM_PAGES = GM_H / 8` rows of 128 bytes, each byte holding
+eight vertically stacked pixels with bit 0 at the top. `gm_frame_layer(f, z)`
+is therefore DMA-ready: the display driver sends a window command and streams
+the bytes with no repacking.
 
-Primitives: dithered `plot(x, y, z, intensity)` (ordered Bayer 8x8 with a
-per-layer offset so adjacent layers do not moire), lines, rectangles, discs,
-3D spheres rendered as per-layer discs, 3D lines, a 3x5 HUD font, and a
-dithered `crossfade` used for mode transitions.
+Primitives: dithered `gm_frame_plot(f, x, y, z, intensity)` (ordered Bayer 8x8
+with a per-layer offset so adjacent layers do not moire), lines, rectangles,
+discs, 3D spheres rendered as per-layer discs, 3D lines, a 3x5 HUD font, and a
+dithered `gm_frame_crossfade` used for mode transitions.
 
 ## Effects
 
-`Effect` has `update(ctx)` (physics; may substep) and `render(frame)`;
-`activate()/deactivate()` let heavy effects own their buffers only while shown.
-In C an effect is a struct starting with `gm_effect_t` whose vtable holds the
-same functions.
-Every tunable is registered in a `ParamTable` so the serial CLI (`get`, `set`),
-the simulator (`--param`) and a future web page can tune it by name.
-`docs/EFFECTS.md` describes each effect and its parameters.
+An effect is a struct whose first member is `gm_effect_t`. Its vtable
+(`gm_effect_vtbl_t`) holds `update` (physics; may substep) and `render`, and
+optionally `reset`, `activate` / `deactivate` (heavy effects own their buffers
+only while shown) and `burn_in_offset`. Every tunable is registered in the
+effect's parameter table (`gm_params_add`), so the serial CLI (`get`, `set`)
+and a future web page can tune it by name. `docs/EFFECTS.md` describes each
+effect and its parameters.
 
-The `Engine` owns the active effect, runs a 0.4 s dithered crossfade on mode
-changes, optionally auto-cycles effects, and overlays the mode name or a
-numeric readout on the front layer. In the single-effect (HUD) edition, while
-the picture is not live sensor data, the firmware also has it draw a small tag
-at the front layer's bottom right: `DEMO`, `SERIAL`, or `NO SENSOR` when the
-IMU stops answering. Last of all it moves the whole frame by the effect's
-`burnInOffset()` (the HUD's anti-burn-in orbit; zero for the other effects).
+The engine (`gm_engine_t`) owns the active effect, runs a 0.4 s dithered
+crossfade on mode changes, optionally auto-cycles effects, and overlays the
+mode name or a numeric readout on the front layer. In the single-effect (HUD)
+edition, while the picture is not live sensor data, the firmware also has it
+draw a small tag at the front layer's bottom right: `DEMO`, `SERIAL`, or
+`NO SENSOR` when the IMU stops answering. Last of all it moves the whole
+frame by the effect's `burn_in_offset` (the HUD's anti-burn-in orbit; zero
+for the other effects).
 
 The HUD edition (menuconfig: Gmeter > Edition, or `idf/configs/hud.defaults`)
 boots into `hud` whatever was saved, turns auto-cycle off, and refuses
@@ -121,10 +110,10 @@ Frames are triple-buffered: the renderer writes to the buffer that is neither
 displaying nor queued; if the display falls behind, the newest frame wins and
 `status` counts the drop. The g vector, source and buffer indices are shared
 under a spinlock. The engine and its effects are guarded by a FreeRTOS
-mutex: `renderTask` holds it while stepping, and the CLI and mode button hold
+mutex: `render_task` holds it while stepping, and the CLI and mode button hold
 it while they change modes or parameters, so a mode switch can never race a
 step (smoke allocates and frees its buffers on activate/deactivate). The
-estimator has its own mutex between `imuTask` and the CLI. Floats are never
+estimator has its own mutex between `imu_task` and the CLI. Floats are never
 touched in an ISR.
 
 Memory (128x56x8, classic ESP32): about 74 KB of static RAM, mostly the
@@ -145,26 +134,23 @@ first. At 128x64 the frames are 8 KB each and particles ~25 KB.
 | particles (300, 2 substeps) | ~1-3 ms | |
 | smoke 16x8x8, 6 iterations | ~6-15 ms per step | stepped at `rate` (default 30 Hz, minimum 20), rendered every frame |
 
-Host numbers from `gmeter_sim --bench` are roughly 20-40x faster than the
-ESP32; measure on target with `status` (step and SPI microseconds).
+Measure on target with `status` (step and SPI microseconds).
 
 ## Compile-time geometry
 
-| Macro | Constraint | Host CMake |
+| Macro | Constraint | Set by |
 | --- | --- | --- |
-| `GM_PANEL_W` | must be 128 in the firmware (the driver addresses columns 0..127) | `-DGM_PANEL_W=` |
-| `GM_PANEL_H` | multiple of 8; 56 for the transparent panels, 64 for generic modules | `-DGM_PANEL_H=` |
-| `GM_LAYERS` | 1..8 in the firmware (one chip-select pin per layer) | `-DGM_LAYERS=` |
-| `GM_LAYER_PITCH_PX` | panel spacing in mm / 0.274 | `-DGM_LAYER_PITCH_PX=` |
-| `GM_SMOKE_NX`, `GM_SMOKE_NY` | NX divides the width, NY the height; default 4x4-px cells, ESP32 builds use 16 x 8 | `-DGM_SMOKE_NX=` / `-DGM_SMOKE_NY=` |
-| Panel model, SPI clock, frame rate, flip mask, panel order | firmware only | n/a |
+| `GM_PANEL_W` | must be 128 in the firmware (the driver addresses columns 0..127) | `gm_config.h` (128) |
+| `GM_PANEL_H` | multiple of 8; 56 for the transparent panels, 64 for generic modules | menuconfig (Gmeter > Panels); `-DGM_PANEL_H=` for `idf/test` |
+| `GM_LAYERS` | 1..8 in the firmware (one chip-select pin per layer) | `gm_config.h` (8) |
+| `GM_LAYER_PITCH_PX` | panel spacing in mm / 0.274 | `gm_config.h` (16) |
+| `GM_SMOKE_NX`, `GM_SMOKE_NY` | NX divides the width, NY the height; the header default is 4x4-px cells | `idf/components/gmeter_core/CMakeLists.txt` (16 x 8) |
+| Panel model, SPI clock, frame rate, flip mask, panel order | firmware only | menuconfig |
 
-In the firmware the panel height comes from menuconfig (Gmeter > Panels):
-`CONFIG_GMETER_PANEL_H` sets it through `gm_config.h`, the width is
-`gm_config.h`'s default of 128, and the smoke grid is fixed at 16 x 8 in
-`idf/components/gmeter_core/CMakeLists.txt`.
-`idf/main/board_config.h` checks the width and layer limits. Tests pass at
-128x56 and 128x64.
+In the firmware `CONFIG_GMETER_PANEL_H` sets the panel height through
+`gm_config.h`. `idf/test` compiles the core with the same geometry and smoke
+grid. `idf/main/board_config.h` checks the width and layer limits. Tests pass
+at 128x56 and 128x64.
 
 ## Next steps
 
@@ -175,8 +161,10 @@ In the firmware the panel height comes from menuconfig (Gmeter > Panels):
    the default contrast ramp accordingly.
 3. Queue the SPI transfers (interrupt-driven) instead of polling, to free
    core 0.
-4. A Wi-Fi tuning page (the `ParamTable` already exposes everything by name).
+4. A Wi-Fi tuning page (the parameter tables already expose every tunable by
+   name).
 5. More effects: a wireframe box that shears with g, a "needle" through the
-   depth. Authored animations already go through Gmeter Studio.
+   depth. Authored animations already come from Gmeter Studio exports
+   (`idf/main/user_animation.h`).
 6. Optional gyro use (yaw rate) to separate hills from braking and to spin
    the smoke.

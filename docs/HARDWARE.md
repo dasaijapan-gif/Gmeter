@@ -24,8 +24,7 @@ exposes SPI (pins include DC, RES, CS and MOSI) and DFRobot's GDI connector.
 DFRobot lists the module as 128 x 64 and 3.3 V. The controller has 64 rows, but
 the fully transparent area is 128 x 56; the remaining rows sit on the
 non-transparent strip near the pins. Only SPI is useful for a stack, since
-there is one GDI connector per controller board. Gmeter Studio models this
-module.
+there is one GDI connector per controller board.
 
 Consequences for a stack of eight:
 
@@ -95,7 +94,7 @@ core time.
 
 The bus is write-only. A panel scrambled by ignition noise cannot report it,
 so the firmware re-sends the window command every frame and does a soft
-refresh every `reinitMinutes` (default 10, set with `reinit <minutes>`, 0 = off):
+refresh every few minutes (default 10, set with `reinit <minutes>`, 0 = off):
 every register is re-sent without a reset, RAM clear or delay, so nothing
 blinks. Bare `reinit` does a hard reset (RES pulse, init, clear, 100 ms wait),
 which blanks the stack for about 0.12 s.
@@ -147,7 +146,7 @@ mg, which shows as a permanent small lean of the liquid; `zero on` enables a
 slow re-zero of the horizontal axes while the car is provably still.
 
 A premium alternative is the LSM6DSO/LSM6DSOX (much lower noise and offset,
-in production); the `Mpu6050` class is small enough to clone for it.
+in production); `idf/main/imu_mpu6050.c` is small enough to clone for it.
 
 ## Open questions only the builder can answer
 

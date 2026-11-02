@@ -129,10 +129,11 @@ harmless.
 
 ## 6. Custom artwork
 
-Draw an animation in Gmeter Studio and export it. Save the exported header as
-`main/user_animation.h` and rebuild: the `anim` effect then plays your artwork
-instead of the built-in demo (`mode anim`, then `status` shows its name).
-Delete the file to go back to the demo.
+Animations are drawn in Gmeter Studio, a separate web page with a 3D preview
+of the panel stack. Save the header it exports as `main/user_animation.h` and
+rebuild: the `anim` effect then plays your artwork instead of the built-in
+demo (`mode anim`, then `status` shows its name). Delete the file to go back
+to the demo.
 
 ## 7. Start-up output
 

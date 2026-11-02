@@ -1,6 +1,6 @@
 # Third-party material
 
-## Japanese glyphs (`idf/components/gmeter_core/src/gm_jp_glyphs.c` in the firmware, `lib/gmeter_core/src/gmeter/jp_glyphs.cpp` in the PC tools)
+## Japanese glyphs (`idf/components/gmeter_core/src/gm_jp_glyphs.c`)
 
 The kanji and kana bitmaps used by the `hud`, `atfield` and `sync` effects
 were rasterized by `tools/make_glyphs.py` from:
@@ -12,11 +12,11 @@ As packaged by Fontsource (`@fontsource/noto-serif-jp` and
 `@fontsource/noto-sans-jp`, version 5.3.1, both published under OFL-1.1),
 whose licence file names the copyright holder as Google Inc.
 
-`gm_jp_glyphs.c` and `jp_glyphs.cpp` hold the same bitmaps, a modified,
-subsetted version of these fonts, and are
-licensed under the SIL Open Font License, Version 1.1, reproduced below. The
-rest of this project is MIT licensed (see `LICENSE`); the OFL does not extend
-to the firmware or other software that uses the glyphs.
+`gm_jp_glyphs.c` holds the bitmaps, a modified, subsetted version of these
+fonts, and is licensed under the SIL Open Font License, Version 1.1,
+reproduced below. The rest of this project is MIT licensed (see `LICENSE`);
+the OFL does not extend to the firmware or other software that uses the
+glyphs.
 
 ```
 Google Inc.

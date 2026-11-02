@@ -95,8 +95,8 @@ static inline gm_vec3_t gm_mat3_apply(const gm_mat3_t* a, gm_vec3_t v) {
 }
 
 // ---- random numbers -------------------------------------------------------------
-// Deterministic, cheap PRNG (xorshift32). Same sequence on host and target so
-// recorded simulator output is reproducible.
+// Deterministic, cheap PRNG (xorshift32). Same sequence on host and target, so
+// the host tests see exactly what the unit draws.
 #define GM_RNG_DEFAULT_SEED 0x9E3779B9u
 
 typedef struct {

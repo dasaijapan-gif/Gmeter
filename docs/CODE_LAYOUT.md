@@ -1,9 +1,8 @@
 # Code layout
 
 The ESP32 firmware is the ESP-IDF project in `idf/`, written in C: it is what
-the supplier builds and flashes. Everything else runs on a PC: Gmeter Studio,
-the simulator and their C++ copy of the core (`lib/gmeter_core`), the tests,
-the tools and the docs.
+the supplier builds and flashes. The rest is the core's tests (run on a PC),
+the release and emulator tools, and the docs.
 
 ```
 gmeter/
@@ -13,11 +12,8 @@ gmeter/
 │   ├── main/                 The application: tasks, drivers, serial commands, settings, menuconfig options
 │   ├── components/gmeter_core/   Hardware-independent core in C: g-force maths and all effects
 │   ├── configs/              sdkconfig overlays for the release variants (HUD edition, 128x64 panels)
-│   └── host_test/            PC tests that compare the C core with the C++ core, frame by frame
-├── lib/gmeter_core/          The same core in C++, for Gmeter Studio and the simulator
-├── host/                     PC builds: simulator, C++ unit tests, browser Studio (WebAssembly)
-├── tests/                    C++ unit tests for the core
-├── tools/                    Helper scripts (Studio build, glyphs, sprites, serial g feed, QEMU checks, release)
+│   └── test/                 PC tests of the core: behaviour tests and recorded reference outputs
+├── tools/                    Helper scripts (release, QEMU checks, glyphs)
 └── docs/                     Hardware, architecture, effects, supplier guides (standard and HUD), licences
 ```
 
@@ -82,31 +78,20 @@ tests. Headers in `include/`, sources in `src/`. Every name starts with `gm_`.
 | `atfield` | `gm_atfield.*` | Octagon shockwaves through the stack. |
 | `sync` | `gm_sync.*` | Sync-graph traces of each g axis. |
 
-### Tests: `idf/host_test/`
+### Tests: `idf/test/`
 
-A CMake project for the PC that compiles this C core and the C++ core
-(`lib/gmeter_core`) with the same flags and checks, for every module and
-effect, that they produce bit-identical frames and numbers on the same input
-(18 test files: `test_anim.cpp`, `test_atfield.cpp`, `test_core_math.cpp`, `test_engine.cpp`, `test_estimator.cpp`, `test_frame.cpp`, `test_gball.cpp`, `test_gstate.cpp`, `test_hud.cpp`, `test_jp_text.cpp`, `test_params.cpp`, `test_particles.cpp`, `test_scenario.cpp`, `test_slosh.cpp`, `test_smoke.cpp`, `test_sprite.cpp`, `test_sync.cpp`, `test_tunnel.cpp`). `harness.hpp` and
-`main.cpp` are its small test framework; `fixtures/user_animation.h` is a real
-Gmeter Studio export in the C/C++ header format.
+A CMake project for the PC that builds the core with the firmware's geometry
+and runs behaviour tests (`test_behaviour.c`, `test_properties.c`) and
+reference-output cases (`test_golden.c`, digests in `golden_56.txt` and
+`golden_64.txt`). `main.c` and `test.h` are its small test framework;
+`fixtures/user_animation.h` is a real Gmeter Studio export. `README.md`
+explains how to run, debug and re-record it. Not shipped to the supplier.
 
-## PC side
+## Tools
 
 | Path | What it does |
 | --- | --- |
-| `lib/gmeter_core/` | The C++17 core (`gmeter/*.hpp`, `*.cpp`, `effects/`), the original the C core was ported from. Gmeter Studio and the simulator use it. |
-| `host/CMakeLists.txt` | Builds the C++ core, its unit tests and the simulator. |
-| `host/sim_main.cpp` | Simulator: feeds recorded drives through a simulated sensor and the real effects; prints or records frames. Picks up `idf/main/user_animation.h`. |
-| `host/viewer/index.html` | Replay viewer for recorded frames. |
-| `host/web/studio.html`, `host/web/wasm_api.cpp` | Gmeter Studio: the C++ core compiled to WebAssembly, a 3D view of the stack, a drive simulator and an animation editor; exports `main/user_animation.h`. |
-| `tests/test_core.cpp` | Unit tests for the C++ core. |
-| `tests/fixtures/studio_export.hpp` | A real Gmeter Studio export that the C++ tests compile and play. |
-| `tools/build_studio.py` | Compiles the C++ core to WebAssembly and bundles Gmeter Studio. |
-| `tools/make_viewer.py` | Wraps a recording into a standalone viewer page. |
-| `tools/img2sprite.py` | Converts images into 1-bit sprite data. |
-| `tools/make_glyphs.py` | Regenerates the Japanese glyph bitmaps for both cores (`--c-out` for the C file). |
-| `tools/serial_gforce.py` | Sends recorded g-force to the ESP32 over USB for bench tests. |
+| `tools/make_glyphs.py` | Regenerates the Japanese glyph bitmaps (`gm_jp_glyphs.c`) from the Noto fonts. |
 | `tools/qemu_boot_check.py` | Boots a firmware image in Espressif's QEMU emulator, types a script of serial commands and reports crashes, resets and missing `expect`ed output. |
 | `tools/qemu_std_check.txt`, `tools/qemu_hud_check.txt` | Scripts for it: the standard edition answers every basic command and switches to every effect; the HUD edition boots into `hud`, stays there and refuses to switch. |
 | `tools/make_release.py` | Builds the three firmware variants of an edition with ESP-IDF from the committed source and assembles the supplier package (`--edition hud` for the HUD edition). |
