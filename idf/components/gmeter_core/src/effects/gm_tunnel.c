@@ -67,7 +67,6 @@ static const gm_effect_vtbl_t k_tunnel_vtbl = {
 };
 
 void gm_tunnel_init(gm_tunnel_t* t) {
-  t->base.vt = &k_tunnel_vtbl;
   t->scale_g = 1.0f;
   t->r_front = (float)(GM_H / 2 - 2);
   t->r_back = 5.0f;
@@ -77,12 +76,8 @@ void gm_tunnel_init(gm_tunnel_t* t) {
   t->pulse_hz = 0.3f;
   t->pulse_per_g = 2.5f;
   t->hz = 2.5f;
-  gm_spring3_snap(&t->offs, gm_vec3_zero());
-  t->phase = 0.0f;
-  t->depth_phase = 0.0f;
 
-  gm_param_table_t* p = &t->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&t->base, &k_tunnel_vtbl);
   gm_params_add(p, "scale_g", &t->scale_g, 0.2f, 3.0f, "g for full bend");
   gm_params_add(p, "r_front", &t->r_front, 4.0f, (float)(GM_H / 2 - 1), "front ring radius px");
   gm_params_add(p, "r_back", &t->r_back, 1.0f, 20.0f, "back ring radius px");

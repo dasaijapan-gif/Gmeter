@@ -3,6 +3,7 @@
 // the double versions of the libm functions (sqrt, sin, ...): use sqrtf, sinf.
 #pragma once
 
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -30,6 +31,11 @@ static inline float gm_smoothstepf(float e0, float e1, float x) {
 static inline float gm_signf(float v) { return v < 0.0f ? -1.0f : 1.0f; }
 static inline int gm_ifloor(float v) { return (int)floorf(v); }
 static inline int gm_iround(float v) { return (int)floorf(v + 0.5f); }
+// (int)v and gm_iround, but INT_MIN for NaN, infinite and out-of-range values,
+// where the plain conversion is undefined. Only NaN or absurd g input gets
+// such values to the effects that use these.
+static inline int gm_to_int(float v) { return v >= -2147483648.0f && v < 2147483648.0f ? (int)v : INT_MIN; }
+static inline int gm_iround_safe(float v) { return gm_to_int(floorf(v + 0.5f)); }
 // Smaller / larger of two values; the first argument wins a tie.
 static inline float gm_minf(float a, float b) { return b < a ? b : a; }
 static inline float gm_maxf(float a, float b) { return a < b ? b : a; }

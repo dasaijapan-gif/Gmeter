@@ -8,16 +8,46 @@
 // (or the engine), passing &effect.base.
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "gm_frame.h"
 #include "gm_gforce.h"
-#include "gm_params.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+// ---- parameters (gm_params.c) ---------------------------------------------------------
+// Tiny registry so every effect's tunables can be listed and set by name from
+// the serial command line.
+#define GM_PARAMS_MAX 24
+
+typedef struct {
+  const char* name;
+  float* value;
+  float min, max;
+  const char* help;
+} gm_param_t;
+
+typedef struct {
+  gm_param_t items[GM_PARAMS_MAX];
+  int count;
+} gm_param_table_t;
+
+// Empties the table.
+void gm_params_init(gm_param_table_t* t);
+// Registers a tunable; ignored once the table is full. `help` may be "".
+void gm_params_add(gm_param_table_t* t, const char* name, float* value, float min, float max, const char* help);
+static inline int gm_params_count(const gm_param_table_t* t) { return t->count; }
+static inline const gm_param_t* gm_params_at(const gm_param_table_t* t, int i) { return &t->items[i]; }
+// NULL when there is no parameter of that name.
+const gm_param_t* gm_params_find(const gm_param_table_t* t, const char* name);
+// Clamps to the parameter's range. False for an unknown name or a non-finite value.
+bool gm_params_set(gm_param_table_t* t, const char* name, float v);
+bool gm_params_get(const gm_param_table_t* t, const char* name, float* out);
+
+// ---- effects --------------------------------------------------------------------------
 typedef struct {
   gm_gforce_t g;   // filtered g-force, car frame
   float dt;        // seconds since the previous update (clamped by the engine)
@@ -52,6 +82,13 @@ struct gm_effect {
   gm_param_table_t params;
 };
 
+// For an effect's init function: sets the vtable and empties the parameter
+// table, which it returns for gm_params_add.
+static inline gm_param_table_t* gm_effect_init(gm_effect_t* e, const gm_effect_vtbl_t* vt) {
+  e->vt = vt;
+  gm_params_init(&e->params);
+  return &e->params;
+}
 static inline const char* gm_effect_name(const gm_effect_t* e) { return e->vt->name; }
 static inline void gm_effect_reset(gm_effect_t* e) {
   if (e->vt->reset) e->vt->reset(e);

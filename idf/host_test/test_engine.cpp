@@ -264,6 +264,12 @@ struct World {
   }
 };
 
+// The serial `set` command: a tunable of the current effect.
+bool set_param(gm_engine_t* e, const char* name, float v) {
+  gm_effect_t* cur = gm_engine_current(e);
+  return cur && gm_params_set(gm_effect_params(cur), name, v);
+}
+
 }  // namespace
 
 TEST(engine_empty) {
@@ -279,7 +285,7 @@ TEST(engine_empty) {
   gm_engine_set_effect(w.ce.get(), 0, true);
   w.pe->setEffect(0);
   EXPECT(ex, gm_engine_set_effect_by_name(w.ce.get(), "ball", true) == w.pe->setEffect("ball"));
-  EXPECT(ex, gm_engine_set_param(w.ce.get(), "gain", 2.0f) == w.pe->setParam("gain", 2.0f));
+  EXPECT(ex, set_param(w.ce.get(), "gain", 2.0f) == w.pe->setParam("gain", 2.0f));
   EXPECT(ex, gm_engine_add_effect(w.ce.get(), nullptr) == w.pe->addEffect(nullptr));
   w.compare(ex, "empty ops");
 }
@@ -378,7 +384,7 @@ TEST(engine_random_operation_sequences) {
         const char* n = r.pick(params);
         static const float kOdd[] = {diff::kNaN, diff::kInf, -diff::kInf, 100.0f, -100.0f, 0.0f};
         const float v = r.chance(0.2) ? r.pick(kOdd) : r.frange(-7.0f, 7.0f);
-        EXPECT(ex, gm_engine_set_param(w.ce.get(), n, v) == w.pe->setParam(n, v));
+        EXPECT(ex, set_param(w.ce.get(), n, v) == w.pe->setParam(n, v));
       } else {
         if (r.chance(0.03)) target = gm_vec3(r.frange(-1.5f, 1.5f), r.frange(-1.0f, 1.0f), r.frange(-1.5f, 1.5f));
         dyn = gm_vec3_lerp(dyn, target, 0.1f);

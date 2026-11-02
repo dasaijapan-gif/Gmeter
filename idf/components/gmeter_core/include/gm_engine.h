@@ -1,6 +1,6 @@
 // Runs the active effect, handles mode switching with a dithered crossfade,
 // and overlays optional HUD text. Owns no hardware: feed it a g-force and a
-// dt, read back the frame. A gm_engine_t holds three frames (about 21-24 KB):
+// dt, read back the frame. A gm_engine_t holds two frames (about 14-16 KB):
 // keep it in static or heap memory.
 #pragma once
 
@@ -28,7 +28,7 @@ typedef struct {
   bool readout;
   const char* status_label;
   gm_effect_ctx_t ctx;
-  gm_frame_t out, scratch_a, scratch_b;
+  gm_frame_t out, scratch;  // scratch: the outgoing effect during a crossfade
 } gm_engine_t;
 
 void gm_engine_init(gm_engine_t* e);
@@ -66,9 +66,6 @@ void gm_engine_step(gm_engine_t* e, gm_gforce_t g, float dt);
 static inline const gm_frame_t* gm_engine_frame(const gm_engine_t* e) { return &e->out; }
 static inline float gm_engine_time(const gm_engine_t* e) { return e->ctx.time; }
 static inline uint32_t gm_engine_frame_count(const gm_engine_t* e) { return e->ctx.frame; }
-
-// Parameter access on the current effect.
-bool gm_engine_set_param(gm_engine_t* e, const char* name, float v);
 
 #ifdef __cplusplus
 }

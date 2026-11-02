@@ -311,7 +311,7 @@ TEST(engine_registry) {
   static gm_tunnel_t fx[GM_ENGINE_MAX_EFFECTS + 1];
   gm_engine_init(&e);
   CHECK(gm_engine_current(&e) == NULL && gm_engine_current_index(&e) == -1);
-  CHECK(!gm_engine_set_param(&e, "hz", 1.0f));
+  CHECK(!engine_set_param(&e, "hz", 1.0f));
   gm_engine_step(&e, gm_gforce_rest(), 1.0f / 60.0f);  // nothing to run: a blank frame
   CHECK(lit(gm_engine_frame(&e)) == 0);
   gm_engine_next_effect(&e);

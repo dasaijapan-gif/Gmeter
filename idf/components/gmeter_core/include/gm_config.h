@@ -6,13 +6,8 @@
 // Panels) and the width is always 128; host builds pass -D flags.
 #pragma once
 
+#include <assert.h>
 #include <stdint.h>
-
-#ifdef __cplusplus
-#define GM_STATIC_ASSERT(cond, msg) static_assert(cond, msg)
-#else
-#define GM_STATIC_ASSERT(cond, msg) _Static_assert(cond, msg)
-#endif
 
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
@@ -37,14 +32,14 @@
 #define GM_LAYER_PITCH_PX 16.0f
 #endif
 
-GM_STATIC_ASSERT(GM_PANEL_H % 8 == 0, "panel height must be a multiple of 8 (SSD130x page format)");
-GM_STATIC_ASSERT(GM_LAYERS >= 1 && GM_LAYERS <= 32, "unsupported layer count");
+static_assert(GM_PANEL_H % 8 == 0, "panel height must be a multiple of 8 (SSD130x page format)");
+static_assert(GM_LAYERS >= 1 && GM_LAYERS <= 32, "unsupported layer count");
 
 #define GM_W GM_PANEL_W  // columns per panel (car left -> right)
 #define GM_H GM_PANEL_H  // rows per panel    (car up -> down, screen convention)
 #define GM_D GM_LAYERS   // layers            (viewer -> windshield)
 #define GM_PAGES (GM_H / 8)  // SSD130x pages per panel
-GM_STATIC_ASSERT(GM_PAGES <= 8, "at most 64 rows per panel (gm_frame_shift packs a column into 64 bits)");
+static_assert(GM_PAGES <= 8, "at most 64 rows per panel (gm_frame_shift packs a column into 64 bits)");
 #define GM_BYTES_PER_LAYER (GM_W * GM_PAGES)
 #define GM_BYTES_PER_FRAME (GM_BYTES_PER_LAYER * GM_D)
 

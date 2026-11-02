@@ -265,8 +265,9 @@ TEST(hud_params) {
                 {"hz", &c->hz},               {"inertia", &c->inertia},   {"warn_g", &c->warn_g},
                 {"danger_g", &c->danger_g},   {"ball_r", &c->ball_r},     {"title_z", &c->title_z},
                 {"trail_s", &c->trail_s},     {"title", &c->title},       {"axes", &c->axes},
-                {"frame", &c->frame},         {"enter_g", &c->enter_g},   {"hold_s", &c->hold_s},
-                {"bump_g", &c->bump_g},       {"orbit_min", &c->orbit_min}};
+                {"frame", &c->frame},         {"enter_g", &c->tracker.enter_g},
+                {"hold_s", &c->tracker.hold_s}, {"bump_g", &c->tracker.bump_g},
+                {"orbit_min", &c->orbit_min}};
   EXPECT(ex, gm_params_count(gm_effect_params(fx.ce())) == static_cast<int>(sizeof(fields) / sizeof(fields[0])));
   for (int i = 0; i < static_cast<int>(sizeof(fields) / sizeof(fields[0])); ++i) {
     const gm_param_t* prm = gm_params_find(gm_effect_params(fx.ce()), fields[i].name);

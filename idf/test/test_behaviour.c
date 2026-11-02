@@ -508,12 +508,12 @@ TEST(engine_switching_and_params) {
   }
   CHECK(total > 0);
   CHECK(gm_engine_current_index(&eng) == 1);
-  CHECK(gm_engine_set_param(&eng, "fill", 0.3f));
+  CHECK(engine_set_param(&eng, "fill", 0.3f));
   float v = 0.0f;
   CHECK(gm_params_get(gm_effect_params(gm_engine_current(&eng)), "fill", &v));
   CHECK_NEAR(v, 0.3f, 1e-6f);
-  CHECK(!gm_engine_set_param(&eng, "nonexistent", 1.0f));
-  gm_engine_set_param(&eng, "fill", 99.0f);  // clamped
+  CHECK(!engine_set_param(&eng, "nonexistent", 1.0f));
+  engine_set_param(&eng, "fill", 99.0f);  // clamped
   gm_params_get(gm_effect_params(gm_engine_current(&eng)), "fill", &v);
   CHECK(v <= 0.8f);
   gm_engine_next_effect(&eng);

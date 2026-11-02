@@ -25,7 +25,7 @@ extern "C" {
 #define GM_SMOKE_N (GM_SMOKE_SX * GM_SMOKE_SY * GM_SMOKE_SZ)
 #define GM_SMOKE_CX (GM_W / GM_SMOKE_NX)  // pixels per cell
 #define GM_SMOKE_CY (GM_H / GM_SMOKE_NY)
-GM_STATIC_ASSERT(GM_W % GM_SMOKE_NX == 0 && GM_H % GM_SMOKE_NY == 0, "smoke grid must tile the panel");
+static_assert(GM_W % GM_SMOKE_NX == 0 && GM_H % GM_SMOKE_NY == 0, "smoke grid must tile the panel");
 
 typedef struct {
   gm_effect_t base;

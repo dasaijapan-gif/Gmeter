@@ -31,10 +31,9 @@ typedef struct {
   float idle;         // slow idle pulse from the centre
   float double_ring;  // second, inner octagon (parameter "double")
   float label;        // A.T.フィールド / 全開 captions
-  float bump_g;
 
   gm_atfield_ripple_t ripples[GM_ATFIELD_MAX_RIPPLES];
-  gm_gstate_t tracker;
+  gm_gstate_t tracker;  // holds the bump_g tunable
   float emit_accum;
   float idle_timer;
   int last_step;

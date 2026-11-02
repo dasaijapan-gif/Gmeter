@@ -234,7 +234,7 @@ makes, save it as `source/gmeter/main/user_animation.h` and rebuild.
 | Check | Result |
 | --- | --- |
 | Builds with ESP-IDF v5.5.6 (all three variants) | Pass, no compiler warnings |
-| Memory, classic ESP32 | 81 KB of the 181 KB static RAM, 326 KB of the 2 MB app partition |
+| Memory, classic ESP32 | 74 KB of the 181 KB static RAM, 324 KB of the 2 MB app partition |
 | Boots and runs every effect in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; every command of section 5 | Pass: no crash or reset once running, about 60 fps |
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
 | The effects and g-force maths compute exactly what the PC tools (Gmeter Studio, simulator) compute | Pass: 153 tests on a PC, about 19 million checks per panel size, bit-identical at 128x56 and 128x64 |

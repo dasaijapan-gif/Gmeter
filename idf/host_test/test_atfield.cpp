@@ -173,7 +173,7 @@ TEST(atfield_params) {
     float* field;
   } fields[] = {{"speed", &c->speed},   {"life", &c->life},          {"rate_g", &c->rate_g},
                 {"min_g", &c->min_g},   {"step_g", &c->step_g},      {"idle", &c->idle},
-                {"double", &c->double_ring}, {"label", &c->label}, {"bump_g", &c->bump_g}};
+                {"double", &c->double_ring}, {"label", &c->label}, {"bump_g", &c->tracker.bump_g}};
   EXPECT(ex, gm_params_count(gm_effect_params(fx.ce())) == static_cast<int>(sizeof(fields) / sizeof(fields[0])));
   for (const auto& fd : fields) {
     const gm_param_t* prm = gm_params_find(gm_effect_params(fx.ce()), fd.name);

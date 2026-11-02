@@ -127,8 +127,8 @@ step (smoke allocates and frees its buffers on activate/deactivate). The
 estimator has its own mutex between `imuTask` and the CLI. Floats are never
 touched in an ISR.
 
-Memory (128x56x8, classic ESP32): about 81 KB of static RAM, mostly the
-engine's three frames at 7 KB each, slosh ~11.5 KB and particles ~23 KB; the
+Memory (128x56x8, classic ESP32): about 74 KB of static RAM, mostly the
+engine's two frames at 7 KB each, slosh ~11.5 KB and particles ~23 KB; the
 three transfer buffers and the display driver's scratch frames come from
 DMA-capable heap at start-up. Smoke needs 57.6 KB of heap only while active
 (16x8x8 grid on classic ESP32). On an S3, 32x8x8 (~109 KB) is the next grid

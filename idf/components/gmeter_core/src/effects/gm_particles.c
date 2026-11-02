@@ -4,7 +4,6 @@
 // collapsing onto one pixel row (a tiny particle-in-cell fluid).
 #include "gm_particles.h"
 
-#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -12,12 +11,6 @@
 #define GX GM_PARTICLES_GX
 #define GY GM_PARTICLES_GY
 #define GZ GM_PARTICLES_GZ
-
-// (int)v as an x86 build of the C++ computes it: INT_MIN for NaN, infinite and
-// out-of-range values (the conversion is undefined there), without the
-// undefined behaviour. Only non-finite positions (after NaN or infinite g
-// input) reach such values here: in the grid lookups and in render.
-static int to_int(float v) { return v >= -2147483648.0f && v < 2147483648.0f ? (int)v : INT_MIN; }
 
 float gm_particles_gravity_px(const gm_particles_t* p) { return GM_STANDARD_GRAVITY * (float)GM_W / p->tank_width_m; }
 
@@ -49,8 +42,8 @@ static void splat_density(gm_particles_t* pe) {
   const int n = gm_particles_active_count(pe);
   for (int p = 0; p < n; ++p) {
     const gm_vec3_t g = grid_coord(pe->pos[p]);
-    const int i0 = gm_clampi(to_int(g.x), 0, GX - 2), j0 = gm_clampi(to_int(g.y), 0, GY - 2),
-              k0 = gm_clampi(to_int(g.z), 0, GZ - 2);
+    const int i0 = gm_clampi(gm_to_int(g.x), 0, GX - 2), j0 = gm_clampi(gm_to_int(g.y), 0, GY - 2),
+              k0 = gm_clampi(gm_to_int(g.z), 0, GZ - 2);
     const float fx = gm_clampf(g.x - (float)i0, 0.0f, 1.0f), fy = gm_clampf(g.y - (float)j0, 0.0f, 1.0f),
                 fz = gm_clampf(g.z - (float)k0, 0.0f, 1.0f);
     for (int dk = 0; dk < 2; ++dk) {
@@ -98,9 +91,9 @@ static void splat_density(gm_particles_t* pe) {
 static gm_vec3_t pressure_accel(const gm_particles_t* pe, gm_vec3_t world) {
   const gm_vec3_t g = grid_coord(world);
   // Grid coordinates are non-negative here, so truncation is a floor.
-  const int i = gm_clampi(to_int(g.x + 0.5f), 1, GX - 2);
-  const int j = gm_clampi(to_int(g.y + 0.5f), 1, GY - 2);
-  const int k = gm_clampi(to_int(g.z + 0.5f), 1, GZ - 2);
+  const int i = gm_clampi(gm_to_int(g.x + 0.5f), 1, GX - 2);
+  const int j = gm_clampi(gm_to_int(g.y + 0.5f), 1, GY - 2);
+  const int k = gm_clampi(gm_to_int(g.z + 0.5f), 1, GZ - 2);
   const float(*p)[GY][GX] = pe->pressure_field;
   // Central differences in cell units, converted to per-pixel.
   const float dx = (p[k][j][i + 1] - p[k][j][i - 1]) * (0.5f / CELL);
@@ -112,6 +105,23 @@ static gm_vec3_t pressure_accel(const gm_particles_t* pe, gm_vec3_t world) {
   // pressure is the stiffness for a 1 m tank; it scales with gravity so the
   // pile keeps its shape when tank_m changes.
   return gm_vec3_scale(gm_vec3(-dx, dy, -dz), pe->pressure / pe->tank_width_m);
+}
+
+// The two walls of one axis: clamp the coordinate x, reflect the normal velocity
+// v with restitution and slow the tangential components t1, t2.
+static void wall(float* x, float* v, float* t1, float* t2, float lim, float restitution) {
+  if (*x < -lim) {
+    *x = -lim;
+    if (*v < 0) *v = -*v * restitution;
+    *t1 *= 0.9f;
+    *t2 *= 0.9f;
+  }
+  if (*x > lim) {
+    *x = lim;
+    if (*v > 0) *v = -*v * restitution;
+    *t1 *= 0.9f;
+    *t2 *= 0.9f;
+  }
 }
 
 static void substep(gm_particles_t* pe, float dt, gm_vec3_t g_eff) {
@@ -139,42 +149,9 @@ static void substep(gm_particles_t* pe, float dt, gm_vec3_t g_eff) {
     if (v2 > vmax2) *v = gm_vec3_scale(*v, vmax / sqrtf(v2));
     *x = gm_vec3_add(*x, gm_vec3_scale(*v, dt));
     // Walls.
-    if (x->x < -lim.x) {
-      x->x = -lim.x;
-      if (v->x < 0) v->x = -v->x * pe->restitution;
-      v->y *= 0.9f;
-      v->z *= 0.9f;
-    }
-    if (x->x > lim.x) {
-      x->x = lim.x;
-      if (v->x > 0) v->x = -v->x * pe->restitution;
-      v->y *= 0.9f;
-      v->z *= 0.9f;
-    }
-    if (x->y < -lim.y) {
-      x->y = -lim.y;
-      if (v->y < 0) v->y = -v->y * pe->restitution;
-      v->x *= 0.9f;
-      v->z *= 0.9f;
-    }
-    if (x->y > lim.y) {
-      x->y = lim.y;
-      if (v->y > 0) v->y = -v->y * pe->restitution;
-      v->x *= 0.9f;
-      v->z *= 0.9f;
-    }
-    if (x->z < -lim.z) {
-      x->z = -lim.z;
-      if (v->z < 0) v->z = -v->z * pe->restitution;
-      v->x *= 0.9f;
-      v->y *= 0.9f;
-    }
-    if (x->z > lim.z) {
-      x->z = lim.z;
-      if (v->z > 0) v->z = -v->z * pe->restitution;
-      v->x *= 0.9f;
-      v->y *= 0.9f;
-    }
+    wall(&x->x, &v->x, &v->y, &v->z, lim.x, pe->restitution);
+    wall(&x->y, &v->y, &v->x, &v->z, lim.y, pe->restitution);
+    wall(&x->z, &v->z, &v->x, &v->y, lim.z, pe->restitution);
   }
 }
 
@@ -195,8 +172,8 @@ static void particles_render(gm_effect_t* self, gm_frame_t* f) {
   const bool big = pe->dot_size >= 1.5f;
   for (int p = 0; p < n; ++p) {
     const gm_vec3_t v = gm_world_to_voxel(pe->pos[p]);
-    // gm_iround without the undefined conversion of a NaN position.
-    const int x = to_int(floorf(v.x + 0.5f)), y = to_int(floorf(v.y + 0.5f)), z = to_int(floorf(v.z + 0.5f));
+    // A NaN position (after NaN or infinite g input) is off the panel.
+    const int x = gm_iround_safe(v.x), y = gm_iround_safe(v.y), z = gm_iround_safe(v.z);
     gm_frame_set(f, x, y, z);
     if (big) {
       gm_frame_set(f, x + 1, y, z);
@@ -217,7 +194,6 @@ static const gm_effect_vtbl_t k_particles_vtbl = {
 };
 
 void gm_particles_init(gm_particles_t* p) {
-  p->base.vt = &k_particles_vtbl;
   p->count = 300.0f;
   p->tank_width_m = 1.0f;
   p->drag = 0.6f;
@@ -227,14 +203,10 @@ void gm_particles_init(gm_particles_t* p) {
   p->jitter = 15.0f;
   p->dot_size = 1.0f;
   p->substeps = 2.0f;
-  memset(p->pos, 0, sizeof(p->pos));
-  memset(p->vel, 0, sizeof(p->vel));
   memset(p->density, 0, sizeof(p->density));
   memset(p->pressure_field, 0, sizeof(p->pressure_field));
-  gm_rng_seed(&p->rng, 777u);
 
-  gm_param_table_t* t = &p->base.params;
-  gm_params_init(t);
+  gm_param_table_t* t = gm_effect_init(&p->base, &k_particles_vtbl);
   gm_params_add(t, "count", &p->count, 1.0f, (float)GM_PARTICLES_MAX, "particles");
   gm_params_add(t, "tank_m", &p->tank_width_m, 0.1f, 10.0f, "virtual tank width (m)");
   gm_params_add(t, "drag", &p->drag, 0.0f, 10.0f, "air drag 1/s");

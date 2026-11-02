@@ -33,46 +33,32 @@ static inline void swap_ptr(float** a, float** b) {
   *b = t;
 }
 
-static void smoke_release(gm_smoke_t* s) {
-  free(s->u);
-  free(s->v);
-  free(s->w);
-  free(s->u0);
-  free(s->v0);
-  free(s->w0);
-  free(s->d);
-  free(s->d0);
-  s->u = s->v = s->w = s->u0 = s->v0 = s->w0 = s->d = s->d0 = NULL;
+// The eight grids, in allocation order.
+#define GRIDS(s) {&(s)->u, &(s)->v, &(s)->w, &(s)->u0, &(s)->v0, &(s)->w0, &(s)->d, &(s)->d0}
+
+void gm_smoke_deinit(gm_smoke_t* s) {
+  float** grids[] = GRIDS(s);
+  for (int i = 0; i < 8; ++i) {
+    free(*grids[i]);
+    *grids[i] = NULL;
+  }
 }
 
 static void smoke_allocate(gm_smoke_t* s) {
   if (s->d) return;
-  const size_t bytes = sizeof(float) * N;
-  s->u = (float*)malloc(bytes);
-  s->v = (float*)malloc(bytes);
-  s->w = (float*)malloc(bytes);
-  s->u0 = (float*)malloc(bytes);
-  s->v0 = (float*)malloc(bytes);
-  s->w0 = (float*)malloc(bytes);
-  s->d = (float*)malloc(bytes);
-  s->d0 = (float*)malloc(bytes);
+  float** grids[] = GRIDS(s);
+  bool ok = true;
+  for (int i = 0; i < 8; ++i) ok &= (*grids[i] = (float*)malloc(sizeof(float) * N)) != NULL;
   // Out of memory: free what was obtained and stay unallocated (the effect
-  // then draws nothing). The C++ new[] would throw here instead.
-  if (!s->u || !s->v || !s->w || !s->u0 || !s->v0 || !s->w0 || !s->d || !s->d0) smoke_release(s);
+  // then draws nothing).
+  if (!ok) gm_smoke_deinit(s);
 }
 
 static void smoke_reset(gm_effect_t* self) {
   gm_smoke_t* s = (gm_smoke_t*)self;
   if (!s->d) return;
-  const size_t bytes = sizeof(float) * N;
-  memset(s->u, 0, bytes);
-  memset(s->v, 0, bytes);
-  memset(s->w, 0, bytes);
-  memset(s->u0, 0, bytes);
-  memset(s->v0, 0, bytes);
-  memset(s->w0, 0, bytes);
-  memset(s->d, 0, bytes);
-  memset(s->d0, 0, bytes);
+  float** grids[] = GRIDS(s);
+  for (int i = 0; i < 8; ++i) memset(*grids[i], 0, sizeof(float) * N);
   s->accum = 0.0f;
   s->since_step = 0.0f;
 }
@@ -82,7 +68,7 @@ static void smoke_activate(gm_effect_t* self) {
   smoke_reset(self);
 }
 
-static void smoke_deactivate(gm_effect_t* self) { smoke_release((gm_smoke_t*)self); }
+static void smoke_deactivate(gm_effect_t* self) { gm_smoke_deinit((gm_smoke_t*)self); }
 
 float gm_smoke_total_density(const gm_smoke_t* s) {
   if (!s->d) return 0.0f;
@@ -194,10 +180,7 @@ static void project(const gm_smoke_t* s, float* u, float* v, float* w, float* p,
 
 static void smoke_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   gm_smoke_t* s = (gm_smoke_t*)self;
-  if (!s->d) {
-    smoke_allocate(s);
-    smoke_reset(self);
-  }
+  if (!s->d) smoke_activate(self);
   if (!s->d) return;  // out of memory
   // Run the solver at rate_hz regardless of the render rate (the dithered
   // rasterisation hides the lower physics rate). The schedule keeps its
@@ -299,7 +282,6 @@ static const gm_effect_vtbl_t k_smoke_vtbl = {
 };
 
 void gm_smoke_init(gm_smoke_t* s) {
-  s->base.vt = &k_smoke_vtbl;
   s->wind = 30.0f;
   s->buoyancy = 3.0f;
   s->emit = 4.0f;
@@ -315,8 +297,7 @@ void gm_smoke_init(gm_smoke_t* s) {
   s->u = s->v = s->w = s->u0 = s->v0 = s->w0 = s->d = s->d0 = NULL;
   gm_rng_seed(&s->rng, 4242u);
 
-  gm_param_table_t* p = &s->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&s->base, &k_smoke_vtbl);
   gm_params_add(p, "wind", &s->wind, 0.0f, 200.0f, "cells/s^2 per g");
   gm_params_add(p, "buoyancy", &s->buoyancy, 0.0f, 50.0f, "rise per unit density");
   gm_params_add(p, "emit", &s->emit, 0.0f, 200.0f, "emitter density/s");
@@ -328,5 +309,3 @@ void gm_smoke_init(gm_smoke_t* s) {
   gm_params_add(p, "gain", &s->gain, 0.1f, 10.0f, "density to brightness");
   gm_params_add(p, "swirl", &s->swirl, 0.0f, 20.0f, "emitter turbulence");
 }
-
-void gm_smoke_deinit(gm_smoke_t* s) { smoke_release(s); }

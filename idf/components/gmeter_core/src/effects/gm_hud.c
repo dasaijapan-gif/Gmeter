@@ -85,9 +85,6 @@ static void hud_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   }
   h->title_age += ctx->dt;
   h->bump_age += ctx->dt;
-  h->tracker.enter_g = h->enter_g;
-  h->tracker.hold_s = h->hold_s;
-  h->tracker.bump_g = h->bump_g;
   bool bumped = false;
   if (gm_gstate_update(&h->tracker, ctx->g, ctx->dt, &bumped)) h->title_age = 0.0f;
   if (bumped) {
@@ -290,7 +287,6 @@ static const gm_effect_vtbl_t k_hud_vtbl = {
 };
 
 void gm_hud_init(gm_hud_t* h) {
-  h->base.vt = &k_hud_vtbl;
   h->scale_g = 1.0f;
   h->vscale_g = 0.6f;
   h->dscale_g = 1.0f;
@@ -304,28 +300,15 @@ void gm_hud_init(gm_hud_t* h) {
   h->title = 1.0f;
   h->axes = 1.0f;
   h->frame = 1.0f;
-  h->enter_g = 0.25f;
-  h->hold_s = 0.4f;
-  h->bump_g = 0.3f;
   h->orbit_min = 2.0f;
 
   gm_gstate_init(&h->tracker);
-  gm_spring3_snap(&h->ball, gm_vec3_zero());
-  h->tip = gm_vec3_zero();
   h->g = gm_gforce_rest();
-  h->time = 0.0f;
   h->orbit_timer = 0.0f;
   h->orbit_step = 0;
-  h->title_age = 99.0f;
-  h->bump_age = 99.0f;
-  h->hazard = 0.0f;
-  h->danger = false;
   for (int i = 0; i < GM_HUD_TRAIL; ++i) h->trail[i] = gm_vec3_zero();
-  h->trail_head = h->trail_count = 0;
-  h->trail_timer = 0.0f;
 
-  gm_param_table_t* p = &h->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&h->base, &k_hud_vtbl);
   gm_params_add(p, "scale_g", &h->scale_g, 0.2f, 3.0f, "lateral g at full travel");
   gm_params_add(p, "vscale_g", &h->vscale_g, 0.1f, 3.0f, "vertical g at full travel");
   gm_params_add(p, "dscale_g", &h->dscale_g, 0.2f, 3.0f, "longitudinal g at full depth");
@@ -339,9 +322,9 @@ void gm_hud_init(gm_hud_t* h) {
   gm_params_add(p, "title", &h->title, 0.0f, 1.0f, "big state kanji (on the panel set by title_z)");
   gm_params_add(p, "axes", &h->axes, 0.0f, 1.0f, "axis lines and rulers");
   gm_params_add(p, "frame", &h->frame, 0.0f, 1.0f, "border, readouts and status");
-  gm_params_add(p, "enter_g", &h->enter_g, 0.05f, 1.5f, "g that changes the state word");
-  gm_params_add(p, "hold_s", &h->hold_s, 0.0f, 3.0f, "minimum seconds per state word");
-  gm_params_add(p, "bump_g", &h->bump_g, 0.05f, 2.0f, "vertical spike that shows 衝撃");
+  gm_params_add(p, "enter_g", &h->tracker.enter_g, 0.05f, 1.5f, "g that changes the state word");
+  gm_params_add(p, "hold_s", &h->tracker.hold_s, 0.0f, 3.0f, "minimum seconds per state word");
+  gm_params_add(p, "bump_g", &h->tracker.bump_g, 0.05f, 2.0f, "vertical spike that shows 衝撃");
   gm_params_add(p, "orbit_min", &h->orbit_min, 0.0f, 30.0f, "minutes between 1-px shifts against burn-in (0 = off)");
   hud_reset(&h->base);
 }

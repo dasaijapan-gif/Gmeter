@@ -1,26 +1,16 @@
 // Tiny parameter registry so every effect's tunables can be listed and set by
 // name from the serial command line.
-#include "gm_params.h"
+#include "gm_effect.h"
 
 #include <math.h>
 #include <string.h>
 
 #include "gm_math.h"
 
-void gm_params_init(gm_param_table_t* t) {
-  memset(t->items, 0, sizeof(t->items));
-  t->count = 0;
-}
+void gm_params_init(gm_param_table_t* t) { t->count = 0; }
 
 void gm_params_add(gm_param_table_t* t, const char* name, float* value, float min, float max, const char* help) {
-  if (t->count < GM_PARAMS_MAX) {
-    gm_param_t* p = &t->items[t->count++];
-    p->name = name;
-    p->value = value;
-    p->min = min;
-    p->max = max;
-    p->help = help;
-  }
+  if (t->count < GM_PARAMS_MAX) t->items[t->count++] = (gm_param_t){name, value, min, max, help};
 }
 
 const gm_param_t* gm_params_find(const gm_param_table_t* t, const char* name) {

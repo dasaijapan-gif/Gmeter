@@ -249,8 +249,9 @@ static void run(const char* cmd, const char* a1, const char* a2, const char* a3,
       print_ln(out, "bad number");
       return;
     }
-    if (gm_engine_set_param(app_engine(), a1, v)) {
-      gm_params_get(gm_effect_params(gm_engine_current(app_engine())), a1, &v);
+    gm_effect_t* cur = gm_engine_current(app_engine());
+    if (cur && gm_params_set(gm_effect_params(cur), a1, v)) {
+      gm_params_get(gm_effect_params(cur), a1, &v);
       print_fmt(out, "%s = %.4f\n", a1, (double)v);
     } else {
       print_ln(out, "unknown parameter (get)");

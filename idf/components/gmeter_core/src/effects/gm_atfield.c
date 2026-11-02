@@ -6,30 +6,9 @@
 #include "gm_atfield.h"
 
 #include <math.h>
-#include <stdlib.h>
+#include <string.h>
 
 #include "gm_jp_text.h"
-
-// Line with dithered intensity (gm_frame_line is always full on).
-static void dim_line(gm_frame_t* f, int z, int x0, int y0, int x1, int y1, float intensity) {
-  int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-  int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-  int err = dx + dy;
-  const int steps = gm_maxi(dx, -dy) + 1;
-  for (int i = 0; i <= steps; ++i) {
-    gm_frame_plot(f, x0, y0, z, intensity);
-    if (x0 == x1 && y0 == y1) break;
-    const int e2 = 2 * err;
-    if (e2 >= dy) {
-      err += dy;
-      x0 += sx;
-    }
-    if (e2 <= dx) {
-      err += dx;
-      y0 += sy;
-    }
-  }
-}
 
 // Regular octagon with flat top/bottom (vertices at 22.5 + k * 45 degrees).
 static void octagon(gm_frame_t* f, int z, float cx, float cy, float r, float intensity) {
@@ -40,18 +19,12 @@ static void octagon(gm_frame_t* f, int z, float cx, float cy, float r, float int
     px[k] = gm_iround(cx + r * cosf(a));
     py[k] = gm_iround(cy + r * sinf(a));
   }
-  for (int k = 0; k < 8; ++k) dim_line(f, z, px[k], py[k], px[(k + 1) % 8], py[(k + 1) % 8], intensity);
+  for (int k = 0; k < 8; ++k) gm_frame_line_plot(f, z, px[k], py[k], px[(k + 1) % 8], py[(k + 1) % 8], intensity);
 }
 
 static void atfield_reset(gm_effect_t* self) {
   gm_atfield_t* a = (gm_atfield_t*)self;
-  for (int i = 0; i < GM_ATFIELD_MAX_RIPPLES; ++i) {
-    gm_atfield_ripple_t* r = &a->ripples[i];
-    r->origin = gm_vec3_zero();
-    r->age = 0.0f;
-    r->strength = 0.0f;
-    r->active = false;
-  }
+  memset(a->ripples, 0, sizeof(a->ripples));
   gm_gstate_reset(&a->tracker);
   a->emit_accum = 0.0f;
   a->idle_timer = 0.0f;
@@ -94,7 +67,6 @@ static void atfield_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
     if (r->active && (r->age += ctx->dt) > a->life) r->active = false;
   }
 
-  a->tracker.bump_g = a->bump_g;
   bool bumped = false;
   gm_gstate_update(&a->tracker, ctx->g, ctx->dt, &bumped);
   const gm_vec3_t he = gm_half_extent();
@@ -173,7 +145,6 @@ static const gm_effect_vtbl_t k_atfield_vtbl = {
 };
 
 void gm_atfield_init(gm_atfield_t* a) {
-  a->base.vt = &k_atfield_vtbl;
   a->speed = 70.0f;
   a->life = 1.6f;
   a->rate_g = 2.5f;
@@ -182,24 +153,9 @@ void gm_atfield_init(gm_atfield_t* a) {
   a->idle = 1.0f;
   a->double_ring = 1.0f;
   a->label = 1.0f;
-  a->bump_g = 0.3f;
-  for (int i = 0; i < GM_ATFIELD_MAX_RIPPLES; ++i) {
-    gm_atfield_ripple_t* r = &a->ripples[i];
-    r->origin = gm_vec3_zero();
-    r->age = 0.0f;
-    r->strength = 0.0f;
-    r->active = false;
-  }
   gm_gstate_init(&a->tracker);
-  a->emit_accum = 0.0f;
-  a->idle_timer = 0.0f;
-  a->last_step = 0;
-  a->horiz = 0.0f;
-  a->time = 0.0f;
-  a->caption_age = 99.0f;
 
-  gm_param_table_t* p = &a->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&a->base, &k_atfield_vtbl);
   gm_params_add(p, "speed", &a->speed, 10.0f, 300.0f, "wavefront speed px/s");
   gm_params_add(p, "life", &a->life, 0.3f, 5.0f, "seconds a ripple lives");
   gm_params_add(p, "rate_g", &a->rate_g, 0.0f, 20.0f, "ripples per second per g");
@@ -208,6 +164,6 @@ void gm_atfield_init(gm_atfield_t* a) {
   gm_params_add(p, "idle", &a->idle, 0.0f, 1.0f, "slow pulse from the centre when calm");
   gm_params_add(p, "double", &a->double_ring, 0.0f, 1.0f, "inner second octagon");
   gm_params_add(p, "label", &a->label, 0.0f, 1.0f, "A.T.フィールド / 全開 captions");
-  gm_params_add(p, "bump_g", &a->bump_g, 0.05f, 2.0f, "vertical spike that fires a ripple");
+  gm_params_add(p, "bump_g", &a->tracker.bump_g, 0.05f, 2.0f, "vertical spike that fires a ripple");
   atfield_reset(&a->base);
 }

@@ -51,10 +51,9 @@ typedef struct {
   float title;      // big kanji on the back panel
   float axes;       // axis lines and rulers
   float frame;      // border, readouts, status column
-  float enter_g, hold_s, bump_g;
   float orbit_min;  // minutes per 1-px orbit step (0 = off)
 
-  gm_gstate_t tracker;
+  gm_gstate_t tracker;  // holds the enter_g, hold_s and bump_g tunables
   gm_spring3_t ball;
   gm_vec3_t tip;
   gm_gforce_t g;

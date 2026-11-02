@@ -30,7 +30,7 @@
 //   gm_engine_init, gm_engine_add_effect, gm_engine_set_effect, gm_engine_next_effect,
 //   gm_engine_find_effect, gm_engine_effect_count, gm_engine_current, gm_engine_current_index,
 //   gm_engine_set_auto_cycle, gm_engine_set_readout, gm_engine_set_status_label,
-//   gm_engine_step, gm_engine_frame, gm_engine_set_param
+//   gm_engine_step, gm_engine_frame
 //   gm_effect_name, gm_effect_params, gm_effect_activate, gm_effect_deactivate,
 //   gm_effect_reset, gm_effect_update, gm_effect_render, gm_effect_burn_in_offset,
 //   GM_EFFECT_CTX_INIT (only .g and .dt are set)
@@ -489,7 +489,7 @@ static void app_set_get(gd_t* g, trng_t* r) {
     gd_event(g, "get %s -> %g", name, (double)got);
     return;
   }
-  const bool ok = gm_engine_set_param(e, name, v);
+  const bool ok = engine_set_param(e, name, v);
   float got = v;
   if (ok) gm_params_get(gm_effect_params(gm_engine_current(e)), name, &got);
   gd_bool(g, ok);
@@ -581,9 +581,9 @@ static void case_engine_hud(gd_t* g, int arg) {
   app_start(&a, &r);
   unit_boot(gm_engine_find_effect(&s_unit.engine, "hud"), trng_int(&r, 0, 3), trng_chance(&r, 0.5f), 0.0f);
   // Low thresholds and a fast orbit so the run sees warnings, 危険 and orbit steps.
-  gm_engine_set_param(&s_unit.engine, "orbit_min", 0.02f);
-  gm_engine_set_param(&s_unit.engine, "warn_g", 0.4f);
-  gm_engine_set_param(&s_unit.engine, "danger_g", 0.9f);
+  engine_set_param(&s_unit.engine, "orbit_min", 0.02f);
+  engine_set_param(&s_unit.engine, "warn_g", 0.4f);
+  engine_set_param(&s_unit.engine, "danger_g", 0.9f);
   engine_run(g, &a, &r, "hud", 4000);
   unit_release();
 }

@@ -69,6 +69,8 @@ static inline void gm_frame_plot(gm_frame_t* f, int x, int y, int z, float inten
 void gm_frame_hline(gm_frame_t* f, int z, int x0, int x1, int y);
 void gm_frame_vline(gm_frame_t* f, int z, int x, int y0, int y1);
 void gm_frame_line(gm_frame_t* f, int z, int x0, int y0, int x1, int y1);
+// gm_frame_line with gm_frame_plot's dithered intensity.
+void gm_frame_line_plot(gm_frame_t* f, int z, int x0, int y0, int x1, int y1, float intensity);
 void gm_frame_rect(gm_frame_t* f, int z, int x0, int y0, int x1, int y1);  // outline
 void gm_frame_fill_rect(gm_frame_t* f, int z, int x0, int y0, int x1, int y1, float intensity);
 void gm_frame_circle(gm_frame_t* f, int z, int cx, int cy, int r);  // outline, integer
@@ -115,7 +117,7 @@ static inline const uint8_t* gm_frame_cdata(const gm_frame_t* f) { return &f->bi
 
 // Combine: f |= o.
 void gm_frame_or(gm_frame_t* f, const gm_frame_t* o);
-// Dithered crossfade between a and b into f (t = 0 -> a, 1 -> b).
+// Dithered crossfade between a and b into f (t = 0 -> a, 1 -> b); f may be a or b.
 void gm_frame_crossfade(gm_frame_t* f, const gm_frame_t* a, const gm_frame_t* b, float t);
 
 int gm_frame_count_lit(const gm_frame_t* f);

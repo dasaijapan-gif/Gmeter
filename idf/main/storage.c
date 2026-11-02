@@ -26,8 +26,8 @@ typedef struct {
 } blob_t;
 
 // The Arduino firmware's blob was 68 bytes with this layout.
-GM_STATIC_ASSERT(sizeof(settings_t) == 16, "settings_t layout changed");
-GM_STATIC_ASSERT(sizeof(blob_t) == 68 && offsetof(blob_t, crc) == 64, "stored blob layout changed");
+static_assert(sizeof(settings_t) == 16, "settings_t layout changed");
+static_assert(sizeof(blob_t) == 68 && offsetof(blob_t, crc) == 64, "stored blob layout changed");
 
 // CRC-32 (ISO-HDLC, the zlib one) of the blob up to its crc field.
 static uint32_t blob_crc(const blob_t* b) { return esp_rom_crc32_le(0, (const uint8_t*)b, offsetof(blob_t, crc)); }

@@ -277,8 +277,8 @@ In the firmware (C):
    `gm_effect_t base`, and `src/effects/gm_<name>.c` with a vtable
    (`gm_effect_vtbl_t`: name, update, render, and optionally reset,
    activate, deactivate, burn_in_offset) and a `gm_<name>_init` function
-   that sets the vtable, registers tunables with `gm_params_add` and sets
-   the defaults.
+   that sets the defaults, sets the vtable with `gm_effect_init` and
+   registers tunables with `gm_params_add` on the table it returns.
 2. Do physics in world units (`gm_half_extent()` gives the box) and draw
    with `gm_frame_sphere/point/line3` (world) or the 2D primitives (voxel).
 3. Add a static instance to `idf/main/app_main.c` and pass `&fx.base` to

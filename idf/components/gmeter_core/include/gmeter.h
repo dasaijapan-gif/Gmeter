@@ -5,7 +5,6 @@
 #include "gm_math.h"
 #include "gm_gforce.h"
 #include "gm_frame.h"
-#include "gm_params.h"
 #include "gm_effect.h"
 #include "gm_estimator.h"
 #include "gm_engine.h"

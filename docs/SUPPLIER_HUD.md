@@ -306,7 +306,7 @@ and rebuild.
 | Check | Result |
 | --- | --- |
 | Builds with ESP-IDF v5.5.6 (all three HUD variants) | Pass, no compiler warnings |
-| Memory, classic ESP32 | 81 KB of the 181 KB static RAM, 326 KB of the 2 MB app partition |
+| Memory, classic ESP32 | 74 KB of the 181 KB static RAM, 324 KB of the 2 MB app partition |
 | Boots straight into the HUD in Espressif's ESP32 and ESP32-S3 emulator (QEMU), no sensor attached; `mode`, `cycle` and `anim` refused | Pass: no crash or reset once running, about 60 fps |
 | Settings kept after a reboot | Pass on the ESP32 emulator. The ESP32-S3 emulator cannot keep settings for any program, so check `save` on a real S3 board. |
 | The one-pixel move keeps the whole border on the glass; the warning blink still works after 8 simulated days | Pass (PC unit tests) |

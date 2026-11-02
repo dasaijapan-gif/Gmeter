@@ -89,6 +89,12 @@ void gd_step(gd_t* g, const char* what);
 // A line in the --dump output that explains the next step (not folded).
 void gd_event(gd_t* g, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 
+// The serial `set` command: sets a tunable of the effect on screen.
+static inline bool engine_set_param(gm_engine_t* e, const char* name, float v) {
+  gm_effect_t* cur = gm_engine_current(e);
+  return cur && gm_params_set(gm_effect_params(cur), name, v);
+}
+
 // ---- deterministic inputs ------------------------------------------------------------------
 // splitmix64, with an explicit mapping to floats, so the inputs are the same
 // on every host and compiler.

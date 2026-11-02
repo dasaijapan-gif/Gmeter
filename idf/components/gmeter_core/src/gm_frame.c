@@ -19,6 +19,17 @@ static inline void swap_int(int* a, int* b) {
   *b = t;
 }
 
+static bool clip_rect(int* x0, int* y0, int* x1, int* y1) {
+  if (*x0 > *x1) swap_int(x0, x1);
+  if (*y0 > *y1) swap_int(y0, y1);
+  if (*x1 < 0 || *x0 >= GM_W || *y1 < 0 || *y0 >= GM_H) return false;
+  *x0 = gm_clampi(*x0, 0, GM_W - 1);
+  *x1 = gm_clampi(*x1, 0, GM_W - 1);
+  *y0 = gm_clampi(*y0, 0, GM_H - 1);
+  *y1 = gm_clampi(*y1, 0, GM_H - 1);
+  return true;
+}
+
 void gm_frame_hline(gm_frame_t* f, int z, int x0, int x1, int y) {
   if ((unsigned)z >= (unsigned)GM_D || (unsigned)y >= (unsigned)GM_H) return;
   if (x0 > x1) swap_int(&x0, &x1);
@@ -40,6 +51,10 @@ void gm_frame_vline(gm_frame_t* f, int z, int x, int y0, int y1) {
 }
 
 void gm_frame_line(gm_frame_t* f, int z, int x0, int y0, int x1, int y1) {
+  gm_frame_line_plot(f, z, x0, y0, x1, y1, 1.0f);
+}
+
+void gm_frame_line_plot(gm_frame_t* f, int z, int x0, int y0, int x1, int y1, float intensity) {
   // Trivial reject when both ends are beyond the same edge, and keep the
   // coordinates in a range where Bresenham's arithmetic cannot overflow.
   if ((x0 < 0 && x1 < 0) || (x0 >= GM_W && x1 >= GM_W) || (y0 < 0 && y1 < 0) || (y0 >= GM_H && y1 >= GM_H)) return;
@@ -54,7 +69,7 @@ void gm_frame_line(gm_frame_t* f, int z, int x0, int y0, int x1, int y1) {
   int err = dx + dy;
   const int steps = gm_maxi(dx, -dy) + 1;
   for (int guard = 0; guard <= steps; ++guard) {
-    gm_frame_set(f, x0, y0, z);
+    gm_frame_plot(f, x0, y0, z, intensity);
     if (x0 == x1 && y0 == y1) break;
     int e2 = 2 * err;
     if (e2 >= dy) {
@@ -76,13 +91,7 @@ void gm_frame_rect(gm_frame_t* f, int z, int x0, int y0, int x1, int y1) {
 }
 
 void gm_frame_fill_rect(gm_frame_t* f, int z, int x0, int y0, int x1, int y1, float intensity) {
-  if (x0 > x1) swap_int(&x0, &x1);
-  if (y0 > y1) swap_int(&y0, &y1);
-  if (x1 < 0 || x0 >= GM_W || y1 < 0 || y0 >= GM_H) return;
-  x0 = gm_clampi(x0, 0, GM_W - 1);
-  x1 = gm_clampi(x1, 0, GM_W - 1);
-  y0 = gm_clampi(y0, 0, GM_H - 1);
-  y1 = gm_clampi(y1, 0, GM_H - 1);
+  if (!clip_rect(&x0, &y0, &x1, &y1)) return;
   if (intensity >= 1.0f) {
     for (int y = y0; y <= y1; ++y) gm_frame_hline(f, z, x0, x1, y);
     return;
@@ -215,7 +224,6 @@ uint16_t gm_glyph3x5(char c) {
     case '<': return G(0b001, 0b010, 0b100, 0b010, 0b001);
     case '>': return G(0b100, 0b010, 0b001, 0b010, 0b100);
     case '^': return G(0b010, 0b101, 0b000, 0b000, 0b000);
-    case 'v': return G(0b000, 0b000, 0b000, 0b101, 0b010);
     default: return 0;
   }
 }
@@ -270,11 +278,7 @@ void gm_frame_shift(gm_frame_t* f, int dx, int dy) {
     gm_frame_clear(f);
     return;
   }
-#if GM_H >= 64
-  const uint64_t mask = ~0ull;
-#else
-  const uint64_t mask = (1ull << GM_H) - 1ull;
-#endif
+  const uint64_t mask = ~0ull >> (64 - GM_H);  // the GM_H bits of a column
   for (int z = 0; z < GM_D; ++z) {
     uint8_t* L = f->bits[z];
     if (dx != 0) {
@@ -302,13 +306,7 @@ void gm_frame_shift(gm_frame_t* f, int dx, int dy) {
 }
 
 void gm_frame_clear_box(gm_frame_t* f, int x0, int y0, int x1, int y1) {
-  if (x0 > x1) swap_int(&x0, &x1);
-  if (y0 > y1) swap_int(&y0, &y1);
-  if (x1 < 0 || x0 >= GM_W || y1 < 0 || y0 >= GM_H) return;
-  x0 = gm_clampi(x0, 0, GM_W - 1);
-  x1 = gm_clampi(x1, 0, GM_W - 1);
-  y0 = gm_clampi(y0, 0, GM_H - 1);
-  y1 = gm_clampi(y1, 0, GM_H - 1);
+  if (!clip_rect(&x0, &y0, &x1, &y1)) return;
   for (int z = 0; z < GM_D; ++z)
     for (int y = y0; y <= y1; ++y) {
       const uint8_t mask = (uint8_t)~(1u << (y & 7));

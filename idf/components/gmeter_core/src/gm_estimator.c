@@ -3,6 +3,7 @@
 #include "gm_estimator.h"
 
 #include <math.h>
+#include <string.h>
 
 void gm_estimator_set_filter(gm_estimator_t* e, float cutoff_hz, float sample_hz) {
   e->cutoff_hz = cutoff_hz;
@@ -13,28 +14,12 @@ void gm_estimator_set_filter(gm_estimator_t* e, float cutoff_hz, float sample_hz
 }
 
 void gm_estimator_init(gm_estimator_t* e) {
+  memset(e, 0, sizeof *e);
   e->cal = gm_calibration_none();
   e->nominal_forward = gm_vec3(1.0f, 0.0f, 0.0f);
-  e->rest_accum = gm_vec3_zero();
-  e->rest_count = 0;
   e->forward_trusted = true;
-
-  e->cutoff_hz = 4.0f;
-  e->sample_hz = 200.0f;
-  gm_lowpass_init(&e->lp_x);
-  gm_lowpass_init(&e->lp_y);
-  gm_lowpass_init(&e->lp_z);
-  e->primed = false;
-
-  e->auto_zero = false;
   e->auto_zero_tau = 60.0f;
-  e->bias = gm_vec3_zero();
-  e->slow_mean = gm_vec3_zero();
-  e->motion_level = 1.0f;
-
-  e->raw_car = gm_vec3_zero();
-  e->g = gm_gforce_rest();
-
+  gm_estimator_reset(e);
   gm_estimator_set_filter(e, 4.0f, 200.0f);
 }
 

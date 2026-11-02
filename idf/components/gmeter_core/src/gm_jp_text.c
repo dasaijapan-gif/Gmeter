@@ -3,6 +3,7 @@
 #include "gm_jp_text.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 
 // Decodes one UTF-8 code point and advances `*s`; invalid bytes yield U+FFFD.
 static uint32_t next_codepoint(const char** s) {
@@ -53,34 +54,28 @@ static int glyph_advance(const gm_jp_font_t* font, uint32_t cp, const gm_jp_glyp
   return g ? g->width : font->height * 3 / 4;
 }
 
+// A 3x5 HUD font character, full on at any intensity like gm_frame_text; a negative one knocks it out.
 static void draw_ascii(gm_frame_t* f, const gm_jp_font_t* font, int z, int x, int y, char c, float intensity) {
   const int top = y + (font->height - 5) / 2;
-  if (intensity < 0.0f) {
-    // Knock-out (reverse video): clear the glyph's pixels directly. (A scratch
-    // gm_frame_t here would put 7 KB on the stack and overflow the ESP32's
-    // render task.)
-    const uint16_t g = gm_glyph3x5(c);
-    for (int row = 0; row < 5; ++row)
-      for (int col = 0; col < 3; ++col)
-        if ((g >> (12 - 3 * row)) & (4u >> col)) gm_frame_reset(f, x + col, top + row, z);
-    return;
-  }
-  const char s[2] = {c, '\0'};
-  gm_frame_text(f, z, x, top, s);
+  const uint16_t g = gm_glyph3x5(c);
+  for (int row = 0; row < 5; ++row)
+    for (int col = 0; col < 3; ++col)
+      if ((g >> (12 - 3 * row)) & (4u >> col)) {
+        if (intensity < 0.0f)
+          gm_frame_reset(f, x + col, top + row, z);
+        else
+          gm_frame_set(f, x + col, top + row, z);
+      }
+}
+
+static int compare_codepoint(const void* key, const void* glyph) {
+  const uint32_t a = *(const uint32_t*)key, b = ((const gm_jp_glyph_t*)glyph)->codepoint;
+  return (a > b) - (a < b);
 }
 
 const gm_jp_glyph_t* gm_jp_find_glyph(const gm_jp_font_t* font, uint32_t cp) {
-  int lo = 0, hi = (int)font->count - 1;
-  while (lo <= hi) {
-    const int mid = (lo + hi) / 2;
-    const uint32_t c = font->glyphs[mid].codepoint;
-    if (c == cp) return &font->glyphs[mid];
-    if (c < cp)
-      lo = mid + 1;
-    else
-      hi = mid - 1;
-  }
-  return NULL;
+  if (font->count == 0) return NULL;  // bsearch needs a valid array even when it is empty
+  return bsearch(&cp, font->glyphs, font->count, sizeof *font->glyphs, compare_codepoint);
 }
 
 int gm_jp_draw(gm_frame_t* f, const gm_jp_font_t* font, int z, int x, int y, const char* utf8, int spacing,
@@ -132,12 +127,10 @@ int gm_jp_draw_vertical(gm_frame_t* f, const gm_jp_font_t* font, int z, int x, i
 
 int gm_jp_measure(const gm_jp_font_t* font, const char* utf8, int spacing) {
   int w = 0;
-  bool any = false;
   for (const char* s = utf8; *s;) {
     const uint32_t cp = next_codepoint(&s);
     const gm_jp_glyph_t* g = NULL;
     w += glyph_advance(font, cp, &g) + spacing;
-    any = true;
   }
-  return any ? w - spacing : 0;
+  return *utf8 ? w - spacing : 0;
 }

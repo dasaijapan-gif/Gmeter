@@ -124,7 +124,7 @@ run the NERV-style screen continuously. Pins live in `idf/main/board_config.h`.
 On the ESP32-S3-DevKitC-1 the serial CLI is on the connector labelled UART.
 
 All six variants build without compiler warnings; the classic ESP32 build uses
-about 81 KB of its 181 KB of static RAM and 326 KB of the 2 MB app partition.
+about 74 KB of its 181 KB of static RAM and 324 KB of the 2 MB app partition.
 Both chips boot in Espressif's QEMU and run every effect with no IMU attached
 (`tools/qemu_boot_check.py --script tools/qemu_std_check.txt`), and the HUD
 builds boot straight into `hud` and stay there (`tools/qemu_hud_check.txt`).

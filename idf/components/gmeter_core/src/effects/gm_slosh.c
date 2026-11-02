@@ -11,7 +11,6 @@
 // 1 m tank instead of buzzing at 5 Hz.
 #include "gm_slosh.h"
 
-#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -19,12 +18,6 @@
 #define NZ GM_SLOSH_NZ
 #define DX GM_SLOSH_DX
 #define DZ GM_SLOSH_DZ
-
-// (int)v as an x86 build of the C++ computes it: INT_MIN for NaN, infinite and
-// out-of-range values (the conversion is undefined there), without the
-// undefined behaviour. Only absurd g input (NaN, inf, millions of g) gets such
-// values here: in the substep count and in the surface row.
-static int to_int(float v) { return v >= -2147483648.0f && v < 2147483648.0f ? (int)v : INT_MIN; }
 
 float gm_slosh_gravity_px(const gm_slosh_t* s) {
   // 1 g in pixels/s^2 given the virtual tank width.
@@ -37,10 +30,8 @@ static void slosh_reset(gm_effect_t* self) {
   const float h0 = s->fill_fraction * (float)GM_H;
   for (int z = 0; z < NZ; ++z)
     for (int x = 0; x < NX; ++x) s->h[z][x] = h0;
-  for (int z = 0; z < NZ; ++z)
-    for (int x = 0; x <= NX; ++x) s->u[z][x] = 0.0f;
-  for (int z = 0; z <= NZ; ++z)
-    for (int x = 0; x < NX; ++x) s->w[z][x] = 0.0f;
+  memset(s->u, 0, sizeof(s->u));
+  memset(s->w, 0, sizeof(s->w));
   s->target_volume = h0 * NX * NZ;
   gm_spring_snap(&s->bob, 0.0f);
   s->last_vert_g = 0.0f;
@@ -204,10 +195,9 @@ static void slosh_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   const float c = umax + sqrtf(gv * gm_maxf(hmax, 1.0f));
   const float inv_spacing = sqrtf(1.0f / (DX * DX) + 1.0f / (DZ * DZ));
   const float dt_max = 0.7f / (gm_maxf(c, 1e-3f) * inv_spacing);
-  // With absurd input (infinite velocities) the ratio is infinite or NaN; the
-  // C++ then gets INT_MIN on x86 and clamps it to one substep. to_int does the
-  // same without the undefined conversion.
-  int n = to_int(ceilf(ctx->dt / dt_max));
+  // With absurd input (infinite velocities) the ratio is infinite or NaN:
+  // gm_to_int gives INT_MIN, clamped to one substep.
+  int n = gm_to_int(ceilf(ctx->dt / dt_max));
   n = gm_clampi(n, 1, (int)s->max_substeps);
   s->last_substeps = n;
   const float dt = gm_minf(ctx->dt / (float)n, dt_max);
@@ -233,9 +223,8 @@ static void slosh_render(gm_effect_t* self, gm_frame_t* f) {
       i0 = gm_clampi(i0, 0, NX - 1);
       const int i1 = gm_clampi(i0 + 1, 0, NX - 1);
       const float h = gm_lerpf(s->h[z][i0], s->h[z][i1], t) + bob;
-      // gm_iround(bottom - h); a NaN or huge h (only after absurd vertical g)
-      // gives INT_MIN, as the x86 build of the C++ does.
-      const int y_surf = to_int(floorf(bottom - h + 0.5f));
+      // A NaN or huge h (only after absurd vertical g) gives INT_MIN.
+      const int y_surf = gm_iround_safe(bottom - h);
       if (h < 0.5f) continue;
       for (int k = 0; k < thick; ++k) gm_frame_set(f, px, y_surf + k, z);
       if (style == 1) {
@@ -262,7 +251,6 @@ static const gm_effect_vtbl_t k_slosh_vtbl = {
 };
 
 void gm_slosh_init(gm_slosh_t* s) {
-  s->base.vt = &k_slosh_vtbl;
   s->fill_fraction = 0.42f;
   s->tank_width_m = 1.0f;
   s->slope_gain = 0.5f;
@@ -279,15 +267,10 @@ void gm_slosh_init(gm_slosh_t* s) {
   // The flux buffers are written before every read; cleared for determinism.
   memset(s->flux_x, 0, sizeof(s->flux_x));
   memset(s->flux_z, 0, sizeof(s->flux_z));
-  s->target_volume = 0.0f;
-  gm_spring_snap(&s->bob, 0.0f);
-  s->last_vert_g = 0.0f;
-  s->gv_filtered = 1.0f;
   s->last_substeps = 0;
   gm_rng_seed(&s->rng, 12345u);
 
-  gm_param_table_t* p = &s->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&s->base, &k_slosh_vtbl);
   gm_params_add(p, "fill", &s->fill_fraction, 0.1f, 0.8f, "rest depth / panel height");
   gm_params_add(p, "tank_m", &s->tank_width_m, 0.1f, 10.0f, "virtual tank width (m); bigger = slower slosh");
   gm_params_add(p, "slope_gain", &s->slope_gain, 0.1f, 2.0f, "tilt per g (1 = physical)");

@@ -29,8 +29,8 @@
 #define GM_PANELS_REVERSED 0
 #endif
 
-GM_STATIC_ASSERT(GM_LAYERS <= 8, "board_config has one chip-select pin per layer for at most 8 layers");
-GM_STATIC_ASSERT(GM_PANEL_W == 128, "the SSD130x driver addresses columns 0..127");
+static_assert(GM_LAYERS <= 8, "board_config has one chip-select pin per layer for at most 8 layers");
+static_assert(GM_PANEL_W == 128, "the SSD130x driver addresses columns 0..127");
 
 #if CONFIG_IDF_TARGET_ESP32S3
 #define BOARD_SPI_HOST SPI2_HOST  // FSPI

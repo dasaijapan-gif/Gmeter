@@ -5,16 +5,9 @@
 // HUD: reticle, 0.5 g / 1 g rings and a numeric readout.
 #include "gm_gball.h"
 
-#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
-
-// (int)v as an x86 build of the C++ computes it: INT_MIN for NaN, infinite and
-// out-of-range values (the conversion is undefined there), without the
-// undefined behaviour. Only absurd g input (NaN, inf, beyond ~2e7 g) reaches
-// the readout with such values.
-static int to_int(float v) { return v >= -2147483648.0f && v < 2147483648.0f ? (int)v : INT_MIN; }
 
 static void gball_reset(gm_effect_t* self) {
   gm_gball_t* b = (gm_gball_t*)self;
@@ -109,9 +102,9 @@ static void gball_render(gm_effect_t* self, gm_frame_t* f) {
   if (b->hud > 0.5f) {
     char buf[12];
     const float hg = gm_gforce_horizontal(b->last_g);
-    snprintf(buf, sizeof(buf), "%d.%02dG", to_int(hg), to_int(hg * 100.0f) % 100);
+    snprintf(buf, sizeof(buf), "%d.%02dG", gm_to_int(hg), gm_to_int(hg * 100.0f) % 100);
     gm_frame_text(f, 0, 1, GM_H - 6, buf);
-    snprintf(buf, sizeof(buf), "P%d.%02d", to_int(b->peak_g), to_int(b->peak_g * 100.0f) % 100);
+    snprintf(buf, sizeof(buf), "P%d.%02d", gm_to_int(b->peak_g), gm_to_int(b->peak_g * 100.0f) % 100);
     gm_frame_text(f, 0, GM_W - 1 - 4 * 5, GM_H - 6, buf);
     // Longitudinal bar along the top edge: braking fills to the right of
     // centre (ball recedes), acceleration to the left (ball approaches).
@@ -136,7 +129,6 @@ static const gm_effect_vtbl_t k_gball_vtbl = {
 };
 
 void gm_gball_init(gm_gball_t* b) {
-  b->base.vt = &k_gball_vtbl;
   b->full_scale_g = 1.0f;
   b->vertical_scale_g = 0.6f;
   b->depth_scale_g = 1.0f;
@@ -152,17 +144,9 @@ void gm_gball_init(gm_gball_t* b) {
   // The trail samples are only read once written; cleared for determinism.
   memset(b->trail, 0, sizeof(b->trail));
   memset(b->trail_age, 0, sizeof(b->trail_age));
-  b->spring.x.pos = b->spring.x.vel = 0.0f;
-  b->spring.y.pos = b->spring.y.vel = 0.0f;
-  b->spring.z.pos = b->spring.z.vel = 0.0f;
-  b->trail_head = b->trail_count = 0;
-  b->trail_timer = 0.0f;
-  b->peak_g = 0.0f;
-  b->peak_age = 0.0f;
   b->last_g = gm_gforce_rest();
 
-  gm_param_table_t* p = &b->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&b->base, &k_gball_vtbl);
   gm_params_add(p, "scale_g", &b->full_scale_g, 0.2f, 3.0f, "lateral g at full travel");
   gm_params_add(p, "vscale_g", &b->vertical_scale_g, 0.1f, 3.0f, "vertical g at full travel");
   gm_params_add(p, "dscale_g", &b->depth_scale_g, 0.2f, 3.0f, "longitudinal g at full depth");

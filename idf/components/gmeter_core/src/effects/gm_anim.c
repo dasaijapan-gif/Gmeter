@@ -1,24 +1,16 @@
 // Authored animation, interpreted by g-force (see gm_anim.h).
-//
-// Clips map the car's state (idle, accelerate, brake, left, right, bump) to
-// frame ranges of the asset. On top of the clip choice the effect moves the
-// artwork through the volume like a loose object (spring-smoothed), can speed
-// playback up with g, scrub frames with g, and ghost a flat sprite onto
-// neighbouring layers.
 #include "gm_anim.h"
 
-#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-// (int)v as an x86 build of the C++ computes it: INT_MIN for NaN, infinite and
-// out-of-range values (the conversion is undefined there), without the
-// undefined behaviour. Only NaN or absurd g input (or a NaN clip rate in a
-// hand-written asset) reaches the conversions with such values.
-static int to_int(float v) { return v >= -2147483648.0f && v < 2147483648.0f ? (int)v : INT_MIN; }
-// gm_iround with the same out-of-range rule.
-static int round_to_int(float v) { return to_int(floorf(v + 0.5f)); }
+#include "gm_gstate.h"
+
+static_assert(GM_ANIM_ACCELERATE == (int)GM_DRIVE_ACCELERATE && GM_ANIM_BRAKE == (int)GM_DRIVE_BRAKE &&
+                  GM_ANIM_LEFT == (int)GM_DRIVE_LEFT && GM_ANIM_RIGHT == (int)GM_DRIVE_RIGHT,
+              "anim states 1-4 are gm_gstate's driving states (see gm_gstate_choose)");
+
 // a + b wrapping around like the x86 C++ build (where an overflow is undefined).
 // It only overflows when the clip time is NaN or absurd while g scrubs frames.
 static int wrap_add(int a, int b) { return (int)((unsigned)a + (unsigned)b); }
@@ -34,7 +26,7 @@ const char* gm_anim_state_name(int state) {
    {GM_ANIM_CLIP_DEFAULT, GM_ANIM_CLIP_DEFAULT, GM_ANIM_CLIP_DEFAULT, GM_ANIM_CLIP_DEFAULT, \
     GM_ANIM_CLIP_DEFAULT, GM_ANIM_CLIP_DEFAULT},                                            \
    GM_ANIM_MAPPING_DEFAULT}
-GM_STATIC_ASSERT(GM_ANIM_STATE_COUNT == 6, "K_ASSET_EMPTY_INIT lists one clip per state");
+static_assert(GM_ANIM_STATE_COUNT == 6, "K_ASSET_EMPTY_INIT lists one clip per state");
 
 gm_anim_asset_t gm_anim_asset_empty(void) {
   const gm_anim_asset_t a = K_ASSET_EMPTY_INIT;
@@ -86,11 +78,9 @@ gm_anim_clip_t gm_anim_resolve_clip(const gm_anim_t* a, int state, bool* mirror)
   }
   const gm_anim_clip_t* idle = &a->asset.clips[GM_ANIM_IDLE];
   if (anim_usable(a, idle)) return anim_clamp_clip(*idle, frames);
-  gm_anim_clip_t all = GM_ANIM_CLIP_DEFAULT;
-  all.start = 0;
+  gm_anim_clip_t all = GM_ANIM_CLIP_DEFAULT;  // start 0, 12 fps, looping
   all.count = frames;
-  all.fps = idle->fps > 0.0f ? idle->fps : 12.0f;
-  all.loop = 1;
+  if (idle->fps > 0.0f) all.fps = idle->fps;
   return all;
 }
 
@@ -113,49 +103,6 @@ void gm_anim_force_state(gm_anim_t* a, int state) {
   if (a->forced >= 0) anim_enter(a, a->forced);
 }
 
-// How strongly the g-force (lateral `lat`, longitudinal `lon`) supports a given state.
-static float anim_support(int s, float lat, float lon) {
-  switch (s) {
-    case GM_ANIM_ACCELERATE:
-      return lon;
-    case GM_ANIM_BRAKE:
-      return -lon;
-    case GM_ANIM_RIGHT:
-      return lat;
-    case GM_ANIM_LEFT:
-      return -lat;
-    default:
-      return 0.0f;
-  }
-}
-
-static int anim_choose_state(const gm_anim_t* a, gm_vec3_t dyn) {
-  const float lat = dyn.x, lon = dyn.z;
-  int candidate = GM_ANIM_IDLE;
-  float best = 0.0f;
-  for (int s = GM_ANIM_ACCELERATE; s <= GM_ANIM_RIGHT; ++s) {
-    if (anim_support(s, lat, lon) > best) {
-      best = anim_support(s, lat, lon);
-      candidate = s;
-    }
-  }
-  const bool active = a->state >= GM_ANIM_ACCELERATE && a->state <= GM_ANIM_RIGHT;
-  // Hysteresis: stay in an active state until its support drops below 60 %
-  // of the entry threshold, and only hand over to another active state when
-  // that one is clearly stronger.
-  if (active) {
-    const float mine = anim_support(a->state, lat, lon);
-    if (mine >= 0.6f * a->m.enter_g) {
-      // Hand over only to a state that is clearly stronger and could itself be
-      // entered; otherwise keep the current one (never drop to idle while the
-      // current state is still above its exit level).
-      const bool hand_over = candidate != a->state && best >= mine + 0.1f && best >= a->m.enter_g;
-      return hand_over ? candidate : a->state;
-    }
-  }
-  return best >= a->m.enter_g ? candidate : GM_ANIM_IDLE;
-}
-
 static void anim_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   gm_anim_t* a = (gm_anim_t*)self;
   if (!gm_anim_asset_valid(&a->asset)) return;
@@ -172,13 +119,14 @@ static void anim_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   } else if (a->state == GM_ANIM_BUMP) {
     const gm_anim_clip_t c = gm_anim_resolve_clip(a, GM_ANIM_BUMP, &clip_mirror);
     const float len = (float)c.count / c.fps;
-    if (!anim_usable(a, &a->asset.clips[GM_ANIM_BUMP]) || a->clip_time >= len) anim_enter(a, anim_choose_state(a, dyn));
+    if (!anim_usable(a, &a->asset.clips[GM_ANIM_BUMP]) || a->clip_time >= len)
+      anim_enter(a, gm_gstate_choose(a->state, dyn, a->m.enter_g));
   } else {
     const bool has_bump = anim_usable(a, &a->asset.clips[GM_ANIM_BUMP]);
     if (spike && has_bump) {
       anim_enter(a, GM_ANIM_BUMP);
     } else if (a->state_time >= a->m.hold_s) {
-      const int next = anim_choose_state(a, dyn);
+      const int next = gm_gstate_choose(a->state, dyn, a->m.enter_g);
       if (next != a->state) anim_enter(a, next);
     }
   }
@@ -188,12 +136,12 @@ static void anim_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   a->mirror = clip_mirror;
   const float speed = 1.0f + a->m.fps_per_g * sqrtf(dyn.x * dyn.x + dyn.z * dyn.z);
   a->clip_time += ctx->dt * speed;
-  int idx = to_int(a->clip_time * clip.fps);
+  int idx = gm_to_int(a->clip_time * clip.fps);
   const bool loop = clip.loop != 0 && a->state != GM_ANIM_BUMP;
-  const int axis = round_to_int(a->m.scrub_axis);
+  const int axis = gm_iround_safe(a->m.scrub_axis);
   if (axis >= 0 && axis <= 2 && a->m.frames_per_g != 0.0f) {
     const float v = axis == 0 ? dyn.x : (axis == 1 ? dyn.y : dyn.z);
-    idx = wrap_add(idx, round_to_int(v * a->m.frames_per_g));
+    idx = wrap_add(idx, gm_iround_safe(v * a->m.frames_per_g));
   }
   const int count = clip.count > 0 ? clip.count : 1;
   if (loop) {
@@ -225,14 +173,14 @@ static void anim_render(gm_effect_t* self, gm_frame_t* f) {
   const gm_anim_asset_t* as = &a->asset;
   if (!gm_anim_asset_valid(as)) return;
   const gm_vec3_t v = gm_world_to_voxel(gm_spring3_pos(&a->pos));
-  const int x0 = round_to_int(v.x - as->width * 0.5f + 0.5f);
-  const int y0 = round_to_int(v.y - as->height * 0.5f + 0.5f);
+  const int x0 = gm_iround_safe(v.x - as->width * 0.5f + 0.5f);
+  const int y0 = gm_iround_safe(v.y - as->height * 0.5f + 0.5f);
   const int depth = as->depth;
   // Slice 0 is the front-most; centre the stack of slices on the position.
   // Art with more slices than panels stays centred; out-of-range layers are skipped.
   const int first =
-      gm_clampi(round_to_int(v.z - (depth - 1) * 0.5f), gm_mini(0, GM_D - depth), gm_maxi(0, GM_D - depth));
-  const int echo = depth == 1 ? round_to_int(a->m.echo) : 0;
+      gm_clampi(gm_iround_safe(v.z - (depth - 1) * 0.5f), gm_mini(0, GM_D - depth), gm_maxi(0, GM_D - depth));
+  const int echo = depth == 1 ? gm_iround_safe(a->m.echo) : 0;
   // A negative echo draws nothing: the layer loop below runs zero times (and
   // for a NaN or huge echo from a hand-written asset, INT_MIN, -echo would
   // overflow; an x86 build of the C++ draws nothing there either).
@@ -264,20 +212,11 @@ static const gm_effect_vtbl_t k_anim_vtbl = {
 };
 
 void gm_anim_init(gm_anim_t* a, const gm_anim_asset_t* asset) {
-  a->base.vt = &k_anim_vtbl;
   a->asset = *asset;
   a->m = asset->mapping;
-  gm_spring3_snap(&a->pos, gm_vec3_zero());
-  a->state = GM_ANIM_IDLE;
   a->forced = -1;
-  a->state_time = 0.0f;
-  a->clip_time = 0.0f;
-  a->frame = 0;
-  a->mirror = false;
-  a->prev_vert = 0.0f;
 
-  gm_param_table_t* p = &a->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&a->base, &k_anim_vtbl);
   gm_params_add(p, "px_g_x", &a->m.px_per_gx, 0.0f, 200.0f, "lateral travel px per g");
   gm_params_add(p, "px_g_y", &a->m.px_per_gy, 0.0f, 100.0f, "vertical travel px per g");
   gm_params_add(p, "px_g_z", &a->m.px_per_gz, 0.0f, 200.0f, "depth travel px per g");

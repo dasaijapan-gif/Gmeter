@@ -5,7 +5,6 @@
 // readout of the combined horizontal g as a percentage of 1 g.
 #include "gm_sync.h"
 
-#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -23,10 +22,6 @@ static int trace_row(float v, float gain, int cy, int half) {
   if (!(r > -2147483648.0f && r < 2147483648.0f)) return cy - half;
   return gm_clampi(cy - (int)r, cy - half, cy + half);
 }
-
-// (int)v with the result an x86 build of the C++ gets for NaN, infinite and
-// out-of-range values (INT_MIN), without the undefined behaviour.
-static int to_int(float v) { return v >= -2147483648.0f && v < 2147483648.0f ? (int)v : INT_MIN; }
 
 static void sync_reset(gm_effect_t* self) {
   gm_sync_t* s = (gm_sync_t*)self;
@@ -98,7 +93,7 @@ static void sync_render(gm_effect_t* self, gm_frame_t* f) {
     const int col_x = W - 1 - gm_jp_small.glyphs[0].width;
     const int used = gm_jp_draw_vertical(f, &gm_jp_small, 0, col_x, 0, "同期率", 0, 1.0f);
     char buf[8];
-    snprintf(buf, sizeof(buf), "%d", to_int(s->sync_pct + 0.5f));
+    snprintf(buf, sizeof(buf), "%d", gm_to_int(s->sync_pct + 0.5f));
     gm_frame_text(f, 0, W - 4 * (int)strlen(buf), gm_mini(H - 6, used + 2), buf);
   }
 }
@@ -115,18 +110,12 @@ static const gm_effect_vtbl_t k_sync_vtbl = {
 };
 
 void gm_sync_init(gm_sync_t* s) {
-  s->base.vt = &k_sync_vtbl;
   s->rate = 30.0f;
   s->gain = 9.0f;
   s->grid = 1.0f;
   s->labels = 1.0f;
-  s->head = 0;
-  s->accum = 0.0f;
-  s->scroll = 0.0f;
-  s->sync_pct = 0.0f;
 
-  gm_param_table_t* p = &s->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&s->base, &k_sync_vtbl);
   gm_params_add(p, "rate", &s->rate, 5.0f, 120.0f, "samples per second (window = 128 / rate)");
   gm_params_add(p, "gain", &s->gain, 2.0f, 30.0f, "trace px per g");
   gm_params_add(p, "grid", &s->grid, 0.0f, 1.0f, "grid lines");

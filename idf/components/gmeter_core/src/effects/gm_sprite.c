@@ -5,18 +5,8 @@
 // generic hook for "make my animation react to g".
 #include "gm_sprite.h"
 
-#include <limits.h>
 #include <math.h>
 #include <stdlib.h>
-
-// (int)v as an x86 build of the C++ computes it: INT_MIN for NaN, infinite and
-// out-of-range values (the conversion is undefined there), without the
-// undefined behaviour. Only NaN or absurd g input reaches the conversions with
-// such values.
-static int to_int(float v) { return v >= -2147483648.0f && v < 2147483648.0f ? (int)v : INT_MIN; }
-// gm_ifloor / gm_iround with the same out-of-range rule.
-static int floor_to_int(float v) { return to_int(floorf(v)); }
-static int round_to_int(float v) { return to_int(floorf(v + 0.5f)); }
 
 static void sprite_reset(gm_effect_t* self) {
   gm_sprite_t* s = (gm_sprite_t*)self;
@@ -38,7 +28,7 @@ static void sprite_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
   gm_spring3_step(&s->pos, target, ctx->dt, s->hz, 1.0f);
 
   s->playhead += ctx->dt * (s->idle_fps + s->fps_per_g * gm_gforce_horizontal(ctx->g));
-  const int axis = round_to_int(s->scrub_axis);
+  const int axis = gm_iround_safe(s->scrub_axis);
   float scrub = 0.0f;
   if (axis == 0)
     scrub = drive.x * s->frames_per_g;
@@ -48,7 +38,7 @@ static void sprite_update(gm_effect_t* self, const gm_effect_ctx_t* ctx) {
     scrub = drive.z * s->frames_per_g;
   if (s->sheet.frames > 0) {
     const float total = s->playhead + scrub;
-    int idx = floor_to_int(total) % s->sheet.frames;
+    int idx = gm_to_int(floorf(total)) % s->sheet.frames;
     if (idx < 0) idx += s->sheet.frames;
     s->frame_index = idx;
     if (s->playhead > 1.0e6f) s->playhead = fmodf(s->playhead, (float)s->sheet.frames);
@@ -60,10 +50,10 @@ static void sprite_render(gm_effect_t* self, gm_frame_t* f) {
   const gm_sprite_sheet_t* sh = &s->sheet;
   if (!sh->bits || sh->frames == 0) return;
   const gm_vec3_t v = gm_world_to_voxel(gm_spring3_pos(&s->pos));
-  const int x0 = round_to_int(v.x - sh->width * 0.5f + 0.5f);
-  const int y0 = round_to_int(v.y - sh->height * 0.5f + 0.5f);
-  const int layer = gm_clampi(round_to_int(v.z), 0, GM_D - 1);
-  const int echo = round_to_int(s->echo);
+  const int x0 = gm_iround_safe(v.x - sh->width * 0.5f + 0.5f);
+  const int y0 = gm_iround_safe(v.y - sh->height * 0.5f + 0.5f);
+  const int layer = gm_clampi(gm_iround_safe(v.z), 0, GM_D - 1);
+  const int echo = gm_iround_safe(s->echo);
   // A negative echo draws nothing: the layer loop below runs zero times (and
   // for a NaN or huge echo from a mapping, INT_MIN, -echo would overflow; an
   // x86 build of the C++ draws nothing there either).
@@ -93,7 +83,6 @@ static const gm_sprite_mapping_t k_default_mapping = GM_SPRITE_MAPPING_DEFAULT;
 
 void gm_sprite_init(gm_sprite_t* s, const gm_sprite_sheet_t* sheet, const gm_sprite_mapping_t* map) {
   const gm_sprite_mapping_t* m = map ? map : &k_default_mapping;
-  s->base.vt = &k_sprite_vtbl;
   s->sheet = *sheet;
   s->px_gx = m->px_per_g.x;
   s->px_gy = m->px_per_g.y;
@@ -105,12 +94,8 @@ void gm_sprite_init(gm_sprite_t* s, const gm_sprite_sheet_t* sheet, const gm_spr
   s->fps_per_g = m->fps_per_g;
   s->echo = m->depth_echo;
   s->inertia = m->follow_inertia ? 1.0f : 0.0f;
-  gm_spring3_snap(&s->pos, gm_vec3_zero());
-  s->playhead = 0.0f;
-  s->frame_index = 0;
 
-  gm_param_table_t* p = &s->base.params;
-  gm_params_init(p);
+  gm_param_table_t* p = gm_effect_init(&s->base, &k_sprite_vtbl);
   gm_params_add(p, "px_g_x", &s->px_gx, 0.0f, 200.0f, "lateral px per g");
   gm_params_add(p, "px_g_y", &s->px_gy, 0.0f, 100.0f, "vertical px per g");
   gm_params_add(p, "px_g_z", &s->px_gz, 0.0f, 200.0f, "depth px per g");
@@ -135,7 +120,6 @@ static void demo_set(int frame, int x, int y) {
 }
 
 static void build_demo(void) {
-  for (size_t i = 0; i < sizeof(s_demo_bits); ++i) s_demo_bits[i] = 0;
   const float cx = 7.5f, cy = 7.5f;
   for (int fr = 0; fr < K_DEMO_FRAMES; ++fr) {
     // Ring.
@@ -151,13 +135,7 @@ static void build_demo(void) {
 }
 
 const gm_sprite_sheet_t* gm_sprite_demo_sheet(void) {
-  static gm_sprite_sheet_t sheet = {0, 0, 0, NULL};
-  if (!s_demo_built) {
-    build_demo();
-    sheet.width = K_DEMO_W;
-    sheet.height = K_DEMO_H;
-    sheet.frames = K_DEMO_FRAMES;
-    sheet.bits = s_demo_bits;
-  }
+  static const gm_sprite_sheet_t sheet = {K_DEMO_W, K_DEMO_H, K_DEMO_FRAMES, s_demo_bits};
+  if (!s_demo_built) build_demo();
   return &sheet;
 }
